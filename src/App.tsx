@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { InvoiceTable } from './components/InvoiceTable';
+import { Login } from './components/Login';
+import { useAuth } from './context/AuthContext';
 import { InvoiceStatus, Invoice, mockInvoices } from './data/mockInvoices';
 import { fetchInvoices } from './data/api';
 import { getCompaniesConfig, Company } from './config';
@@ -8,6 +10,7 @@ import './App.css';
 
 function App() {
     const { t, i18n } = useTranslation();
+    const { user, loading: authLoading, logout, isFirebaseConfigured } = useAuth();
     const companies = getCompaniesConfig();
 
     const [selectedCompanyId, setSelectedCompanyId] = useState<string>(companies[0]?.id || '');
@@ -57,6 +60,20 @@ function App() {
     const overdueCount = statsInvoices.filter(i => i.status === 'Overdue').length;
     const totalAmount = statsInvoices.reduce((sum, inv) => sum + inv.amount, 0);
 
+    // Block render until auth state is known
+    if (authLoading) {
+        return (
+            <div className="login-container">
+                <div className="loader">Loading application...</div>
+            </div>
+        );
+    }
+
+    // Require Login if not logged in
+    if (!user) {
+        return <Login />;
+    }
+
     return (
         <div className="dashboard-container">
             <header className="header">
@@ -92,6 +109,23 @@ function App() {
                         <option value="en">EN</option>
                         <option value="et">ET</option>
                     </select>
+
+                    {user && (
+                        <button
+                            onClick={logout}
+                            style={{
+                                background: 'transparent',
+                                border: '1px solid var(--border-color)',
+                                color: 'var(--text-secondary)',
+                                padding: '0.4rem 0.8rem',
+                                borderRadius: 'var(--radius-md)',
+                                cursor: 'pointer',
+                                fontSize: '0.9rem'
+                            }}
+                        >
+                            Выйти
+                        </button>
+                    )}
                 </div>
             </header>
 
