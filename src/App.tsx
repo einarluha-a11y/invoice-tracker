@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { InvoiceTable } from './components/InvoiceTable';
 import { InvoiceStatus, Invoice, mockInvoices } from './data/mockInvoices';
 import { fetchInvoices } from './data/api';
@@ -6,6 +7,7 @@ import { getCompaniesConfig, Company } from './config';
 import './App.css';
 
 function App() {
+    const { t, i18n } = useTranslation();
     const companies = getCompaniesConfig();
 
     const [selectedCompanyId, setSelectedCompanyId] = useState<string>(companies[0]?.id || '');
@@ -34,7 +36,7 @@ function App() {
                 }
             } catch (err) {
                 console.error("Failed to fetch invoices:", err);
-                setError("Не удалось загрузить данные. Проверьте ссылку компании.");
+                setError(t('errors.loadingDesc'));
                 setInvoices(mockInvoices); // Fallback on error
             } finally {
                 setIsLoading(false);
@@ -68,33 +70,44 @@ function App() {
                     </svg>
                     Kontrol <span className="header-accent">Invoice</span>
                 </h1>
+                <div className="header-controls" style={{ display: 'flex', gap: '1rem' }}>
+                    {companies.length > 0 && (
+                        <select
+                            className="company-select"
+                            value={selectedCompanyId}
+                            onChange={(e) => setSelectedCompanyId(e.target.value)}
+                        >
+                            {companies.map(c => (
+                                <option key={c.id} value={c.id}>{c.name}</option>
+                            ))}
+                        </select>
+                    )}
 
-                {companies.length > 0 && (
                     <select
                         className="company-select"
-                        value={selectedCompanyId}
-                        onChange={(e) => setSelectedCompanyId(e.target.value)}
+                        value={i18n.language}
+                        onChange={(e) => i18n.changeLanguage(e.target.value)}
                     >
-                        {companies.map(c => (
-                            <option key={c.id} value={c.id}>{c.name}</option>
-                        ))}
+                        <option value="ru">RU</option>
+                        <option value="en">EN</option>
+                        <option value="et">ET</option>
                     </select>
-                )}
+                </div>
             </header>
 
             <div className="stats-grid">
                 <div className="stat-card">
-                    <span className="stat-title">Всего инвойсов</span>
+                    <span className="stat-title">{t('totalInvoices')}</span>
                     <span className="stat-value">{isLoading ? '...' : totalInvoices}</span>
                 </div>
                 <div className="stat-card">
-                    <span className="stat-title">Просрочено</span>
+                    <span className="stat-title">{t('overdue')}</span>
                     <span className={`stat-value ${overdueCount > 0 ? 'overdue' : ''}`}>
                         {isLoading ? '...' : overdueCount}
                     </span>
                 </div>
                 <div className="stat-card">
-                    <span className="stat-title">Общая Сумма</span>
+                    <span className="stat-title">{t('totalAmount')}</span>
                     <span className="stat-value">
                         {isLoading ? '...' : new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(totalAmount)}
                     </span>
@@ -104,7 +117,7 @@ function App() {
             <div className="filters-bar">
                 <input
                     type="text"
-                    placeholder="Поиск по поставщику или ID..."
+                    placeholder={t('searchPlaceholder')}
                     className="search-input"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
@@ -114,22 +127,22 @@ function App() {
                     value={statusFilter}
                     onChange={(e) => setStatusFilter(e.target.value as InvoiceStatus | 'All' | 'Unpaid')}
                 >
-                    <option value="All">Все статусы</option>
-                    <option value="Unpaid">Не оплачен</option>
-                    <option value="Pending">В ожидании</option>
-                    <option value="Paid">Оплачен</option>
-                    <option value="Overdue">Просрочен</option>
+                    <option value="All">{t('filters.all')}</option>
+                    <option value="Unpaid">{t('filters.unpaid')}</option>
+                    <option value="Pending">{t('filters.pending')}</option>
+                    <option value="Paid">{t('filters.paid')}</option>
+                    <option value="Overdue">{t('filters.overdue')}</option>
                 </select>
             </div>
 
             {error ? (
                 <div className="table-container empty-state" style={{ color: 'var(--status-overdue-text)' }}>
-                    <h3>Ошибка загрузки</h3>
+                    <h3>{t('errors.loadingTitle')}</h3>
                     <p>{error}</p>
                 </div>
             ) : isLoading ? (
                 <div className="table-container empty-state">
-                    <div className="loader">Загрузка данных...</div>
+                    <div className="loader">{t('loadingData')}</div>
                 </div>
             ) : (
                 <InvoiceTable

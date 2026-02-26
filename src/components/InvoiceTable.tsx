@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Invoice, InvoiceStatus } from '../data/mockInvoices';
 import './InvoiceTable.css';
 
@@ -12,6 +13,7 @@ type SortField = keyof Invoice;
 type SortDirection = 'asc' | 'desc';
 
 export function InvoiceTable({ invoices, searchTerm, statusFilter }: InvoiceTableProps) {
+    const { t, i18n } = useTranslation();
     const [sortField, setSortField] = useState<SortField>('dueDate');
     const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
 
@@ -55,11 +57,13 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter }: InvoiceTabl
 
     const formatDate = (dateString: string) => {
         const options: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'short', day: 'numeric' };
-        return new Date(dateString).toLocaleDateString('ru-RU', options);
+        const langCode = i18n.language === 'en' ? 'en-US' : i18n.language === 'et' ? 'et-EE' : 'ru-RU';
+        return new Date(dateString).toLocaleDateString(langCode, options);
     };
 
     const formatCurrency = (amount: number, currency: string) => {
-        return new Intl.NumberFormat('ru-RU', { style: 'currency', currency }).format(amount);
+        const langCode = i18n.language === 'en' ? 'en-US' : i18n.language === 'et' ? 'et-EE' : 'ru-RU';
+        return new Intl.NumberFormat(langCode, { style: 'currency', currency }).format(amount);
     };
 
     const getStatusClass = (status: InvoiceStatus) => {
@@ -83,8 +87,8 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter }: InvoiceTabl
     if (filteredAndSortedInvoices.length === 0) {
         return (
             <div className="table-container empty-state">
-                <h3>Инвойсы не найдены</h3>
-                <p>Попробуйте изменить параметры фильтрации.</p>
+                <h3>{t('table.emptyTitle')}</h3>
+                <p>{t('table.emptyDesc')}</p>
             </div>
         );
     }
@@ -95,22 +99,22 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter }: InvoiceTabl
                 <thead>
                     <tr>
                         <th onClick={() => handleSort('id')}>
-                            <div className="th-content">ID <span>{renderSortIcon('id')}</span></div>
+                            <div className="th-content">{t('table.id')} <span>{renderSortIcon('id')}</span></div>
                         </th>
                         <th onClick={() => handleSort('vendor')}>
-                            <div className="th-content">Поставщик <span>{renderSortIcon('vendor')}</span></div>
+                            <div className="th-content">{t('table.vendor')} <span>{renderSortIcon('vendor')}</span></div>
                         </th>
                         <th onClick={() => handleSort('dateCreated')}>
-                            <div className="th-content">Создан <span>{renderSortIcon('dateCreated')}</span></div>
+                            <div className="th-content">{t('table.created')} <span>{renderSortIcon('dateCreated')}</span></div>
                         </th>
                         <th onClick={() => handleSort('dueDate')}>
-                            <div className="th-content">Срок оплаты <span>{renderSortIcon('dueDate')}</span></div>
+                            <div className="th-content">{t('table.dueDate')} <span>{renderSortIcon('dueDate')}</span></div>
                         </th>
                         <th onClick={() => handleSort('amount')}>
-                            <div className="th-content">Сумма <span>{renderSortIcon('amount')}</span></div>
+                            <div className="th-content">{t('table.amount')} <span>{renderSortIcon('amount')}</span></div>
                         </th>
                         <th onClick={() => handleSort('status')}>
-                            <div className="th-content">Статус <span>{renderSortIcon('status')}</span></div>
+                            <div className="th-content">{t('table.status')} <span>{renderSortIcon('status')}</span></div>
                         </th>
                     </tr>
                 </thead>
@@ -128,7 +132,7 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter }: InvoiceTabl
                             <td className="amount">{formatCurrency(invoice.amount, invoice.currency)}</td>
                             <td>
                                 <span className={`status-badge ${getStatusClass(invoice.status)}`}>
-                                    {invoice.status === 'Paid' ? 'Оплачен' : invoice.status === 'Pending' ? 'В ожидании' : 'Просрочен'}
+                                    {invoice.status === 'Paid' ? t('filters.paid') : invoice.status === 'Pending' ? t('filters.pending') : t('filters.overdue')}
                                 </span>
                             </td>
                         </tr>
