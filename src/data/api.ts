@@ -11,8 +11,8 @@ export interface RawInvoiceRow {
     Status: string;
 }
 
-// По умолчанию берем из .env, или используем заглушку
-const GOOGLE_SHEETS_CSV_URL = import.meta.env.VITE_GOOGLE_SHEETS_CSV_URL || '';
+// Убрана жесткая привязка к .env
+// Конфигурация теперь управляется через src/config.ts
 
 export const parseStatus = (rawStatus: string): InvoiceStatus => {
     const normalized = rawStatus.toLowerCase().trim();
@@ -29,14 +29,14 @@ export const parseAmount = (rawAmount: string): number => {
     return isNaN(amount) ? 0 : amount;
 };
 
-export const fetchInvoices = async (): Promise<Invoice[]> => {
-    if (!GOOGLE_SHEETS_CSV_URL) {
-        console.warn("VITE_GOOGLE_SHEETS_CSV_URL is not set. Falling back to empty data.");
+export const fetchInvoices = async (url: string): Promise<Invoice[]> => {
+    if (!url) {
+        console.warn("No CSV URL provided. Falling back to empty data.");
         return [];
     }
 
     return new Promise((resolve, reject) => {
-        Papa.parse<RawInvoiceRow>(GOOGLE_SHEETS_CSV_URL, {
+        Papa.parse<RawInvoiceRow>(url, {
             download: true,
             header: true,
             skipEmptyLines: true,

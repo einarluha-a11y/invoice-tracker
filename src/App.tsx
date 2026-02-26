@@ -2,9 +2,13 @@ import { useState, useEffect } from 'react';
 import { InvoiceTable } from './components/InvoiceTable';
 import { InvoiceStatus, Invoice, mockInvoices } from './data/mockInvoices';
 import { fetchInvoices } from './data/api';
+import { getCompaniesConfig, Company } from './config';
 import './App.css';
 
 function App() {
+    const companies = getCompaniesConfig();
+
+    const [selectedCompanyId, setSelectedCompanyId] = useState<string>(companies[0]?.id || '');
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState<InvoiceStatus | 'All'>('All');
 
@@ -14,22 +18,23 @@ function App() {
 
     useEffect(() => {
         const loadData = async () => {
+            const company = companies.find(c => c.id === selectedCompanyId);
+
             try {
                 setIsLoading(true);
                 setError(null);
 
-                // If there's no URL configured in .env, we fallback to our beautiful mock data
-                // just so the app doesn't look broken when first deployed.
-                if (!import.meta.env.VITE_GOOGLE_SHEETS_CSV_URL) {
-                    console.log("No Google Sheets URL found. Using mock data.");
+                // If url is empty, default to mock data
+                if (!company || !company.csvUrl) {
+                    console.log(`No Google Sheets URL found for company ${company ? company.name : 'Unknown'}. Using mock data.`);
                     setInvoices(mockInvoices);
                 } else {
-                    const data = await fetchInvoices();
+                    const data = await fetchInvoices(company.csvUrl);
                     setInvoices(data);
                 }
             } catch (err) {
                 console.error("Failed to fetch invoices:", err);
-                setError("Не удалось загрузить данные. Проверьте подключение к Google Sheets.");
+                setError("Не удалось загрузить данные. Проверьте ссылку компании.");
                 setInvoices(mockInvoices); // Fallback on error
             } finally {
                 setIsLoading(false);
@@ -37,7 +42,7 @@ function App() {
         };
 
         loadData();
-    }, []);
+    }, [selectedCompanyId]);
 
     // Stats computed from loaded data
     const totalInvoices = invoices.length;
@@ -57,6 +62,18 @@ function App() {
                     </svg>
                     Kontrol <span className="header-accent">Invoice</span>
                 </h1>
+
+                {companies.length > 0 && (
+                    <select
+                        className="company-select"
+                        value={selectedCompanyId}
+                        onChange={(e) => setSelectedCompanyId(e.target.value)}
+                    >
+                        {companies.map(c => (
+                            <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                    </select>
+                )}
             </header>
 
             <div className="stats-grid">
