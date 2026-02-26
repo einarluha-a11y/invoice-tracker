@@ -10,7 +10,7 @@ function App() {
 
     const [selectedCompanyId, setSelectedCompanyId] = useState<string>(companies[0]?.id || '');
     const [searchTerm, setSearchTerm] = useState('');
-    const [statusFilter, setStatusFilter] = useState<InvoiceStatus | 'All'>('All');
+    const [statusFilter, setStatusFilter] = useState<InvoiceStatus | 'All' | 'Unpaid'>('All');
 
     const [invoices, setInvoices] = useState<Invoice[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -45,7 +45,11 @@ function App() {
     }, [selectedCompanyId]);
 
     // Stats computed from loaded data based on selected status filter
-    const statsInvoices = statusFilter === 'All' ? invoices : invoices.filter(i => i.status === statusFilter);
+    const statsInvoices = statusFilter === 'All'
+        ? invoices
+        : statusFilter === 'Unpaid'
+            ? invoices.filter(i => i.status === 'Pending' || i.status === 'Overdue')
+            : invoices.filter(i => i.status === statusFilter);
 
     const totalInvoices = statsInvoices.length;
     const overdueCount = statsInvoices.filter(i => i.status === 'Overdue').length;
@@ -108,9 +112,10 @@ function App() {
                 <select
                     className="filter-select"
                     value={statusFilter}
-                    onChange={(e) => setStatusFilter(e.target.value as InvoiceStatus | 'All')}
+                    onChange={(e) => setStatusFilter(e.target.value as InvoiceStatus | 'All' | 'Unpaid')}
                 >
                     <option value="All">Все статусы</option>
+                    <option value="Unpaid">Не оплачен</option>
                     <option value="Pending">В ожидании</option>
                     <option value="Paid">Оплачен</option>
                     <option value="Overdue">Просрочен</option>

@@ -5,7 +5,7 @@ import './InvoiceTable.css';
 interface InvoiceTableProps {
     invoices: Invoice[];
     searchTerm: string;
-    statusFilter: InvoiceStatus | 'All';
+    statusFilter: InvoiceStatus | 'All' | 'Unpaid';
 }
 
 type SortField = keyof Invoice;
@@ -29,7 +29,16 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter }: InvoiceTabl
             .filter((invoice) => {
                 const matchesSearch = invoice.vendor.toLowerCase().includes(searchTerm.toLowerCase()) ||
                     invoice.id.toLowerCase().includes(searchTerm.toLowerCase());
-                const matchesStatus = statusFilter === 'All' || invoice.status === statusFilter;
+
+                let matchesStatus = false;
+                if (statusFilter === 'All') {
+                    matchesStatus = true;
+                } else if (statusFilter === 'Unpaid') {
+                    matchesStatus = invoice.status === 'Pending' || invoice.status === 'Overdue';
+                } else {
+                    matchesStatus = invoice.status === statusFilter;
+                }
+
                 return matchesSearch && matchesStatus;
             })
             .sort((a, b) => {
