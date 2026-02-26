@@ -44,10 +44,12 @@ function App() {
         loadData();
     }, [selectedCompanyId]);
 
-    // Stats computed from loaded data
-    const totalInvoices = invoices.length;
-    const overdueCount = invoices.filter(i => i.status === 'Overdue').length;
-    const totalAmount = invoices.reduce((sum, inv) => sum + inv.amount, 0);
+    // Stats computed from loaded data based on selected status filter
+    const statsInvoices = statusFilter === 'All' ? invoices : invoices.filter(i => i.status === statusFilter);
+
+    const totalInvoices = statsInvoices.length;
+    const overdueCount = statsInvoices.filter(i => i.status === 'Overdue').length;
+    const totalAmount = statsInvoices.reduce((sum, inv) => sum + inv.amount, 0);
 
     return (
         <div className="dashboard-container">
