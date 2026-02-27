@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '../firebase';
+import { useAuth } from '../context/AuthContext';
 
 export interface Company {
     id: string; // Firestore document ID
@@ -10,6 +11,7 @@ export interface Company {
 }
 
 export function useCompanies() {
+    const { user } = useAuth();
     const [companies, setCompanies] = useState<Company[]>([]);
     const [companiesLoading, setCompaniesLoading] = useState(true);
     const [companiesError, setCompaniesError] = useState<string | null>(null);
@@ -18,6 +20,14 @@ export function useCompanies() {
         if (!db) {
             setCompaniesLoading(false);
             setCompaniesError("Firestore is not initialized.");
+            return;
+        }
+
+        if (!user) {
+            // Do not attempt to read from Firestore until the user is fully authenticated.
+            // If we attach onSnapshot while unauthenticated, Firestore rules will permanently
+            // cancel the listener with a permission-denied error.
+            setCompaniesLoading(true);
             return;
         }
 
@@ -39,9 +49,9 @@ export function useCompanies() {
             setCompaniesLoading(false);
         });
 
-        // Cleanup listener on unmount
+        // Cleanup listener on unmount or user change
         return () => unsubscribe();
-    }, []);
+    }, [user]);
 
     const addCompany = async (company: Omit<Company, 'id'>) => {
         if (!db) throw new Error("Database not connected");
