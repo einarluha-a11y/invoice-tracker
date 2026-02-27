@@ -55,7 +55,7 @@ function App() {
             } catch (err) {
                 console.error("Failed to fetch invoices:", err);
                 setError(t('errors.loadingDesc'));
-                setInvoices(mockInvoices); // Fallback on error
+                setInvoices([]); // Set to empty on error, do NOT use mock data here
             } finally {
                 setIsLoading(false);
             }
