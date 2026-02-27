@@ -1,5 +1,6 @@
-import { initializeApp } from "firebase/app";
-import { getAuth, GoogleAuthProvider, setPersistence, browserLocalPersistence } from "firebase/auth";
+import { FirebaseApp, initializeApp } from "firebase/app";
+import { Auth, getAuth, GoogleAuthProvider, setPersistence, browserLocalPersistence } from "firebase/auth";
+import { Firestore, getFirestore } from "firebase/firestore";
 
 // Your web app's Firebase configuration
 // These should be populated with process.env or import.meta.env
@@ -16,14 +17,16 @@ const firebaseConfig = {
 const apiKey = import.meta.env.VITE_FIREBASE_API_KEY;
 const isFirebaseConfigured = Boolean(apiKey && apiKey.length > 5 && apiKey !== 'undefined');
 
-let app;
-let auth;
-let googleProvider;
+let app: FirebaseApp | undefined;
+let auth: Auth | undefined;
+let googleProvider: GoogleAuthProvider | undefined;
+let db: Firestore | undefined;
 
 if (isFirebaseConfigured) {
     try {
         app = initializeApp(firebaseConfig);
         auth = getAuth(app);
+        db = getFirestore(app);
 
         // Set persistence to Local, so the user stays logged in across reloads
         setPersistence(auth, browserLocalPersistence)
@@ -35,4 +38,4 @@ if (isFirebaseConfigured) {
     }
 }
 
-export { auth, googleProvider, isFirebaseConfigured };
+export { auth, googleProvider, db, isFirebaseConfigured };

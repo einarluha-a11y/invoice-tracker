@@ -5,17 +5,26 @@ import { Login } from './components/Login';
 import { useAuth } from './context/AuthContext';
 import { InvoiceStatus, Invoice, mockInvoices } from './data/mockInvoices';
 import { fetchInvoices } from './data/api';
-import { getCompaniesConfig, Company } from './config';
+import { Settings } from './components/Settings';
+import { useCompanies, Company } from './hooks/useCompanies';
 import './App.css';
 
 function App() {
     const { t, i18n } = useTranslation();
     const { user, loading: authLoading, logout, isFirebaseConfigured } = useAuth();
-    const companies = getCompaniesConfig();
+    const { companies, companiesLoading, companiesError } = useCompanies();
 
-    const [selectedCompanyId, setSelectedCompanyId] = useState<string>(companies[0]?.id || '');
+    const [selectedCompanyId, setSelectedCompanyId] = useState<string>('');
+    const [view, setView] = useState<'dashboard' | 'settings'>('dashboard');
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState<InvoiceStatus | 'All' | 'Unpaid'>('All');
+
+    // Automatically select the first company when data loads
+    useEffect(() => {
+        if (!selectedCompanyId && companies.length > 0) {
+            setSelectedCompanyId(companies[0].id);
+        }
+    }, [companies, selectedCompanyId]);
 
     const [invoices, setInvoices] = useState<Invoice[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -23,6 +32,12 @@ function App() {
 
     useEffect(() => {
         const loadData = async () => {
+            if (!selectedCompanyId) {
+                setInvoices([]);
+                setIsLoading(false);
+                return;
+            }
+
             const company = companies.find(c => c.id === selectedCompanyId);
 
             try {
@@ -74,6 +89,11 @@ function App() {
         return <Login />;
     }
 
+    // View Router
+    if (view === 'settings') {
+        return <Settings onBack={() => setView('dashboard')} />;
+    }
+
     return (
         <div className="dashboard-container">
             <header className="header">
@@ -111,20 +131,36 @@ function App() {
                     </select>
 
                     {user && (
-                        <button
-                            onClick={logout}
-                            style={{
-                                background: 'transparent',
-                                border: '1px solid var(--border-color)',
-                                color: 'var(--text-secondary)',
-                                padding: '0.4rem 0.8rem',
-                                borderRadius: 'var(--radius-md)',
-                                cursor: 'pointer',
-                                fontSize: '0.9rem'
-                            }}
-                        >
-                            Выйти
-                        </button>
+                        <>
+                            <button
+                                onClick={() => setView('settings')}
+                                style={{
+                                    background: 'transparent',
+                                    border: '1px solid var(--border-color)',
+                                    color: 'var(--text-secondary)',
+                                    padding: '0.4rem 0.8rem',
+                                    borderRadius: 'var(--radius-md)',
+                                    cursor: 'pointer',
+                                    fontSize: '0.9rem'
+                                }}
+                            >
+                                Настройки
+                            </button>
+                            <button
+                                onClick={logout}
+                                style={{
+                                    background: 'transparent',
+                                    border: '1px solid var(--border-color)',
+                                    color: 'var(--text-secondary)',
+                                    padding: '0.4rem 0.8rem',
+                                    borderRadius: 'var(--radius-md)',
+                                    cursor: 'pointer',
+                                    fontSize: '0.9rem'
+                                }}
+                            >
+                                Выйти
+                            </button>
+                        </>
                     )}
                 </div>
             </header>
