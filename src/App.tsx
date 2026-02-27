@@ -108,17 +108,22 @@ function App() {
                     Kontrol <span className="header-accent">Invoice</span>
                 </h1>
                 <div className="header-controls" style={{ display: 'flex', gap: '1rem' }}>
-                    {companies.length > 0 && (
-                        <select
-                            className="company-select"
-                            value={selectedCompanyId}
-                            onChange={(e) => setSelectedCompanyId(e.target.value)}
-                        >
-                            {companies.map(c => (
+                    <select
+                        className="company-select"
+                        value={selectedCompanyId}
+                        onChange={(e) => setSelectedCompanyId(e.target.value)}
+                        disabled={companiesLoading || companies.length === 0}
+                    >
+                        {companiesLoading ? (
+                            <option value="">Загрузка...</option>
+                        ) : companies.length === 0 ? (
+                            <option value="">Нет Компаний ⚙️</option>
+                        ) : (
+                            companies.map(c => (
                                 <option key={c.id} value={c.id}>{c.name}</option>
-                            ))}
-                        </select>
-                    )}
+                            ))
+                        )}
+                    </select>
 
                     <select
                         className="company-select"
