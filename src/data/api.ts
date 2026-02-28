@@ -93,7 +93,7 @@ export const fetchInvoices = async (url: string): Promise<Invoice[]> => {
                             id: row.id || `UNK-${Math.random().toString(36).slice(2, 6)}`,
                             vendor: row.vendor || 'Unknown Vendor',
                             amount: parseAmount(row.amount),
-                            currency: row.currency || 'USD',
+                            currency: row.currency || 'EUR',
                             dateCreated: parseDate(row.datecreated),
                             dueDate: parsedDueDate,
                             status: parseStatus(row.status || '', parsedDueDate),

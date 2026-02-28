@@ -210,7 +210,7 @@ function App() {
                 <div className="stat-card">
                     <span className="stat-title">{t('totalAmount')}</span>
                     <span className="stat-value">
-                        {isLoading ? '...' : new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(totalAmount)}
+                        {isLoading ? '...' : new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(totalAmount)}
                     </span>
                 </div>
             </div>
