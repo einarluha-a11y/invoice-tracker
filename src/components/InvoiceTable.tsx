@@ -7,12 +7,14 @@ interface InvoiceTableProps {
     invoices: Invoice[];
     searchTerm: string;
     statusFilter: InvoiceStatus | 'All' | 'Unpaid';
+    startDate?: string;
+    endDate?: string;
 }
 
 type SortField = keyof Invoice;
 type SortDirection = 'asc' | 'desc';
 
-export function InvoiceTable({ invoices, searchTerm, statusFilter }: InvoiceTableProps) {
+export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, endDate }: InvoiceTableProps) {
     const { t, i18n } = useTranslation();
     const [sortField, setSortField] = useState<SortField>('dueDate');
     const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
@@ -41,7 +43,15 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter }: InvoiceTabl
                     matchesStatus = invoice.status === statusFilter;
                 }
 
-                return matchesSearch && matchesStatus;
+                let matchesDate = true;
+                if (startDate) {
+                    matchesDate = invoice.dateCreated >= startDate;
+                }
+                if (endDate) {
+                    matchesDate = matchesDate && invoice.dateCreated <= endDate;
+                }
+
+                return matchesSearch && matchesStatus && matchesDate;
             })
             .sort((a, b) => {
                 const aValue = a[sortField];
@@ -53,7 +63,7 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter }: InvoiceTabl
 
                 return sortDirection === 'asc' ? comparison : -comparison;
             });
-    }, [invoices, searchTerm, statusFilter, sortField, sortDirection]);
+    }, [invoices, searchTerm, statusFilter, startDate, endDate, sortField, sortDirection]);
 
     const formatDate = (dateString: string) => {
         const options: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'short', day: 'numeric' };

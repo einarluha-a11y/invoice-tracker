@@ -16,6 +16,8 @@ const resources = {
                 pending: "В ожидании",
                 paid: "Оплачен",
                 overdue: "Просрочен",
+                dateFrom: "От",
+                dateTo: "До",
             },
 
             table: {
@@ -51,6 +53,8 @@ const resources = {
                 pending: "Pending",
                 paid: "Paid",
                 overdue: "Overdue",
+                dateFrom: "From",
+                dateTo: "To",
             },
 
             table: {
@@ -86,6 +90,8 @@ const resources = {
                 pending: "Ootel",
                 paid: "Makstud",
                 overdue: "Maksetähtaja ületanud",
+                dateFrom: "Alates",
+                dateTo: "Kuni",
             },
 
             table: {

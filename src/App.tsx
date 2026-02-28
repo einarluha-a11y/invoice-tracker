@@ -18,6 +18,8 @@ function App() {
     const [view, setView] = useState<'dashboard' | 'settings'>('dashboard');
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState<InvoiceStatus | 'All' | 'Unpaid'>('All');
+    const [startDate, setStartDate] = useState('');
+    const [endDate, setEndDate] = useState('');
 
     // Automatically select the first company when data loads
     useEffect(() => {
@@ -74,11 +76,26 @@ function App() {
     }, [selectedCompanyId, companies, t]);
 
     // Stats computed from loaded data based on selected status filter
-    const statsInvoices = statusFilter === 'All'
-        ? invoices
-        : statusFilter === 'Unpaid'
-            ? invoices.filter(i => i.status === 'Pending' || i.status === 'Overdue')
-            : invoices.filter(i => i.status === statusFilter);
+    const statsInvoices = invoices.filter(invoice => {
+        // Status filter
+        let matchesStatus = true;
+        if (statusFilter === 'Unpaid') {
+            matchesStatus = invoice.status === 'Pending' || invoice.status === 'Overdue';
+        } else if (statusFilter !== 'All') {
+            matchesStatus = invoice.status === statusFilter;
+        }
+
+        // Date filter
+        let matchesDate = true;
+        if (startDate) {
+            matchesDate = invoice.dateCreated >= startDate;
+        }
+        if (endDate) {
+            matchesDate = matchesDate && invoice.dateCreated <= endDate;
+        }
+
+        return matchesStatus && matchesDate;
+    });
 
     const totalInvoices = statsInvoices.length;
     const overdueCount = statsInvoices.filter(i => i.status === 'Overdue').length;
@@ -206,6 +223,24 @@ function App() {
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                 />
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>{t('filters.dateFrom')}</span>
+                    <input
+                        type="date"
+                        className="filter-select"
+                        style={{ padding: '0.6rem', color: 'var(--text-primary)' }}
+                        value={startDate}
+                        onChange={(e) => setStartDate(e.target.value)}
+                    />
+                    <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>{t('filters.dateTo')}</span>
+                    <input
+                        type="date"
+                        className="filter-select"
+                        style={{ padding: '0.6rem', color: 'var(--text-primary)' }}
+                        value={endDate}
+                        onChange={(e) => setEndDate(e.target.value)}
+                    />
+                </div>
                 <select
                     className="filter-select"
                     value={statusFilter}
@@ -233,6 +268,8 @@ function App() {
                     invoices={invoices}
                     searchTerm={searchTerm}
                     statusFilter={statusFilter}
+                    startDate={startDate}
+                    endDate={endDate}
                 />
             )}
         </div>
