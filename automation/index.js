@@ -137,18 +137,39 @@ async function checkEmailForInvoices() {
             // Find attachments
             if (parsedEmail.attachments && parsedEmail.attachments.length > 0) {
                 for (const attachment of parsedEmail.attachments) {
-                    if (attachment.contentType.includes('csv') || attachment.contentType.includes('excel') || attachment.filename.endsWith('.csv')) {
+                    const filename = attachment.filename.toLowerCase();
+                    const mime = attachment.contentType.toLowerCase();
+
+                    if (
+                        mime.includes('csv') || mime.includes('excel') ||
+                        filename.endsWith('.csv') || filename.endsWith('.xlsx') || filename.endsWith('.xls') ||
+                        mime.includes('pdf') || filename.endsWith('.pdf')
+                    ) {
                         console.log(`[Email] Found relevant attachment: ${attachment.filename}. Reading text...`);
 
-                        const rawContent = attachment.content.toString('utf-8');
+                        let rawContent = '';
 
-                        // Parse with OpenAI
-                        const parsedData = await parseInvoiceDataWithAI(rawContent);
+                        try {
+                            if (mime.includes('pdf') || filename.endsWith('.pdf')) {
+                                console.log('[PDF] Parsing PDF data...');
+                                const pdfParse = require('pdf-parse');
+                                const pdfData = await pdfParse(attachment.content);
+                                rawContent = pdfData.text;
+                            } else {
+                                // Default for CSV and readable texts
+                                rawContent = attachment.content.toString('utf-8');
+                            }
 
-                        // Upload to Google Sheets
-                        if (parsedData) {
-                            await writeToGoogleSheet(parsedData);
-                            console.log(`[Email] Email UID ${id} successfully processed!`);
+                            // Parse with OpenAI
+                            const parsedData = await parseInvoiceDataWithAI(rawContent);
+
+                            // Upload to Google Sheets
+                            if (parsedData) {
+                                await writeToGoogleSheet(parsedData);
+                                console.log(`[Email] Email UID ${id} successfully processed!`);
+                            }
+                        } catch (err) {
+                            console.error(`[Error] Failed to process attachment ${filename}:`, err);
                         }
                     }
                 }

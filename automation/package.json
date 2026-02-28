@@ -16,6 +16,8 @@
     "googleapis": "^171.4.0",
     "imap-simple": "^5.1.0",
     "mailparser": "^3.9.3",
-    "openai": "^6.25.0"
+    "mammoth": "^1.11.0",
+    "openai": "^6.25.0",
+    "pdf-parse": "^2.4.5"
   }
 }
