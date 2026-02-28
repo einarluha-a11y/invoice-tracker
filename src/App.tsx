@@ -62,7 +62,16 @@ function App() {
         };
 
         loadData();
-    }, [selectedCompanyId]);
+
+        // Set up the interval for auto-refresh (120000 ms = 2 minutes)
+        const refreshInterval = setInterval(() => {
+            console.log(`Auto-refreshing invoices for company ${selectedCompanyId}...`);
+            loadData();
+        }, 120000);
+
+        // Cleanup interval on unmount or when selectedCompanyId changes
+        return () => clearInterval(refreshInterval);
+    }, [selectedCompanyId, companies, t]);
 
     // Stats computed from loaded data based on selected status filter
     const statsInvoices = statusFilter === 'All'
