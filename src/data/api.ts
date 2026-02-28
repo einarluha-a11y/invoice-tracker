@@ -14,10 +14,25 @@ export interface RawInvoiceRow {
 // Убрана жесткая привязка к .env
 // Конфигурация теперь управляется через src/config.ts
 
-export const parseStatus = (rawStatus: string): InvoiceStatus => {
+export const parseStatus = (rawStatus: string, parsedDueDate?: string): InvoiceStatus => {
     const normalized = rawStatus.toLowerCase().trim();
     if (normalized === 'paid' || normalized === 'оплачен') return 'Paid';
     if (normalized === 'overdue' || normalized === 'просрочен') return 'Overdue';
+
+    // Auto-infer status based on due date if not explicitly paid or overdue
+    if (parsedDueDate) {
+        const due = new Date(parsedDueDate);
+        const today = new Date();
+
+        // Reset time components to accurately compare only the dates
+        due.setHours(0, 0, 0, 0);
+        today.setHours(0, 0, 0, 0);
+
+        if (today.getTime() > due.getTime()) {
+            return 'Overdue';
+        }
+    }
+
     return 'Pending';
 };
 
@@ -68,15 +83,18 @@ export const fetchInvoices = async (url: string): Promise<Invoice[]> => {
             transformHeader: (header) => header.toLowerCase().trim(),
             complete: (results) => {
                 try {
-                    const formattedData: Invoice[] = results.data.map((row) => ({
-                        id: row.id || `UNK-${Math.random().toString(36).slice(2, 6)}`,
-                        vendor: row.vendor || 'Unknown Vendor',
-                        amount: parseAmount(row.amount),
-                        currency: row.currency || 'USD',
-                        dateCreated: parseDate(row.datecreated),
-                        dueDate: parseDate(row.duedate),
-                        status: parseStatus(row.status || ''),
-                    }));
+                    const formattedData: Invoice[] = results.data.map((row) => {
+                        const parsedDueDate = parseDate(row.duedate);
+                        return {
+                            id: row.id || `UNK-${Math.random().toString(36).slice(2, 6)}`,
+                            vendor: row.vendor || 'Unknown Vendor',
+                            amount: parseAmount(row.amount),
+                            currency: row.currency || 'USD',
+                            dateCreated: parseDate(row.datecreated),
+                            dueDate: parsedDueDate,
+                            status: parseStatus(row.status || '', parsedDueDate),
+                        };
+                    });
                     resolve(formattedData);
                 } catch (err) {
                     console.error("Error formatting CSV data:", err);
