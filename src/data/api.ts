@@ -49,14 +49,18 @@ export const parseDate = (rawDate: string): string => {
 
     const cleanDate = rawDate.trim();
 
-    // Check for DD-MM-YYYY, DD/MM/YYYY, or DD.MM.YYYY formats
-    const euroPattern = /^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/;
+    // Check for DD-MM-YYYY, DD/MM/YYYY, DD.MM.YYYY, DD-MM-YY, DD.MM.YY
+    const euroPattern = /^(\d{1,2})[./-](\d{1,2})[./-](\d{2}|\d{4})$/;
     const match = cleanDate.match(euroPattern);
 
     if (match) {
-        const [, day, month, year] = match;
+        const [, day, month, yearMatch] = match;
         const paddedMonth = month.padStart(2, '0');
         const paddedDay = day.padStart(2, '0');
+
+        // If year is 2 digits, assume 2000s
+        const year = yearMatch.length === 2 ? `20${yearMatch}` : yearMatch;
+
         return `${year}-${paddedMonth}-${paddedDay}`; // ISO format YYYY-MM-DD
     }
 
