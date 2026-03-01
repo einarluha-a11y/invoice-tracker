@@ -109,7 +109,8 @@ async function checkEmailForInvoices() {
             host: process.env.IMAP_HOST,
             port: process.env.IMAP_PORT,
             tls: process.env.IMAP_TLS === 'true',
-            authTimeout: 10000,
+            authTimeout: 30000, // Increased timeout 
+            connTimeout: 30000, // Added connection timeout
             tlsOptions: { rejectUnauthorized: false } // Helps bypass strict SSL cert issues
         }
     };
