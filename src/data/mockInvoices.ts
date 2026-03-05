@@ -3,6 +3,7 @@ export type InvoiceStatus = 'Pending' | 'Paid' | 'Overdue';
 export interface Invoice {
     id: string;
     vendor: string;
+    description?: string;
     amount: number;
     currency: string;
     dateCreated: string;

@@ -1,12 +1,16 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { InvoiceTable } from './components/InvoiceTable';
+import { InvoiceTable, SortField, SortDirection } from './components/InvoiceTable';
 import { Login } from './components/Login';
 import { useAuth } from './context/AuthContext';
 import { InvoiceStatus, Invoice, mockInvoices } from './data/mockInvoices';
-import { fetchInvoices } from './data/api';
+import { subscribeToInvoices, deleteInvoice, updateInvoice } from './data/api';
+import { doc, updateDoc } from 'firebase/firestore';
+import { db } from './firebase';
 import { Settings } from './components/Settings';
 import { useCompanies, Company } from './hooks/useCompanies';
+import { InvoiceModal } from './components/InvoiceModal';
+import { AiChat } from './components/AiChat';
 import './App.css';
 
 function App() {
@@ -20,6 +24,11 @@ function App() {
     const [statusFilter, setStatusFilter] = useState<InvoiceStatus | 'All' | 'Unpaid'>('All');
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
+    const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
+    const [deletingInvoiceId, setDeletingInvoiceId] = useState<string | null>(null);
+    const [sortField, setSortField] = useState<SortField>('dateCreated');
+    const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+    const [dateFilterType, setDateFilterType] = useState<'created' | 'due'>('due');
 
     // Automatically select the first company when data loads
     useEffect(() => {
@@ -32,48 +41,73 @@ function App() {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
+    const activeCompany = companies.find(c => c.id === selectedCompanyId);
+
+    const handleApplyAiFilters = (filters: { searchTerm?: string, status?: string, dateFrom?: string, dateTo?: string, dateFilterType?: 'created' | 'due' }) => {
+        if (filters.searchTerm !== undefined) setSearchTerm(filters.searchTerm);
+        if (filters.status !== undefined) {
+            const validStatus = ['All', 'Unpaid', 'Pending', 'Paid', 'Overdue'].includes(filters.status) ? filters.status : 'All';
+            setStatusFilter(validStatus as InvoiceStatus | 'All' | 'Unpaid');
+        }
+        if (filters.dateFilterType !== undefined) setDateFilterType(filters.dateFilterType);
+        if (filters.dateFrom !== undefined) setStartDate(filters.dateFrom);
+        if (filters.dateTo !== undefined) setEndDate(filters.dateTo);
+    };
+
     useEffect(() => {
-        const loadData = async () => {
-            if (!selectedCompanyId) {
-                setInvoices([]);
+        if (!selectedCompanyId) {
+            setInvoices([]);
+            setIsLoading(false);
+            return;
+        }
+
+        setIsLoading(true);
+        setError(null);
+
+        const unsubscribe = subscribeToInvoices(
+            selectedCompanyId,
+            (data) => {
+                setInvoices(data);
                 setIsLoading(false);
-                return;
-            }
-
-            const company = companies.find(c => c.id === selectedCompanyId);
-
-            try {
-                setIsLoading(true);
-                setError(null);
-
-                // If url is empty, default to mock data
-                if (!company || !company.csvUrl) {
-                    console.log(`No Google Sheets URL found for company ${company ? company.name : 'Unknown'}. Using mock data.`);
-                    setInvoices(mockInvoices);
-                } else {
-                    const data = await fetchInvoices(company.csvUrl);
-                    setInvoices(data);
-                }
-            } catch (err) {
+            },
+            (err) => {
                 console.error("Failed to fetch invoices:", err);
                 setError(t('errors.loadingDesc'));
-                setInvoices([]); // Set to empty on error, do NOT use mock data here
-            } finally {
+                setInvoices([]);
                 setIsLoading(false);
             }
-        };
+        );
 
-        loadData();
+        return () => unsubscribe();
+    }, [selectedCompanyId, t]);
 
-        // Set up the interval for auto-refresh (120000 ms = 2 minutes)
-        const refreshInterval = setInterval(() => {
-            console.log(`Auto-refreshing invoices for company ${selectedCompanyId}...`);
-            loadData();
-        }, 120000);
+    const handleEdit = (invoice: Invoice) => {
+        setEditingInvoice(invoice);
+    };
 
-        // Cleanup interval on unmount or when selectedCompanyId changes
-        return () => clearInterval(refreshInterval);
-    }, [selectedCompanyId, companies, t]);
+    const handleDeleteClick = (id: string) => {
+        setDeletingInvoiceId(id);
+    };
+
+    const confirmDelete = async () => {
+        if (!deletingInvoiceId) return;
+        try {
+            await deleteInvoice(deletingInvoiceId);
+            setDeletingInvoiceId(null);
+        } catch (err) {
+            console.error("Failed to delete", err);
+            alert("Ошибка при удалении инвойса");
+        }
+    };
+
+    const handleSaveInvoice = async (id: string, data: Partial<Invoice>) => {
+        try {
+            await updateInvoice(id, data);
+        } catch (err) {
+            console.error("Failed to update", err);
+            throw err;
+        }
+    };
 
     // Stats computed from loaded data based on selected status filter
     const statsInvoices = invoices.filter(invoice => {
@@ -87,11 +121,13 @@ function App() {
 
         // Date filter
         let matchesDate = true;
+        const compareDate = dateFilterType === 'due' ? invoice.dueDate : invoice.dateCreated;
+
         if (startDate) {
-            matchesDate = invoice.dateCreated >= startDate;
+            matchesDate = compareDate >= startDate;
         }
         if (endDate) {
-            matchesDate = matchesDate && invoice.dateCreated <= endDate;
+            matchesDate = matchesDate && compareDate <= endDate;
         }
 
         return matchesStatus && matchesDate;
@@ -154,11 +190,14 @@ function App() {
                     <select
                         className="company-select"
                         value={i18n.language}
-                        onChange={(e) => i18n.changeLanguage(e.target.value)}
+                        onChange={(e) => {
+                            i18n.changeLanguage(e.target.value);
+                            document.documentElement.lang = e.target.value;
+                        }}
                     >
-                        <option value="ru">RU</option>
                         <option value="en">EN</option>
                         <option value="et">ET</option>
+                        <option value="ru">RU</option>
                     </select>
 
                     {user && (
@@ -175,7 +214,7 @@ function App() {
                                     fontSize: '0.9rem'
                                 }}
                             >
-                                Настройки
+                                {t('settings')}
                             </button>
                             <button
                                 onClick={logout}
@@ -189,12 +228,16 @@ function App() {
                                     fontSize: '0.9rem'
                                 }}
                             >
-                                Выйти
+                                {t('logout')}
                             </button>
                         </>
                     )}
                 </div>
             </header>
+
+            {selectedCompanyId && (
+                <AiChat key={selectedCompanyId} onApplyFilters={handleApplyAiFilters} />
+            )}
 
             <div className="stats-grid">
                 <div className="stat-card">
@@ -224,6 +267,15 @@ function App() {
                     onChange={(e) => setSearchTerm(e.target.value)}
                 />
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    <select
+                        className="filter-select"
+                        style={{ padding: '0.6rem', color: 'var(--text-primary)', border: 'none', background: 'transparent', outline: 'none', cursor: 'pointer', fontWeight: 500 }}
+                        value={dateFilterType}
+                        onChange={(e) => setDateFilterType(e.target.value as 'created' | 'due')}
+                    >
+                        <option value="due">{t('table.dueDate')}</option>
+                        <option value="created">{t('table.created')}</option>
+                    </select>
                     <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>{t('filters.dateFrom')}</span>
                     <input
                         type="date"
@@ -270,7 +322,40 @@ function App() {
                     statusFilter={statusFilter}
                     startDate={startDate}
                     endDate={endDate}
+                    sortField={sortField}
+                    sortDirection={sortDirection}
+                    onSort={(field) => {
+                        if (field === sortField) {
+                            setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+                        } else {
+                            setSortField(field);
+                            setSortDirection('asc');
+                        }
+                    }}
+                    onEdit={handleEdit}
+                    onDelete={handleDeleteClick}
                 />
+            )}
+
+            {editingInvoice && (
+                <InvoiceModal
+                    invoice={editingInvoice}
+                    onClose={() => setEditingInvoice(null)}
+                    onSave={handleSaveInvoice}
+                />
+            )}
+
+            {deletingInvoiceId && (
+                <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+                    <div className="modal-content" style={{ maxWidth: '400px', width: '90%', background: 'var(--bg-secondary)', padding: '2rem', borderRadius: 'var(--radius-lg)', textAlign: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }}>
+                        <h3 style={{ marginBottom: '1rem', color: 'var(--text-primary)', fontSize: '1.25rem', fontWeight: 600 }}>Удаление инвойса</h3>
+                        <p style={{ marginBottom: '2rem', color: 'var(--text-secondary)', lineHeight: '1.5' }}>Вы уверены, что хотите навсегда удалить этот инвойс? Это действие нельзя отменить.</p>
+                        <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem' }}>
+                            <button onClick={() => setDeletingInvoiceId(null)} className="btn-secondary" style={{ borderRadius: '50px', padding: '0.75rem 1.5rem', fontWeight: 500 }}>Отмена</button>
+                            <button onClick={confirmDelete} className="btn-primary" style={{ background: 'var(--status-overdue-text)', border: '2px solid #000', borderRadius: '50px', color: '#fff', padding: '0.75rem 1.5rem', fontWeight: 600, boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}>Да, удалить</button>
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     );

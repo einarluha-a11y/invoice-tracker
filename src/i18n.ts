@@ -9,6 +9,11 @@ const resources = {
             overdue: "Просрочено",
             totalAmount: "Общая Сумма",
             searchPlaceholder: "Поиск по поставщику или ID...",
+            settings: "Настройки",
+            logout: "Выйти",
+            agentInstructionsTitle: "Инструкции для Агента",
+            agentInstructionsPlaceholder: "Напишите правила для ИИ... (например: Для PRONTO всегда ставь срок оплаты 30 дней)",
+            saveInstructionsBtn: "Сохранить",
 
             filters: {
                 all: "Все статусы",
@@ -20,15 +25,74 @@ const resources = {
                 dateTo: "До",
             },
 
+            settingsPage: {
+                title: "Настройки",
+                back: "← Назад",
+                manageTitle: "Управление Компаниями",
+                manageDesc: "Здесь вы можете настроить список компаний, привязав к ним Email-адрес для получения входящих инвойсов.",
+                loading: "Загрузка компаний...",
+                errorPrefix: "Ошибка",
+                editBtn: "Редактировать",
+                deleteBtn: "Удалить",
+                confirmDelete: "Вы уверены, что хотите удалить эту компанию?",
+                failedDelete: "Failed to delete company.",
+                newCompany: "Новая компания",
+                editCompany: "Редактировать компанию",
+                nameLabel: "Название фирмы *",
+                namePlaceholder: "AS Kontor",
+                emailLabel: "Имейл адрес для приема инвойсов *",
+                imapTitle: "Настройки IMAP (Опционально)",
+                imapDesc: "Если вы хотите, чтобы система автоматически читала входящие инвойсы для этой компании со своего ящика, заполните эти поля.",
+                imapHost: "IMAP Сервер",
+                imapPort: "IMAP Порт",
+                imapUser: "IMAP Email (Логин)",
+                imapPass: "IMAP Пароль (App Password)",
+                saveBtn: "Сохранить",
+                cancelBtn: "Отмена",
+                addBtn: "+ Добавить новую компанию",
+                instructionsBtn: "Инструкции",
+                currentInstructionsTitle: "Текущие инструкции Агента для",
+                noInstructions: "Нет сохраненных инструкций.",
+                deleteRuleTooltip: "Удалить правило",
+                deleteAllBtn: "Удалить все",
+                confirmClearRules: "Точно удалить все инструкции агента для этой компании?",
+                deleteRuleError: "Ошибка при удалении правила"
+            },
+
             table: {
                 id: "ID",
                 vendor: "Поставщик",
+                description: "Описание",
                 created: "Создан",
                 dueDate: "Срок оплаты",
                 amount: "Сумма",
                 status: "Статус",
+                actions: "Действия",
                 emptyTitle: "Инвойсы не найдены",
                 emptyDesc: "Попробуйте изменить параметры фильтрации.",
+            },
+
+            modal: {
+                title: "Редактирование Инвойса",
+                vendor: "Поставщик (Кому платим)",
+                description: "Описание / Назначение",
+                descriptionPlaceholder: "За что выставлен счет...",
+                amount: "Сумма",
+                currency: "Валюта",
+                created: "Дата создания",
+                dueDate: "Срок оплаты",
+                status: "Статус",
+                cancelBtn: "Отмена",
+                saveBtn: "Сохранить изменения",
+                savingBtn: "Сохранение..."
+            },
+
+            chat: {
+                title: "AI Ассистент",
+                welcome: "Привет! Я ваш AI-ассистент. Задайте мне вопрос о ваших счетах (например: \"Покажи просроченные счета от Tele2\" или \"Что нужно оплатить до конца месяца?\").",
+                placeholder: "Какой счет ищем?",
+                typing: "Печатает...",
+                error: "Извините, произошла ошибка при связи с сервером."
             },
 
             errors: {
@@ -46,6 +110,11 @@ const resources = {
             overdue: "Overdue",
             totalAmount: "Total Amount",
             searchPlaceholder: "Search by vendor or ID...",
+            settings: "Settings",
+            logout: "Logout",
+            agentInstructionsTitle: "Agent Instructions",
+            agentInstructionsPlaceholder: "Write rules for AI... (e.g., Always set 30 days due date for PRONTO)",
+            saveInstructionsBtn: "Save",
 
             filters: {
                 all: "All statuses",
@@ -57,15 +126,74 @@ const resources = {
                 dateTo: "To",
             },
 
+            settingsPage: {
+                title: "Settings",
+                back: "← Back",
+                manageTitle: "Manage Companies",
+                manageDesc: "Here you can manage your company list and attach email addresses for automatic incoming invoice processing.",
+                loading: "Loading companies...",
+                errorPrefix: "Error",
+                editBtn: "Edit",
+                deleteBtn: "Delete",
+                confirmDelete: "Are you sure you want to delete this company?",
+                failedDelete: "Failed to delete company.",
+                newCompany: "New Company",
+                editCompany: "Edit Company",
+                nameLabel: "Company Name *",
+                namePlaceholder: "Acme Corp",
+                emailLabel: "Incoming Invoices Email *",
+                imapTitle: "IMAP Settings (Optional)",
+                imapDesc: "If you want the system to automatically read incoming invoices from your mailbox, fill in these fields.",
+                imapHost: "IMAP Host",
+                imapPort: "IMAP Port",
+                imapUser: "IMAP Email (Login)",
+                imapPass: "IMAP App Password",
+                saveBtn: "Save",
+                cancelBtn: "Cancel",
+                addBtn: "+ Add New Company",
+                instructionsBtn: "Instructions",
+                currentInstructionsTitle: "Current Agent Instructions for",
+                noInstructions: "No instructions saved.",
+                deleteRuleTooltip: "Delete rule",
+                deleteAllBtn: "Delete all",
+                confirmClearRules: "Are you sure you want to delete all agent instructions for this company?",
+                deleteRuleError: "Error deleting rule"
+            },
+
             table: {
                 id: "ID",
                 vendor: "Vendor",
+                description: "Description",
                 created: "Created",
                 dueDate: "Due Date",
                 amount: "Amount",
                 status: "Status",
+                actions: "Actions",
                 emptyTitle: "No invoices found",
                 emptyDesc: "Try adjusting your filter settings.",
+            },
+
+            modal: {
+                title: "Edit Invoice",
+                vendor: "Vendor (Payee)",
+                description: "Description / Purpose",
+                descriptionPlaceholder: "What is this invoice for...",
+                amount: "Amount",
+                currency: "Currency",
+                created: "Creation Date",
+                dueDate: "Due Date",
+                status: "Status",
+                cancelBtn: "Cancel",
+                saveBtn: "Save Changes",
+                savingBtn: "Saving..."
+            },
+
+            chat: {
+                title: "AI Assistant",
+                welcome: "Hello! I am your AI assistant. Ask me a question about your invoices (e.g. \"Show overdue Tele2 invoices\" or \"What is due this month?\").",
+                placeholder: "What are we looking for?",
+                typing: "Typing...",
+                error: "Sorry, there was an error communicating with the server."
             },
 
             errors: {
@@ -83,6 +211,11 @@ const resources = {
             overdue: "Maksetähtaja Ületanud",
             totalAmount: "Kogusumma",
             searchPlaceholder: "Otsi tarnija või ID järgi...",
+            settings: "Seaded",
+            logout: "Logi välja",
+            agentInstructionsTitle: "Agendi Juhised",
+            agentInstructionsPlaceholder: "Kirjutage reeglid tehisintellektile... (nt: Määra PRONTO jaoks alati 30-päevane maksetähtaeg)",
+            saveInstructionsBtn: "Salvesta",
 
             filters: {
                 all: "Kõik staatused",
@@ -94,15 +227,74 @@ const resources = {
                 dateTo: "Kuni",
             },
 
+            settingsPage: {
+                title: "Seaded",
+                back: "← Tagasi",
+                manageTitle: "Ettevõtete Haldus",
+                manageDesc: "Siin saate hallata ettevõtete nimekirja ja siduda e-posti aadresse sissetulevate arvete automaatseks lugemiseks.",
+                loading: "Ettevõtete laadimine...",
+                errorPrefix: "Viga",
+                editBtn: "Muuda",
+                deleteBtn: "Kustuta",
+                confirmDelete: "Kas olete kindel, et soovite selle ettevõtte kustutada?",
+                failedDelete: "Failed to delete company.",
+                newCompany: "Uus Ettevõte",
+                editCompany: "Muuda Ettevõtet",
+                nameLabel: "Ettevõtte Nimi *",
+                namePlaceholder: "OÜ Näidis",
+                emailLabel: "E-post sissetulevatele arvetele *",
+                imapTitle: "IMAP Seaded (Valikuline)",
+                imapDesc: "Kui soovite, et süsteem loeks arved automaatselt teie postkastist, täitke need väljad.",
+                imapHost: "IMAP Server",
+                imapPort: "IMAP Port",
+                imapUser: "IMAP E-post (Logi sisse)",
+                imapPass: "IMAP Parool (App Password)",
+                saveBtn: "Salvesta",
+                cancelBtn: "Tühista",
+                addBtn: "+ Lisa Uus Ettevõte",
+                instructionsBtn: "Juhised",
+                currentInstructionsTitle: "Praegused Agendi Juhised ettevõttele",
+                noInstructions: "Salvestatud juhiseid pole.",
+                deleteRuleTooltip: "Kustuta reegel",
+                deleteAllBtn: "Kustuta kõik",
+                confirmClearRules: "Kas olete kindel, et soovite kustutada kõik agendi juhised selle ettevõtte jaoks?",
+                deleteRuleError: "Viga reegli kustutamisel"
+            },
+
             table: {
                 id: "ID",
                 vendor: "Tarnija",
+                description: "Kirjeldus",
                 created: "Loodud",
                 dueDate: "Maksetähtaeg",
                 amount: "Summa",
                 status: "Staatus",
+                actions: "Tegevus",
                 emptyTitle: "Arveid ei leitud",
                 emptyDesc: "Proovige muuta filtri seadeid.",
+            },
+
+            modal: {
+                title: "Muuda Arvet",
+                vendor: "Tarnija (Kellele maksame)",
+                description: "Kirjeldus / Eesmärk",
+                descriptionPlaceholder: "Mille eest see arve on...",
+                amount: "Summa",
+                currency: "Valuuta",
+                created: "Loomise Kuupäev",
+                dueDate: "Maksetähtaeg",
+                status: "Staatus",
+                cancelBtn: "Tühista",
+                saveBtn: "Salvesta Muudatused",
+                savingBtn: "Salvestan..."
+            },
+
+            chat: {
+                title: "AI Assistent",
+                welcome: "Tere! Olen teie AI assistent. Küsige minult küsimus oma arvete kohta (nt: \"Näita Tele2 maksmata arveid\" või \"Mida on vaja tasuda kuu lõpuks?\").",
+                placeholder: "Millist arvet otsime?",
+                typing: "Kirjutab...",
+                error: "Vabandust, serveriga ühenduse loomisel ilmnes viga."
             },
 
             errors: {
@@ -119,7 +311,7 @@ i18n
     .use(initReactI18next)
     .init({
         resources,
-        lng: "ru", // default language
+        lng: "en", // default language
         fallbackLng: "en",
         interpolation: {
             escapeValue: false

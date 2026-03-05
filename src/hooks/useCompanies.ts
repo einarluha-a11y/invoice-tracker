@@ -6,8 +6,14 @@ import { useAuth } from '../context/AuthContext';
 export interface Company {
     id: string; // Firestore document ID
     name: string;
-    csvUrl: string;
-    receivingEmail?: string;
+    emailAddress: string;
+    // Optional IMAP settings
+    imapHost?: string;
+    imapUser?: string;
+    imapPassword?: string;
+    imapPort?: number;
+    // Optional AI Rules
+    customAiRules?: string;
 }
 
 export function useCompanies() {

@@ -1,4 +1,5 @@
-import Papa from 'papaparse';
+import { collection, onSnapshot, doc, deleteDoc, updateDoc, query, orderBy, where } from 'firebase/firestore';
+import { db } from '../firebase';
 import { Invoice, InvoiceStatus } from './mockInvoices';
 
 export interface RawInvoiceRow {
@@ -73,42 +74,67 @@ export const parseDate = (rawDate: string): string => {
     return new Date().toISOString();
 };
 
-export const fetchInvoices = async (url: string): Promise<Invoice[]> => {
-    if (!url) {
-        console.warn("No CSV URL provided. Falling back to empty data.");
-        return [];
+export const subscribeToInvoices = (
+    companyId: string,
+    onData: (invoices: Invoice[]) => void,
+    onError: (error: Error) => void
+) => {
+    if (!db) {
+        console.warn("Firestore not initialized.");
+        onData([]);
+        return () => { };
     }
 
-    return new Promise((resolve, reject) => {
-        Papa.parse<RawInvoiceRow>(url, {
-            download: true,
-            header: true,
-            skipEmptyLines: true,
-            transformHeader: (header) => header.toLowerCase().trim(),
-            complete: (results) => {
-                try {
-                    const formattedData: Invoice[] = results.data.map((row) => {
-                        const parsedDueDate = parseDate(row.duedate);
-                        return {
-                            id: row.id || `UNK-${Math.random().toString(36).slice(2, 6)}`,
-                            vendor: row.vendor || 'Unknown Vendor',
-                            amount: parseAmount(row.amount),
-                            currency: row.currency || 'EUR',
-                            dateCreated: parseDate(row.datecreated),
-                            dueDate: parsedDueDate,
-                            status: parseStatus(row.status || '', parsedDueDate),
-                        };
-                    });
-                    resolve(formattedData);
-                } catch (err) {
-                    console.error("Error formatting CSV data:", err);
-                    reject(err);
-                }
-            },
-            error: (error) => {
-                console.error("Error parsing CSV:", error);
-                reject(error);
-            }
+    // Remove orderBy from query to avoid missing composite index errors in Firebase
+    const q = query(collection(db, 'invoices'), where('companyId', '==', companyId));
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+        const fetchedData: Invoice[] = [];
+        snapshot.forEach((docSnap) => {
+            const data = docSnap.data();
+            const parsedDueDate = parseDate(data.dueDate);
+            fetchedData.push({
+                id: docSnap.id,
+                vendor: data.vendorName || data.vendor || 'Unknown Vendor',
+                description: data.description || data.invoiceId || '',
+                amount: parseAmount(data.amount?.toString() || '0'),
+                currency: data.currency || 'EUR',
+                dateCreated: parseDate(data.dateCreated),
+                dueDate: parsedDueDate,
+                status: parseStatus(data.status || '', parsedDueDate),
+            });
         });
+
+        // Sort manually by dateCreated descending to avoid needing a Firestore index
+        fetchedData.sort((a, b) => {
+            return new Date(b.dateCreated).getTime() - new Date(a.dateCreated).getTime();
+        });
+
+        onData(fetchedData);
+    }, (error) => {
+        console.error("Firestore subscription error:", error);
+        onError(error);
     });
+
+    return unsubscribe;
+};
+
+export const deleteInvoice = async (invoiceId: string): Promise<void> => {
+    if (!db) throw new Error("Database not initialized");
+    await deleteDoc(doc(db, 'invoices', invoiceId));
+};
+
+export const updateInvoice = async (invoiceId: string, data: Partial<Invoice>): Promise<void> => {
+    if (!db) throw new Error("Database not initialized");
+
+    // Map frontend Invoice fields back to DB fields
+    const updateData: any = {};
+    if (data.vendor !== undefined) updateData.vendorName = data.vendor;
+    if (data.amount !== undefined) updateData.amount = data.amount;
+    if (data.currency !== undefined) updateData.currency = data.currency;
+    if (data.dateCreated !== undefined) updateData.dateCreated = data.dateCreated;
+    if (data.dueDate !== undefined) updateData.dueDate = data.dueDate;
+    if (data.status !== undefined) updateData.status = data.status;
+
+    await updateDoc(doc(db, 'invoices', invoiceId), updateData);
 };

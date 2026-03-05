@@ -9,30 +9,29 @@ interface InvoiceTableProps {
     statusFilter: InvoiceStatus | 'All' | 'Unpaid';
     startDate?: string;
     endDate?: string;
+    sortField: SortField;
+    sortDirection: SortDirection;
+    onSort: (field: SortField) => void;
+    onEdit: (invoice: Invoice) => void;
+    onDelete: (id: string) => void;
 }
 
-type SortField = keyof Invoice;
-type SortDirection = 'asc' | 'desc';
+export type SortField = keyof Invoice;
+export type SortDirection = 'asc' | 'desc';
 
-export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, endDate }: InvoiceTableProps) {
+export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, endDate, sortField, sortDirection, onSort, onEdit, onDelete }: InvoiceTableProps) {
     const { t, i18n } = useTranslation();
-    const [sortField, setSortField] = useState<SortField>('dueDate');
-    const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
 
     const handleSort = (field: SortField) => {
-        if (field === sortField) {
-            setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
-        } else {
-            setSortField(field);
-            setSortDirection('asc');
-        }
+        onSort(field);
     };
 
     const filteredAndSortedInvoices = useMemo(() => {
         return invoices
             .filter((invoice) => {
                 const matchesSearch = invoice.vendor.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                    invoice.id.toLowerCase().includes(searchTerm.toLowerCase());
+                    invoice.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    (invoice.description && invoice.description.toLowerCase().includes(searchTerm.toLowerCase()));
 
                 let matchesStatus = false;
                 if (statusFilter === 'All') {
@@ -54,8 +53,12 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                 return matchesSearch && matchesStatus && matchesDate;
             })
             .sort((a, b) => {
-                const aValue = a[sortField];
-                const bValue = b[sortField];
+                const aValRaw = a[sortField];
+                const bValRaw = b[sortField];
+
+                // Handle undefined fields (like description)
+                const aValue = aValRaw !== undefined ? aValRaw : '';
+                const bValue = bValRaw !== undefined ? bValRaw : '';
 
                 let comparison = 0;
                 if (aValue > bValue) comparison = 1;
@@ -108,11 +111,11 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
             <table>
                 <thead>
                     <tr>
-                        <th onClick={() => handleSort('id')}>
-                            <div className="th-content">{t('table.id')} <span>{renderSortIcon('id')}</span></div>
-                        </th>
                         <th onClick={() => handleSort('vendor')}>
                             <div className="th-content">{t('table.vendor')} <span>{renderSortIcon('vendor')}</span></div>
+                        </th>
+                        <th onClick={() => handleSort('description')} style={{ width: '25%' }}>
+                            <div className="th-content">{t('table.description')} <span>{renderSortIcon('description')}</span></div>
                         </th>
                         <th onClick={() => handleSort('dateCreated')}>
                             <div className="th-content">{t('table.created')} <span>{renderSortIcon('dateCreated')}</span></div>
@@ -126,24 +129,43 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                         <th onClick={() => handleSort('status')}>
                             <div className="th-content">{t('table.status')} <span>{renderSortIcon('status')}</span></div>
                         </th>
+                        <th>
+                            <div className="th-content">{t('table.actions')}</div>
+                        </th>
                     </tr>
                 </thead>
                 <tbody>
                     {filteredAndSortedInvoices.map((invoice) => (
                         <tr key={invoice.id}>
-                            <td className="invoice-id">{invoice.id}</td>
-                            <td className="vendor-name">{invoice.vendor}</td>
-                            <td>{formatDate(invoice.dateCreated)}</td>
-                            <td>
+                            <td data-label={t('table.vendor')} className="vendor-name" style={{ fontWeight: 600 }}>{invoice.vendor}</td>
+                            <td data-label={t('table.description')} style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.4' }}>
+                                {invoice.description || <span style={{ opacity: 0.4 }}>—</span>}
+                            </td>
+                            <td data-label={t('table.created')}>{formatDate(invoice.dateCreated)}</td>
+                            <td data-label={t('table.dueDate')}>
                                 <span style={{ color: invoice.status === 'Overdue' ? 'var(--status-overdue-text)' : 'inherit' }}>
                                     {formatDate(invoice.dueDate)}
                                 </span>
                             </td>
-                            <td className="amount">{formatCurrency(invoice.amount, invoice.currency)}</td>
-                            <td>
+                            <td data-label={t('table.amount')} className="amount">{formatCurrency(invoice.amount, invoice.currency)}</td>
+                            <td data-label={t('table.status')}>
                                 <span className={`status-badge ${getStatusClass(invoice.status)}`}>
                                     {invoice.status === 'Paid' ? t('filters.paid') : invoice.status === 'Pending' ? t('filters.pending') : t('filters.overdue')}
                                 </span>
+                            </td>
+                            <td data-label={t('table.actions')}>
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                    <button
+                                        onClick={() => onEdit(invoice)}
+                                        style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', padding: '4px', fontSize: '1.2rem', opacity: 0.9 }}
+                                        title="Редактировать"
+                                    >✎</button>
+                                    <button
+                                        onClick={() => onDelete(invoice.id)}
+                                        style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '4px', fontSize: '1.2rem', opacity: 0.8 }}
+                                        title="Удалить"
+                                    >🗑</button>
+                                </div>
                             </td>
                         </tr>
                     ))}

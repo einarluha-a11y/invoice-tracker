@@ -141,3 +141,82 @@ tr:hover {
     margin-bottom: 0.5rem;
     color: #fff;
 }
+
+/* --- Mobile Responsiveness --- */
+@media (max-width: 768px) {
+    .table-container {
+        border-radius: var(--radius-md);
+        background-color: transparent;
+        border: none;
+        box-shadow: none;
+    }
+
+    /* Hide table headers on mobile */
+    table thead {
+        display: none;
+    }
+
+    table,
+    tbody,
+    tr,
+    td {
+        display: block;
+        width: 100%;
+    }
+
+    /* Each row becomes a card */
+    tr {
+        background-color: var(--bg-card);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-md);
+        margin-bottom: 1rem;
+        padding: 0.5rem 0;
+        box-shadow: var(--shadow-sm);
+    }
+
+    tr:hover {
+        background-color: var(--bg-card);
+    }
+
+    /* Each cell acts as a flex row with a label */
+    td {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.75rem 1rem;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        text-align: right;
+    }
+
+    tr td:last-child {
+        border-bottom: none;
+    }
+
+    /* Pseudo-element for the column label */
+    td::before {
+        content: attr(data-label);
+        font-size: 0.8rem;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        font-weight: 600;
+        margin-right: 1rem;
+        text-align: left;
+    }
+
+    /* Specific element adjustments for mobile */
+    .vendor-name {
+        font-size: 1.1rem;
+        color: var(--accent-color);
+    }
+
+    .amount {
+        font-size: 1.1rem;
+    }
+
+    /* Actions container */
+    td:last-child>div {
+        width: 100%;
+        justify-content: flex-end;
+    }
+}
