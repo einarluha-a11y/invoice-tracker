@@ -29,7 +29,7 @@ if (process.env.FIREBASE_SERVICE_ACCOUNT) {
 if (!admin.apps.length && serviceAccount) {
     admin.initializeApp({
         credential: admin.credential.cert(serviceAccount),
-        storageBucket: 'invoice-tracker-xyz.firebasestorage.app'
+        storageBucket: 'invoice-tracker-xyz.appspot.com'
     });
 }
 const db = admin.firestore();

@@ -303,15 +303,6 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                             </td>
                             <td data-label={t('table.actions')}>
                                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                                    {invoice.fileUrl && (
-                                        <a
-                                            href={invoice.fileUrl}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            style={{ color: 'var(--primary-color)', padding: '4px', fontSize: '1.2rem', textDecoration: 'none', opacity: 0.9, display: 'flex' }}
-                                            title="View Document"
-                                        >📄</a>
-                                    )}
                                     <button
                                         onClick={() => onEdit(invoice)}
                                         style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', padding: '4px', fontSize: '1.2rem', opacity: 0.9, display: 'flex' }}
@@ -322,6 +313,20 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                                         style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '4px', fontSize: '1.2rem', opacity: 0.8, display: 'flex' }}
                                         title="Delete"
                                     >🗑</button>
+                                    {invoice.fileUrl && (
+                                        <a
+                                            href={invoice.fileUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center', opacity: 0.9 }}
+                                            title="View Document"
+                                        >
+                                            <svg width="1.2em" height="1.2em" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                                <polyline points="14 2 14 8 20 8"></polyline>
+                                            </svg>
+                                        </a>
+                                    )}
                                 </div>
                             </td>
                         </tr>
