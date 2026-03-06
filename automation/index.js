@@ -257,6 +257,7 @@ async function writeToFirestore(dataArray) {
         console.log(`[Firestore] Adding ${dataArray.length} invoice(s) to database...`);
         const batch = db.batch();
         const invoicesRef = db.collection('invoices');
+        const webhooksToSend = [];
 
         for (const data of dataArray) {
             const docRef = invoicesRef.doc(); // Auto-generate ID
@@ -348,6 +349,18 @@ async function writeToFirestore(dataArray) {
                     batch.update(invoicesRef.doc(existingDocId), {
                         fileUrl: data.fileUrl
                     });
+
+                    webhooksToSend.push({
+                        invoiceId: invoiceId,
+                        vendorName: vendorName,
+                        amount: numAmount,
+                        currency: data.currency || 'EUR',
+                        dateCreated: data.dateCreated || '',
+                        dueDate: data.dueDate || '',
+                        status: 'Unpaid',
+                        fileUrl: data.fileUrl,
+                        companyId: data.companyId || 'bP6dc0PMdFtnmS5QTX4N'
+                    });
                 } else {
                     console.log(`[Firestore] Skipping duplicate invoice: ${vendorName} - ${invoiceId}`);
                 }
@@ -387,12 +400,55 @@ async function writeToFirestore(dataArray) {
                 dueDate: data.dueDate || '',
                 status: status,
                 createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                companyId: data.companyId || 'bP6dc0PMdFtnmS5QTX4N',
+                fileUrl: data.fileUrl || null
+            });
+
+            webhooksToSend.push({
+                invoiceId: invoiceId,
+                vendorName: vendorName,
+                amount: numAmount,
+                currency: data.currency || 'EUR',
+                dateCreated: data.dateCreated || '',
+                dueDate: data.dueDate || '',
+                status: status,
+                fileUrl: data.fileUrl || null,
                 companyId: data.companyId || 'bP6dc0PMdFtnmS5QTX4N'
             });
         }
 
         await batch.commit();
         console.log(`[Firestore] ${dataArray.length} invoice(s) successfully written!`);
+
+        // --- ZAPIER WEBHOOKS DISPATCH ---
+        for (const payload of webhooksToSend) {
+            try {
+                const cId = payload.companyId;
+                const companyDoc = await db.collection('companies').doc(cId).get();
+                if (companyDoc.exists) {
+                    const compData = companyDoc.data();
+                    if (compData.zapierWebhookUrl) {
+                        console.log(`[Zapier] Sending webhook to Zapier for Invoice ${payload.invoiceId}...`);
+                        payload.companyName = compData.name || '';
+
+                        const response = await fetch(compData.zapierWebhookUrl, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+
+                        if (response.ok) {
+                            console.log(`[Zapier] Webhook delivered successfully for ${payload.invoiceId}`);
+                        } else {
+                            console.error(`[Zapier Error] Zapier responded with ${response.status} ${response.statusText}`);
+                        }
+                    }
+                }
+            } catch (zErr) {
+                console.error(`[Zapier Error] Failed to dispatch webhook for ${payload.invoiceId}:`, zErr.message);
+            }
+        }
+
     } catch (error) {
         console.error('[Firestore Error] Database upload failed:', error.message);
     }
