@@ -95,6 +95,7 @@ export const subscribeToInvoices = (
             const parsedDueDate = parseDate(data.dueDate);
             fetchedData.push({
                 id: docSnap.id,
+                invoiceId: data.invoiceId,
                 vendor: data.vendorName || data.vendor || 'Unknown Vendor',
                 description: data.description || data.invoiceId || '',
                 amount: parseAmount(data.amount?.toString() || '0'),
@@ -102,6 +103,7 @@ export const subscribeToInvoices = (
                 dateCreated: parseDate(data.dateCreated),
                 dueDate: parsedDueDate,
                 status: parseStatus(data.status || '', parsedDueDate),
+                fileUrl: data.fileUrl,
             });
         });
 

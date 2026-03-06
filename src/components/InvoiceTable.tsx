@@ -117,7 +117,7 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
         // Format data rows
         const rows = filteredAndSortedInvoices.map(inv => [
             `"${inv.vendor.replace(/"/g, '""')}"`,
-            `"${(inv.description || '').replace(/"/g, '""')}"`,
+            `"${(inv.invoiceId ? (inv.description && inv.description !== inv.invoiceId ? inv.invoiceId + ' / ' + inv.description : inv.invoiceId) : (inv.description || '')).replace(/"/g, '""')}"`,
             inv.dateCreated,
             inv.dueDate,
             inv.amount,
@@ -283,8 +283,11 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                     {filteredAndSortedInvoices.map((invoice) => (
                         <tr key={invoice.id}>
                             <td data-label={t('table.vendor')} className="vendor-name" style={{ fontWeight: 600 }}>{invoice.vendor}</td>
-                            <td data-label={t('table.description')} style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.4' }}>
-                                {invoice.description || <span style={{ opacity: 0.4 }}>—</span>}
+                            <td data-label={t('table.description')} style={{ lineHeight: '1.4' }}>
+                                {invoice.invoiceId && <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.9rem', marginBottom: '2px' }}>{invoice.invoiceId}</div>}
+                                <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                                    {invoice.description && invoice.description !== invoice.invoiceId ? invoice.description : (!invoice.invoiceId && <span style={{ opacity: 0.4 }}>—</span>)}
+                                </div>
                             </td>
                             <td data-label={t('table.created')}>{formatDate(invoice.dateCreated)}</td>
                             <td data-label={t('table.dueDate')}>
