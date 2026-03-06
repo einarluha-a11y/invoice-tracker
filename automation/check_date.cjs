@@ -7,7 +7,11 @@ if (!admin.apps.length) admin.initializeApp({ credential: admin.credential.cert(
 const db = admin.firestore();
 
 async function run() {
-    await db.collection('invoices').doc('2XNYSQixZyITrQENurxw').delete();
-    console.log("Deleted the latest bogus invoice.");
+    const doc = await db.collection('invoices').doc('2XNYSQixZyITrQENurxw').get();
+    if(doc.exists) {
+        console.log("CreatedAt:", doc.data().createdAt?.toDate());
+    } else {
+        console.log("Does not exist");
+    }
 }
 run();

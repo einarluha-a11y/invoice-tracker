@@ -802,14 +802,14 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                         console.error(`[PDF Conversion Error] Failed to convert scanned PDF:`, conversionError.message || conversionError);
                                         // Fallback to body text ONLY if there is actual text
                                         const fallbackBody = (parsedEmail.text || parsedEmail.html || '').trim();
-                                        if (fallbackBody.length > 10) {
+                                        if (fallbackBody.length > 250) {
                                             rawContent = `[Attachment Name: ${attachment.filename || 'unknown'}]\n\n${fallbackBody}`;
                                             const parsedData = await parseInvoiceDataWithAI(rawContent, companyName, customRules);
                                             if (await saveParsedData(parsedData)) {
                                                 console.log(`[Email] Email UID ${id} successfully processed from body text fallback!`);
                                             }
                                         } else {
-                                            console.log(`[Email] Email UID ${id}: Fallback failed. PDF is scanned, conversion failed, and email body is empty.`);
+                                            console.log(`[Email] Email UID ${id}: Fallback failed. PDF is scanned, conversion failed, and email body is too short (${fallbackBody.length} chars).`);
                                         }
                                     }
                                 } else {
