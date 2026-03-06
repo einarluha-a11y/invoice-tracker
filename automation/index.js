@@ -303,6 +303,7 @@ async function writeToFirestore(dataArray) {
 
             // --- DUPLICATE PREVENTION LOGIC ---
             let isDuplicate = false;
+            let existingDocId = null;
 
             // 1. Check by Invoice ID + Vendor Name + Company
             if (data.invoiceId) {
@@ -314,6 +315,7 @@ async function writeToFirestore(dataArray) {
 
                     if (existingVendor === newVendor && existingData.companyId === data.companyId) {
                         isDuplicate = true;
+                        existingDocId = doc.id;
                         break;
                     }
                 }
@@ -334,13 +336,21 @@ async function writeToFirestore(dataArray) {
                     if (existingVendor === newVendor && existingData.companyId === data.companyId) {
                         console.log(`[Firestore] Duplicate caught by Date/Amount/Vendor match. Existing ID: ${existingData.invoiceId}, New ID: ${invoiceId}`);
                         isDuplicate = true;
+                        existingDocId = doc.id;
                         break;
                     }
                 }
             }
 
             if (isDuplicate) {
-                console.log(`[Firestore] Skipping duplicate invoice: ${vendorName} - ${invoiceId}`);
+                if (data.fileUrl && existingDocId) {
+                    console.log(`[Firestore] Updating duplicate invoice with new fileUrl: ${vendorName} - ${invoiceId}`);
+                    batch.update(invoicesRef.doc(existingDocId), {
+                        fileUrl: data.fileUrl
+                    });
+                } else {
+                    console.log(`[Firestore] Skipping duplicate invoice: ${vendorName} - ${invoiceId}`);
+                }
                 continue;
             }
 
