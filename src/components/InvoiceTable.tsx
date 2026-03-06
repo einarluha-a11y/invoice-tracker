@@ -1,5 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { Invoice, InvoiceStatus } from '../data/mockInvoices';
 import './InvoiceTable.css';
 
@@ -14,13 +16,15 @@ interface InvoiceTableProps {
     onSort: (field: SortField) => void;
     onEdit: (invoice: Invoice) => void;
     onDelete: (id: string) => void;
+    companyName?: string;
 }
 
 export type SortField = keyof Invoice;
 export type SortDirection = 'asc' | 'desc';
 
-export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, endDate, sortField, sortDirection, onSort, onEdit, onDelete }: InvoiceTableProps) {
+export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, endDate, sortField, sortDirection, onSort, onEdit, onDelete, companyName }: InvoiceTableProps) {
     const { t, i18n } = useTranslation();
+    const [isExportingPDF, setIsExportingPDF] = useState(false);
 
     const handleSort = (field: SortField) => {
         onSort(field);
@@ -97,6 +101,126 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
         );
     };
 
+    const handleExportCSV = () => {
+        if (filteredAndSortedInvoices.length === 0) return;
+
+        // Generate CSV header
+        const headers = [
+            t('table.vendor'),
+            t('table.description'),
+            t('table.created'),
+            t('table.dueDate'),
+            t('table.amount'),
+            t('table.status')
+        ];
+
+        // Format data rows
+        const rows = filteredAndSortedInvoices.map(inv => [
+            `"${inv.vendor.replace(/"/g, '""')}"`,
+            `"${(inv.description || '').replace(/"/g, '""')}"`,
+            inv.dateCreated,
+            inv.dueDate,
+            inv.amount,
+            inv.status === 'Paid' ? t('filters.paid') : inv.status === 'Pending' ? t('filters.pending') : t('filters.overdue')
+        ]);
+
+        const csvContent = [
+            `"${t('appName')}"`,
+            ...(companyName ? [`"${t('settingsPage.nameLabel').replace(' *', '')}", "${companyName.replace(/"/g, '""')}"`] : []),
+            `"${t('table.created')}:", "${new Date().toLocaleDateString()}"`,
+            "", // Empty line before data
+            headers.join(','),
+            ...rows.map(row => row.join(','))
+        ].join('\n');
+
+        // Add BOM for Excel UTF-8
+        const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.setAttribute('href', url);
+        link.setAttribute('download', `invoices_export_${new Date().toISOString().split('T')[0]}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    const handleExportPDF = async () => {
+        if (filteredAndSortedInvoices.length === 0 || isExportingPDF) return;
+        setIsExportingPDF(true);
+
+        try {
+            const fontUrl = 'https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/fonts/Roboto/Roboto-Regular.ttf';
+            const response = await fetch(fontUrl);
+            const blob = await response.blob();
+
+            const base64data = await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                    resolve((reader.result as string).split(',')[1]);
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+            });
+
+            const doc = new jsPDF();
+
+            doc.addFileToVFS('Roboto-Regular.ttf', base64data);
+            doc.addFont('Roboto-Regular.ttf', 'Roboto', 'normal');
+            doc.addFont('Roboto-Regular.ttf', 'Roboto', 'bold'); // Prevents bold fallback to Helvetica
+            doc.setFont('Roboto', 'normal');
+
+            // Add Title
+            doc.setFontSize(18);
+            doc.text(t('appName'), 14, 22);
+
+            let currentY = 30;
+            if (companyName) {
+                doc.setFontSize(14);
+                doc.text(companyName, 14, currentY);
+                currentY += 8;
+            }
+
+            doc.setFontSize(11);
+            doc.text(`${t('table.created')}: ${new Date().toLocaleDateString()}`, 14, currentY);
+            currentY += 10;
+
+            const tableColumn = [
+                t('table.vendor'),
+                t('table.created'),
+                t('table.dueDate'),
+                t('table.amount'),
+                t('table.status')
+            ];
+
+            const tableRows: any[] = [];
+
+            filteredAndSortedInvoices.forEach(inv => {
+                const rowData = [
+                    inv.vendor,
+                    inv.dateCreated,
+                    inv.dueDate,
+                    `${inv.amount} ${inv.currency}`,
+                    inv.status === 'Paid' ? t('filters.paid') : inv.status === 'Pending' ? t('filters.pending') : t('filters.overdue')
+                ];
+                tableRows.push(rowData);
+            });
+
+            autoTable(doc, {
+                head: [tableColumn],
+                body: tableRows,
+                startY: currentY,
+                styles: { font: 'Roboto', fontStyle: 'normal', fontSize: 8 },
+                headStyles: { font: 'Roboto', fontStyle: 'normal', fillColor: [66, 133, 244] }
+            });
+
+            doc.save(`invoices_export_${new Date().toISOString().split('T')[0]}.pdf`);
+        } catch (error) {
+            console.error("PDF Export failed:", error);
+        } finally {
+            setIsExportingPDF(false);
+        }
+    };
+
     if (filteredAndSortedInvoices.length === 0) {
         return (
             <div className="table-container empty-state">
@@ -108,6 +232,27 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
 
     return (
         <div className="table-container">
+            <div className="table-actions">
+                <button onClick={handleExportCSV} className="btn-export">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                        <polyline points="14 2 14 8 20 8"></polyline>
+                        <line x1="8" y1="13" x2="16" y2="13"></line>
+                        <line x1="8" y1="17" x2="16" y2="17"></line>
+                        <polyline points="10 9 9 9 8 9"></polyline>
+                    </svg>
+                    {t('table.exportCsv')}
+                </button>
+                <button onClick={handleExportPDF} className="btn-export" disabled={isExportingPDF}>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                        <polyline points="14 2 14 8 20 8"></polyline>
+                        <path d="M12 18v-6"></path>
+                        <path d="M9 15l3 3 3-3"></path>
+                    </svg>
+                    {isExportingPDF ? t('loadingData') : t('table.exportPdf')}
+                </button>
+            </div>
             <table>
                 <thead>
                     <tr>
@@ -154,16 +299,25 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                                 </span>
                             </td>
                             <td data-label={t('table.actions')}>
-                                <div style={{ display: 'flex', gap: '8px' }}>
+                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                    {invoice.fileUrl && (
+                                        <a
+                                            href={invoice.fileUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            style={{ color: 'var(--primary-color)', padding: '4px', fontSize: '1.2rem', textDecoration: 'none', opacity: 0.9, display: 'flex' }}
+                                            title="View Document"
+                                        >📄</a>
+                                    )}
                                     <button
                                         onClick={() => onEdit(invoice)}
-                                        style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', padding: '4px', fontSize: '1.2rem', opacity: 0.9 }}
-                                        title="Редактировать"
+                                        style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', padding: '4px', fontSize: '1.2rem', opacity: 0.9, display: 'flex' }}
+                                        title="Edit"
                                     >✎</button>
                                     <button
                                         onClick={() => onDelete(invoice.id)}
-                                        style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '4px', fontSize: '1.2rem', opacity: 0.8 }}
-                                        title="Удалить"
+                                        style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '4px', fontSize: '1.2rem', opacity: 0.8, display: 'flex' }}
+                                        title="Delete"
                                     >🗑</button>
                                 </div>
                             </td>

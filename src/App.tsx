@@ -334,6 +334,7 @@ function App() {
                     }}
                     onEdit={handleEdit}
                     onDelete={handleDeleteClick}
+                    companyName={activeCompany?.name}
                 />
             )}
 

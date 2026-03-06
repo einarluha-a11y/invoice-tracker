@@ -68,8 +68,10 @@ export function AiChat({ onApplyFilters }: AiChatProps) {
         setIsLoading(true);
 
         try {
-            // Send to our local /api/chat endpoint
-            const res = await fetch('http://localhost:3000/api/chat', {
+            // Define the API URL based on Environment Variables (local vs Zone.eu deployment)
+            const env = (import.meta as any).env;
+            const apiUrl = env.VITE_API_URL || (env.PROD ? '' : 'http://localhost:3000');
+            const res = await fetch(`${apiUrl}/api/chat`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ message: trimmedMsg })

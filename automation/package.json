@@ -19,6 +19,7 @@
     "mailparser": "^3.9.3",
     "mammoth": "^1.11.0",
     "openai": "^6.25.0",
-    "pdf-parse": "^1.1.1"
+    "pdf-parse": "^1.1.1",
+    "pdf2pic": "^3.2.0"
   }
 }

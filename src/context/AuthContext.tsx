@@ -8,6 +8,7 @@ interface AuthContextType {
     signInWithGoogle: () => Promise<void>;
     logout: () => Promise<void>;
     isFirebaseConfigured: boolean;
+    authError: string | null;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -16,6 +17,7 @@ const AuthContext = createContext<AuthContextType>({
     signInWithGoogle: async () => { },
     logout: async () => { },
     isFirebaseConfigured: false,
+    authError: null,
 });
 
 export const useAuth = () => useContext(AuthContext);
@@ -23,6 +25,14 @@ export const useAuth = () => useContext(AuthContext);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [user, setUser] = useState<User | null>(null);
     const [loading, setLoading] = useState(true);
+    const [authError, setAuthError] = useState<string | null>(null);
+
+    // Добавьте сюда ВАШ собственный email, чтобы не потерять доступ!
+    const ALLOWED_EMAILS = [
+        'buhus2203@gmail.com',
+        'einar.luha@gmail.com',
+        'info@accountingresources.eu',
+    ];
 
     useEffect(() => {
         if (!isFirebaseConfigured || !auth) {
@@ -30,8 +40,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             return;
         }
 
-        const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-            setUser(currentUser);
+        const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+            if (currentUser && currentUser.email) {
+                // Check if the user is in the allowlist
+                if (ALLOWED_EMAILS.includes(currentUser.email.toLowerCase())) {
+                    setUser(currentUser);
+                    setAuthError(null);
+                } else {
+                    console.warn(`Access denied for email: ${currentUser.email}`);
+                    await signOut(auth);
+                    setUser(null);
+                    setAuthError(`Доступ запрещен для ${currentUser.email}. Пожалуйста, используйте разрешенный аккаунт.`);
+                }
+            } else {
+                setUser(null);
+            }
             setLoading(false);
         });
 
@@ -51,14 +74,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const logout = async () => {
         if (!auth) return;
         try {
-            await signOut(auth);
+            await signOut(auth!);
         } catch (error) {
             console.error("Error signing out", error);
         }
     };
 
     return (
-        <AuthContext.Provider value={{ user, loading, signInWithGoogle, logout, isFirebaseConfigured }}>
+        <AuthContext.Provider value={{ user, loading, signInWithGoogle, logout, isFirebaseConfigured, authError }}>
             {children}
         </AuthContext.Provider>
     );

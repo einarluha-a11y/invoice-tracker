@@ -4,19 +4,63 @@ const simpleParser = require('mailparser').simpleParser;
 const { OpenAI } = require('openai');
 const pdfParse = require('pdf-parse');
 const { parse } = require('csv-parse/sync');
+const { fromBuffer } = require('pdf2pic');
 
 // Initialize OpenAI API
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 // Firebase Admin Initialization
 const admin = require('firebase-admin');
-const serviceAccount = require('./google-credentials.json');
 
-if (!admin.apps.length) {
+let serviceAccount;
+if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+    try {
+        serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+    } catch (e) {
+        console.error("Failed to parse FIREBASE_SERVICE_ACCOUNT env var:", e);
+    }
+} else {
+    try {
+        serviceAccount = require('./google-credentials.json');
+    } catch (e) {
+        console.error("google-credentials.json not found locally.");
+    }
+}
+
+if (!admin.apps.length && serviceAccount) {
     admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount)
+        credential: admin.credential.cert(serviceAccount),
+        storageBucket: 'invoice-tracker-xyz.firebasestorage.app'
     });
 }
 const db = admin.firestore();
+const bucket = admin.storage().bucket();
+
+/**
+ * Helper to upload an attachment directly to Firebase Storage and get a secure download URL.
+ */
+async function uploadToStorage(companyId, fileName, contentType, buffer) {
+    const crypto = require('crypto');
+    const cleanFileName = fileName ? fileName.replace(/[^a-zA-Z0-9.\-_]/g, '') : 'document.pdf';
+    const uniqueName = Date.now() + '_' + cleanFileName;
+    const filePath = `invoices/${companyId}/${uniqueName}`;
+    const file = bucket.file(filePath);
+
+    // Generate an unguessable token for public yet secure read access
+    const uuid = crypto.randomUUID();
+
+    await file.save(buffer, {
+        metadata: {
+            contentType: contentType,
+            metadata: {
+                firebaseStorageDownloadTokens: uuid
+            }
+        }
+    });
+
+    const encodedPath = encodeURIComponent(filePath);
+    return `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodedPath}?alt=media&token=${uuid}`;
+}
+
 
 /**
  * 1. AI Parsing: Sends raw text (or CSV string) to OpenAI to extract fields
@@ -45,10 +89,24 @@ They are NEVER the vendor/seller.
 You must find the ACTUAL company that issued the invoice to ${companyName} (e.g., look for "Müüja", "Saatja", "Tarnija", or the company logo text). 
 If an invoice is issued by "FS Teenused OÜ" to "${companyName}", the vendorName MUST be "FS Teenused OÜ".
 
-CRITICAL RULE FOR AMOUNT (DEBT AVOIDANCE):
-If the invoice contains a balance for previous unpaid months (e.g., "Võlgnevus", "Eelnevate perioodide võlg", "Previous balance"), DO NOT include this debt in the final 'amount'.
-You MUST only extract the pure amount for the CURRENT billing period (e.g., "Perioodi arve", "Jooksev summa", "Current charges").
+CRITICAL RULE FOR REJECTING NON-INVOICE DOCUMENTS:
+You must ONLY extract actual Invoices (Arve, Invoice, Счет), Credit Notes (Kreeditarve), or Receipts (Kviitung).
+DO NOT extract Insurance Policies (Poliis, Kindlustuspoliis), Contracts (Leping), Certificates, or general letters.
+If the document is a Policy or does not have a clear "amount to pay" for a service/good, return an empty array [].
+
+CRITICAL RULE FOR AMOUNT (DEBT AVOIDANCE / ESTONIAN TERMS):
+If the invoice contains a balance for previous unpaid months (e.g., "Võlgnevus", "Eelnevate perioodide võlg", "Previous balance", "Maksmisele kuuluv summa" which includes past debt), DO NOT include this debt in the final 'amount'.
+You MUST only extract the pure amount for the CURRENT billing period.
+Estonian Translation Guide: "Tasuda", "Tasuda EUR", "Kulumishüvitis", or "Kokku" typically indicate the final Amount to pay.
 For example: If "Perioodi arve" is 88.30 and "Võlgnevus" is 94.23 making "KOKKU" 182.53, the 'amount' MUST be exactly 88.30.
+
+CRITICAL RULE FOR DATES (LANGUAGES & FORMATS):
+Convert ALL alphabetical month names into their exact 2-digit numerical equivalent.
+Examples: "Jan" or "January" -> 01, "Feb" -> 02, "Mar" -> 03, "Apr" -> 04, "May" -> 05, etc.
+Estonian Translation Guide: "Tähtaeg", "Maksetähtaeg", or "Maksetähtpäev" ALWAYS unequivocally mean DUE DATE.
+If the Date is "Mar 6, 2026", dateCreated MUST be "06-03-2026".
+If the Due Date is "Mar 8, 2026", dueDate MUST be "08-03-2026".
+Do NOT hallucinate or add months or hardcode 30 days unless explicitly told to.
 
 ${customRulesSection}
 Required fields for EACH invoice object (if missing, guess intelligently or leave empty string):
@@ -104,6 +162,92 @@ ${rawText}
 }
 
 /**
+ * 1.5. AI Parsing (Vision): Sends image (Base64) to OpenAI gpt-4o for OCR and extraction
+ */
+async function parseInvoiceImageWithAI(base64Image, companyName = "GLOBAL TECHNICS OÜ", customRules = "", mimeType = "image/jpeg") {
+    console.log(`[AI Vision] Parsing image data with OpenAI for company: ${companyName}...`);
+
+    let customRulesSection = "";
+    if (customRules && customRules.trim().length > 0) {
+        customRulesSection = `
+CRITICAL USER-DEFINED AI RULES (MUST OBEY):
+${customRules}
+`;
+    }
+
+    const promptText = `
+You are an expert accountant system. 
+Extract ALL invoices from the provided image (receipt, scanned document).
+Return EXACTLY a JSON array of invoice objects with NO markdown wrapping, NO extra text.
+Even if there is only one invoice, return it as an ARRAY containing that single object.
+
+CRITICAL RULE FOR VENDOR NAME:
+The company "${companyName}" (and any variations) AND "GLOBAL TECHNICS OÜ" are ALWAYS the BUYER/CUSTOMER. 
+You must find the ACTUAL company that issued the invoice to ${companyName}.
+
+CRITICAL RULE FOR REJECTING NON-INVOICE DOCUMENTS:
+You must ONLY extract actual Invoices (Arve, Invoice, Счет), Credit Notes (Kreeditarve), or Receipts (Kviitung).
+DO NOT extract Insurance Policies (Poliis, Kindlustuspoliis), Contracts (Leping), Certificates, or general letters.
+If the document is a Policy or does not have a clear "amount to pay" for a service/good, return an empty array [].
+
+CRITICAL RULE FOR AMOUNT:
+DO NOT include past debt. Extract only the amount for the CURRENT billing period.
+If it is a credit note, amount MUST be negative.
+Estonian Translation Guide: "Tasuda", "Tasuda EUR", "Kulumishüvitis", or "Kokku" typically indicate the final Amount to pay.
+
+CRITICAL RULE FOR DATES:
+Convert ALL alphabetical month names into their exact 2-digit numerical equivalent.
+Examples: "Jan" or "January" -> 01, "Feb" -> 02, "Mar" -> 03, "Apr" -> 04, "May" -> 05, etc.
+Estonian Translation Guide: "Tähtaeg", "Maksetähtaeg", or "Maksetähtpäev" ALWAYS unequivocally mean DUE DATE.
+If the Date is "Mar 6, 2026", dateCreated MUST be "06-03-2026".
+If the Due Date is "Mar 8, 2026", dueDate MUST be "08-03-2026".
+Do NOT hallucinate or add months or hardcode 30 days unless explicitly told to.
+
+${customRulesSection}
+Required fields:
+- invoiceId: (specific numeric/alphanumeric invoice number)
+- vendorName: (The EXACT company issuing the invoice)
+- amount: (Number only, decimal separated by dot)
+- currency: (3 letter code, usually EUR)
+- dateCreated: (DD-MM-YYYY format, issue date)
+- dueDate: (DD-MM-YYYY format)
+- description: (String, max 3-4 words)
+`;
+
+    // Ensure we don't double-prefix if base64Image somehow already contains 'data:image'
+    const cleanBase64 = base64Image.startsWith('data:') ? base64Image.split(',')[1] : base64Image;
+
+    try {
+        const response = await openai.chat.completions.create({
+            model: "gpt-4o",
+            messages: [
+                {
+                    role: "user",
+                    content: [
+                        { type: "text", text: promptText },
+                        {
+                            type: "image_url",
+                            image_url: {
+                                url: `data:${mimeType};base64,${cleanBase64}`
+                            }
+                        }
+                    ]
+                }
+            ],
+            temperature: 0.1,
+        });
+
+        const jsonString = response.choices[0].message.content.trim();
+        const cleanJson = jsonString.replace(/^```json/g, '').replace(/^```/g, '').replace(/```$/g, '').trim();
+        return JSON.parse(cleanJson);
+    } catch (error) {
+        console.error('[AI Vision Error] Failed to parse image data:', error);
+        return null;
+    }
+}
+
+
+/**
  * 2. Writes the parsed JSON data array to Firebase Firestore
  */
 async function writeToFirestore(dataArray) {
@@ -128,6 +272,34 @@ async function writeToFirestore(dataArray) {
             // Formulate data
             const vendorName = data.vendorName || 'Unknown Vendor';
             const invoiceId = data.invoiceId || `Auto-${Date.now()}`;
+
+            // --- VENDOR SPECIFIC RULE EXECUTOR ---
+            const lowerVendor = vendorName.toLowerCase();
+            if (lowerVendor.includes('pronto') || lowerVendor.includes('inovatus')) {
+                if (data.dateCreated) {
+                    const parts = data.dateCreated.includes('-') ? data.dateCreated.split('-') : data.dateCreated.split('.');
+                    if (parts.length === 3) {
+                        let day, month, year;
+                        if (parts[0].length === 4) { // YYYY-MM-DD
+                            year = parseInt(parts[0], 10);
+                            month = parseInt(parts[1], 10) - 1;
+                            day = parseInt(parts[2], 10);
+                        } else { // DD-MM-YYYY
+                            day = parseInt(parts[0], 10);
+                            month = parseInt(parts[1], 10) - 1;
+                            year = parseInt(parts[2], 10);
+                        }
+                        if (year < 2000) year += 2000;
+                        const d = new Date(year, month, day);
+                        d.setDate(d.getDate() + 30);
+                        const newDay = String(d.getDate()).padStart(2, '0');
+                        const newMonth = String(d.getMonth() + 1).padStart(2, '0');
+                        const newYear = d.getFullYear();
+                        data.dueDate = `${newDay}-${newMonth}-${newYear}`;
+                        console.log(`[AI Override] Hardcoded +30 days for ${vendorName}. New dueDate: ${data.dueDate}`);
+                    }
+                }
+            }
 
             // --- DUPLICATE PREVENTION LOGIC ---
             let isDuplicate = false;
@@ -563,11 +735,36 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                     if (
                         mime.includes('csv') || mime.includes('excel') ||
                         filename.endsWith('.csv') || filename.endsWith('.xlsx') || filename.endsWith('.xls') ||
-                        mime.includes('pdf') || filename.endsWith('.pdf')
+                        mime.includes('pdf') || filename.endsWith('.pdf') ||
+                        mime.includes('image/jpeg') || mime.includes('image/png') ||
+                        filename.endsWith('.jpg') || filename.endsWith('.jpeg') || filename.endsWith('.png')
                     ) {
                         console.log(`[Email] Found relevant attachment: ${attachment.filename || 'unknown'}. Reading text...`);
 
                         let rawContent = '';
+
+                        // --- UPLOAD ORIGINAL ATTACHMENT TO STORAGE ---
+                        let fileUrl = null;
+                        try {
+                            console.log(`[Storage] Uploading ${filename} to Firebase Storage...`);
+                            fileUrl = await uploadToStorage(companyId, filename, mime, attachment.content);
+                            console.log(`[Storage] Successfully uploaded! URL: ${fileUrl}`);
+                        } catch (uploadError) {
+                            console.error(`[Storage Error] Failed to upload ${filename}:`, uploadError);
+                        }
+
+                        // Helper to inject the generated URL and save
+                        const saveParsedData = async (data) => {
+                            if (data && Array.isArray(data) && data.length > 0) {
+                                data.forEach(inv => {
+                                    inv.companyId = companyId;
+                                    if (fileUrl) inv.fileUrl = fileUrl;
+                                });
+                                await writeToFirestore(data);
+                                return true;
+                            }
+                            return false;
+                        };
 
                         try {
                             if (mime.includes('pdf') || filename.endsWith('.pdf')) {
@@ -576,30 +773,67 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                 rawContent = pdfData.text;
 
                                 if (rawContent.trim().length < 10) {
-                                    console.log('[PDF] Extracted text is empty (likely a scanned image). Falling back to email body text.');
-                                    rawContent = `[Attachment Name: ${attachment.filename || 'unknown'}]\n\n${parsedEmail.text || parsedEmail.html || ''}`;
-                                }
+                                    console.log(`[PDF] Extracted text is empty (likely a scanned image). Converting PDF to Image for Vision AI...`);
+                                    try {
+                                        const options = {
+                                            density: 300,
+                                            saveFilename: "temp",
+                                            savePath: "/tmp",
+                                            format: "png",
+                                            width: 1024,
+                                            height: 1024
+                                        };
+                                        const convert = fromBuffer(attachment.content, options);
+                                        // Convert page 1 to base64
+                                        const pageToConvertAsImage = 1;
+                                        const result = await convert(pageToConvertAsImage, { responseType: "image" });
 
-                                // --- Detect Bank Statement vs Invoice ---
-                                const lowerText = rawContent.toLowerCase();
-                                if (lowerText.includes('выписка') || lowerText.includes('revolut business') || lowerText.includes('revolut bank') || lowerText.includes('account statement')) {
-                                    console.log(`[Email] Detected Bank Statement PDF: ${attachment.filename || 'unknown'}`);
-                                    const parsedTransactions = await parseBankStatementWithAI(rawContent);
+                                        // pdf2pic sometimes fails to return .base64 directly. Read it strictly from the ephemeral disk save path.
+                                        const imageFilePath = result.path;
+                                        const fs = require('fs');
+                                        const base64Data = fs.readFileSync(imageFilePath, { encoding: 'base64' });
 
-                                    if (parsedTransactions && Array.isArray(parsedTransactions)) {
-                                        for (const tx of parsedTransactions) {
-                                            await reconcilePayment(tx.reference || '', tx.description || '', tx.amount, tx.date || (new Date().toISOString().split('T')[0]));
+                                        const parsedData = await parseInvoiceImageWithAI(base64Data, companyName, customRules, "image/png");
+
+                                        if (await saveParsedData(parsedData)) {
+                                            console.log(`[Email] Email UID ${id} successfully processed from Scanned PDF Image!`);
                                         }
-                                        console.log(`[Email] Email UID ${id} successfully processed as PDF Bank Statement!`);
+                                    } catch (conversionError) {
+                                        console.error(`[PDF Conversion Error] Failed to convert scanned PDF:`, conversionError);
+                                        // Fallback to body text
+                                        rawContent = `[Attachment Name: ${attachment.filename || 'unknown'}]\n\n${parsedEmail.text || parsedEmail.html || ''}`;
+                                        const parsedData = await parseInvoiceDataWithAI(rawContent, companyName, customRules);
+                                        if (await saveParsedData(parsedData)) {
+                                            console.log(`[Email] Email UID ${id} successfully processed from body text fallback!`);
+                                        }
                                     }
                                 } else {
-                                    // Parse regular PDF invoice with OpenAI
-                                    const parsedData = await parseInvoiceDataWithAI(rawContent, companyName, customRules);
-                                    if (parsedData) {
-                                        parsedData.forEach(inv => inv.companyId = companyId);
-                                        await writeToFirestore(parsedData);
-                                        console.log(`[Email] Email UID ${id} successfully processed!`);
+                                    // --- Detect Bank Statement vs Invoice ---
+                                    const lowerText = rawContent.toLowerCase();
+                                    if (lowerText.includes('выписка') || lowerText.includes('revolut business') || lowerText.includes('revolut bank') || lowerText.includes('account statement')) {
+                                        console.log(`[Email] Detected Bank Statement PDF: ${attachment.filename || 'unknown'}`);
+                                        const parsedTransactions = await parseBankStatementWithAI(rawContent);
+
+                                        if (parsedTransactions && Array.isArray(parsedTransactions)) {
+                                            for (const tx of parsedTransactions) {
+                                                await reconcilePayment(tx.reference || '', tx.description || '', tx.amount, tx.date || (new Date().toISOString().split('T')[0]));
+                                            }
+                                            console.log(`[Email] Email UID ${id} successfully processed as PDF Bank Statement!`);
+                                        }
+                                    } else {
+                                        // Parse regular PDF invoice with OpenAI
+                                        const parsedData = await parseInvoiceDataWithAI(rawContent, companyName, customRules);
+                                        if (await saveParsedData(parsedData)) {
+                                            console.log(`[Email] Email UID ${id} successfully processed!`);
+                                        }
                                     }
+                                }
+                            } else if (mime.includes('image/') || filename.endsWith('.jpg') || filename.endsWith('.jpeg') || filename.endsWith('.png')) {
+                                console.log(`[Image] Native Image detected: ${filename}. Sending directly to Vision AI...`);
+                                const base64Data = attachment.content.toString('base64');
+                                const parsedData = await parseInvoiceImageWithAI(base64Data, companyName, customRules);
+                                if (await saveParsedData(parsedData)) {
+                                    console.log(`[Email] Email UID ${id} successfully processed from Image Attachment!`);
                                 }
                             } else {
                                 // Default for CSV and readable texts
@@ -613,9 +847,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                 } else {
                                     // Treat as regular invoice text/csv, parse with OpenAI
                                     const parsedData = await parseInvoiceDataWithAI(rawContent, companyName, customRules);
-                                    if (parsedData) {
-                                        parsedData.forEach(inv => inv.companyId = companyId);
-                                        await writeToFirestore(parsedData);
+                                    if (await saveParsedData(parsedData)) {
                                         console.log(`[Email] Email UID ${id} successfully processed!`);
                                     }
                                 }

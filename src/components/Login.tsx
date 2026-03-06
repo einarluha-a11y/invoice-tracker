@@ -4,19 +4,21 @@ import './Login.css';
 import { useState } from 'react';
 
 export function Login() {
-    const { signInWithGoogle, isFirebaseConfigured } = useAuth();
+    const { signInWithGoogle, isFirebaseConfigured, authError } = useAuth();
     const { t, i18n } = useTranslation();
-    const [error, setError] = useState<string | null>(null);
+    const [localError, setLocalError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
+
+    const error = authError || localError;
 
     const handleLogin = async () => {
         try {
-            setError(null);
+            setLocalError(null);
             setLoading(true);
             await signInWithGoogle();
         } catch (err: any) {
             console.error("Login failed:", err);
-            setError(err.message || 'Error signing in. Please try again later.');
+            setLocalError(err.message || 'Error signing in. Please try again later.');
         } finally {
             setLoading(false);
         }

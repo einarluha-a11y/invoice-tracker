@@ -70,6 +70,8 @@ const resources = {
                 actions: "Действия",
                 emptyTitle: "Инвойсы не найдены",
                 emptyDesc: "Попробуйте изменить параметры фильтрации.",
+                exportCsv: "Скачать CSV",
+                exportPdf: "Скачать PDF",
             },
 
             modal: {
@@ -171,6 +173,8 @@ const resources = {
                 actions: "Actions",
                 emptyTitle: "No invoices found",
                 emptyDesc: "Try adjusting your filter settings.",
+                exportCsv: "Export CSV",
+                exportPdf: "Export PDF",
             },
 
             modal: {
@@ -272,6 +276,8 @@ const resources = {
                 actions: "Tegevus",
                 emptyTitle: "Arveid ei leitud",
                 emptyDesc: "Proovige muuta filtri seadeid.",
+                exportCsv: "Laadi alla CSV",
+                exportPdf: "Laadi alla PDF",
             },
 
             modal: {

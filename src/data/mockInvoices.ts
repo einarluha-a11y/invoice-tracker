@@ -9,6 +9,7 @@ export interface Invoice {
     dateCreated: string;
     dueDate: string;
     status: InvoiceStatus;
+    fileUrl?: string;
 }
 
 export const mockInvoices: Invoice[] = [
