@@ -775,36 +775,41 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                 if (rawContent.trim().length < 10) {
                                     console.log(`[PDF] Extracted text is empty (likely a scanned image). Converting PDF to Image for Vision AI...`);
                                     try {
-                                        const options = {
-                                            density: 300,
-                                            saveFilename: "temp",
-                                            savePath: "/tmp",
-                                            format: "png",
-                                            width: 1024,
-                                            height: 1024
-                                        };
-                                        const convert = fromBuffer(attachment.content, options);
-                                        // Convert page 1 to base64
-                                        const pageToConvertAsImage = 1;
-                                        const result = await convert(pageToConvertAsImage, { responseType: "image" });
-
-                                        // pdf2pic sometimes fails to return .base64 directly. Read it strictly from the ephemeral disk save path.
-                                        const imageFilePath = result.path;
                                         const fs = require('fs');
-                                        const base64Data = fs.readFileSync(imageFilePath, { encoding: 'base64' });
+                                        const { execSync } = require('child_process');
+
+                                        const tempPdfPath = `/tmp/email_${id}_page1.pdf`;
+                                        const tempPngPath = `/tmp/email_${id}_page1.png`;
+
+                                        fs.writeFileSync(tempPdfPath, attachment.content);
+
+                                        // Execute GraphicsMagick to convert the first page of the PDF to a PNG
+                                        execSync(`gm convert -density 300 "${tempPdfPath}[0]" -quality 100 "${tempPngPath}"`, { stdio: 'pipe' });
+
+                                        const base64Data = fs.readFileSync(tempPngPath, { encoding: 'base64' });
 
                                         const parsedData = await parseInvoiceImageWithAI(base64Data, companyName, customRules, "image/png");
 
                                         if (await saveParsedData(parsedData)) {
                                             console.log(`[Email] Email UID ${id} successfully processed from Scanned PDF Image!`);
                                         }
+
+                                        // Cleanup
+                                        if (fs.existsSync(tempPdfPath)) fs.unlinkSync(tempPdfPath);
+                                        if (fs.existsSync(tempPngPath)) fs.unlinkSync(tempPngPath);
+
                                     } catch (conversionError) {
-                                        console.error(`[PDF Conversion Error] Failed to convert scanned PDF:`, conversionError);
-                                        // Fallback to body text
-                                        rawContent = `[Attachment Name: ${attachment.filename || 'unknown'}]\n\n${parsedEmail.text || parsedEmail.html || ''}`;
-                                        const parsedData = await parseInvoiceDataWithAI(rawContent, companyName, customRules);
-                                        if (await saveParsedData(parsedData)) {
-                                            console.log(`[Email] Email UID ${id} successfully processed from body text fallback!`);
+                                        console.error(`[PDF Conversion Error] Failed to convert scanned PDF:`, conversionError.message || conversionError);
+                                        // Fallback to body text ONLY if there is actual text
+                                        const fallbackBody = (parsedEmail.text || parsedEmail.html || '').trim();
+                                        if (fallbackBody.length > 10) {
+                                            rawContent = `[Attachment Name: ${attachment.filename || 'unknown'}]\n\n${fallbackBody}`;
+                                            const parsedData = await parseInvoiceDataWithAI(rawContent, companyName, customRules);
+                                            if (await saveParsedData(parsedData)) {
+                                                console.log(`[Email] Email UID ${id} successfully processed from body text fallback!`);
+                                            }
+                                        } else {
+                                            console.log(`[Email] Email UID ${id}: Fallback failed. PDF is scanned, conversion failed, and email body is empty.`);
                                         }
                                     }
                                 } else {
