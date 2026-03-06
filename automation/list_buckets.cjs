@@ -8,7 +8,7 @@ admin.initializeApp({
 
 async function run() {
   try {
-    const [buckets] = await admin.storage().bucket().storage.getBuckets();
+    const [buckets] = await admin.storage().getBuckets();
     console.log("Buckets found:");
     buckets.forEach(b => console.log(b.name));
   } catch (e) {
