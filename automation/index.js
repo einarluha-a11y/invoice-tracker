@@ -783,33 +783,51 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                 rawContent = pdfData.text;
 
                                 if (rawContent.trim().length < 10) {
-                                    console.log(`[PDF] Extracted text is empty (likely a scanned image). Converting PDF to Image for Vision AI...`);
+                                    console.log(`[PDF] Extracted text is empty (likely a scanned image). Attempting pure JS extraction with pdf-lib...`);
                                     try {
-                                        const fs = require('fs');
-                                        const { execSync } = require('child_process');
+                                        const { PDFDocument, PDFName, PDFStream } = require('pdf-lib');
+                                        const doc = await PDFDocument.load(attachment.content, { ignoreEncryption: true });
+                                        const context = doc.context;
 
-                                        const tempPdfPath = `/tmp/email_${id}_page1.pdf`;
-                                        const tempPngPath = `/tmp/email_${id}_page1.png`;
-
-                                        fs.writeFileSync(tempPdfPath, attachment.content);
-
-                                        // Execute GraphicsMagick to convert the first page of the PDF to a PNG
-                                        execSync(`gm convert -density 300 "${tempPdfPath}[0]" -quality 100 "${tempPngPath}"`, { stdio: 'pipe' });
-
-                                        const base64Data = fs.readFileSync(tempPngPath, { encoding: 'base64' });
-
-                                        const parsedData = await parseInvoiceImageWithAI(base64Data, companyName, customRules, "image/png");
-
-                                        if (await saveParsedData(parsedData)) {
-                                            console.log(`[Email] Email UID ${id} successfully processed from Scanned PDF Image!`);
+                                        let foundJpeg = null;
+                                        for (const [ref, obj] of context.enumerateIndirectObjects()) {
+                                            if (obj instanceof PDFStream) {
+                                                const dict = obj.dict;
+                                                const subtype = dict.get(PDFName.of('Subtype'));
+                                                if (subtype === PDFName.of('Image')) {
+                                                    const filter = dict.get(PDFName.of('Filter'));
+                                                    let filterName = filter ? filter.toString() : '';
+                                                    if (filterName.includes('DCTDecode')) {
+                                                        foundJpeg = obj.contents;
+                                                        break;
+                                                    }
+                                                }
+                                            }
                                         }
 
-                                        // Cleanup
-                                        if (fs.existsSync(tempPdfPath)) fs.unlinkSync(tempPdfPath);
-                                        if (fs.existsSync(tempPngPath)) fs.unlinkSync(tempPngPath);
+                                        if (foundJpeg) {
+                                            console.log(`[PDF] Successfully extracted raw JPEG image from PDF stream! (${foundJpeg.length} bytes)`);
+                                            const base64Data = Buffer.from(foundJpeg).toString('base64');
+                                            const parsedData = await parseInvoiceImageWithAI(base64Data, companyName, customRules, "image/jpeg");
+
+                                            if (await saveParsedData(parsedData)) {
+                                                console.log(`[Email] Email UID ${id} successfully processed from Scanned PDF Image!`);
+                                            }
+                                        } else {
+                                            console.log(`[PDF] No embedded JPEG found in scanned document. Cannot process.`);
+                                            // Fallback to body text ONLY if there is actual text
+                                            const fallbackBody = (parsedEmail.text || parsedEmail.html || '').trim();
+                                            if (fallbackBody.length > 250) {
+                                                rawContent = `[Attachment Name: ${attachment.filename || 'unknown'}]\n\n${fallbackBody}`;
+                                                const parsedData = await parseInvoiceDataWithAI(rawContent, companyName, customRules);
+                                                if (await saveParsedData(parsedData)) {
+                                                    console.log(`[Email] Email UID ${id} successfully processed from body text fallback!`);
+                                                }
+                                            }
+                                        }
 
                                     } catch (conversionError) {
-                                        console.error(`[PDF Conversion Error] Failed to convert scanned PDF:`, conversionError.message || conversionError);
+                                        console.error(`[PDF Extraction Error] Failed to extract from scanned PDF:`, conversionError.message || conversionError);
                                         // Fallback to body text ONLY if there is actual text
                                         const fallbackBody = (parsedEmail.text || parsedEmail.html || '').trim();
                                         if (fallbackBody.length > 250) {
@@ -818,8 +836,6 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                             if (await saveParsedData(parsedData)) {
                                                 console.log(`[Email] Email UID ${id} successfully processed from body text fallback!`);
                                             }
-                                        } else {
-                                            console.log(`[Email] Email UID ${id}: Fallback failed. PDF is scanned, conversion failed, and email body is too short (${fallbackBody.length} chars).`);
                                         }
                                     }
                                 } else {
