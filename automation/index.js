@@ -106,6 +106,7 @@ Examples: "Jan" or "January" -> 01, "Feb" -> 02, "Mar" -> 03, "Apr" -> 04, "May"
 Estonian Translation Guide: "Tähtaeg", "Maksetähtaeg", or "Maksetähtpäev" ALWAYS unequivocally mean DUE DATE.
 If the Date is "Mar 6, 2026", dateCreated MUST be "06-03-2026".
 If the Due Date is "Mar 8, 2026", dueDate MUST be "08-03-2026".
+If there is NO explicit Due Date (maksetähtaeg) on the invoice, you MUST set the dueDate to be exactly the same as the dateCreated.
 Do NOT hallucinate or add months or hardcode 30 days unless explicitly told to.
 
 ${customRulesSection}
@@ -816,14 +817,25 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
 
                         let rawContent = '';
 
-                        // --- UPLOAD ORIGINAL ATTACHMENT TO STORAGE ---
+                        // --- UPLOAD ORIGINAL ATTACHMENT TO STORAGE WITH RETRY ---
                         let fileUrl = null;
-                        try {
-                            console.log(`[Storage] Uploading ${filename} to Firebase Storage...`);
-                            fileUrl = await uploadToStorage(companyId, filename, mime, attachment.content);
-                            console.log(`[Storage] Successfully uploaded! URL: ${fileUrl}`);
-                        } catch (uploadError) {
-                            console.error(`[Storage Error] Failed to upload ${filename}:`, uploadError);
+                        let uploadAttempts = 0;
+                        while (uploadAttempts < 3 && !fileUrl) {
+                            try {
+                                uploadAttempts++;
+                                console.log(`[Storage] Uploading ${filename} to Firebase Storage (Attempt ${uploadAttempts})...`);
+                                fileUrl = await uploadToStorage(companyId, filename, mime, attachment.content);
+                                console.log(`[Storage] Successfully uploaded! URL: ${fileUrl}`);
+                            } catch (uploadError) {
+                                console.error(`[Storage Error] Failed to upload ${filename} on attempt ${uploadAttempts}:`, uploadError.message || uploadError);
+                                if (uploadAttempts < 3) {
+                                    await new Promise(res => setTimeout(res, 2000)); // wait 2s before retry
+                                }
+                            }
+                        }
+
+                        if (!fileUrl) {
+                            console.error(`[Storage Critical] Failed to upload ${filename} after 3 attempts. Invoice will be saved without a file.`);
                         }
 
                         // Helper to inject the generated URL and save
