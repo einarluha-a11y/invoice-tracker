@@ -439,6 +439,22 @@ async function writeToFirestore(dataArray) {
                         console.log(`[Zapier] Sending webhook to Zapier for Invoice ${payload.invoiceId}...`);
                         payload.companyName = compData.name || '';
 
+                        // --- DYNAMIC DROPBOX ROUTING ---
+                        let folderBasePath = "UNKNOWN_COMPANY";
+                        let folderPrefix = "UK";
+
+                        const compNameUpper = payload.companyName.toUpperCase();
+                        if (compNameUpper.includes("IDEACOM")) {
+                            folderBasePath = "IDEACOM";
+                            folderPrefix = "IC";
+                        } else if (compNameUpper.includes("GLOBAL TECHNICS")) {
+                            folderBasePath = "GLOBAL TECHNICS";
+                            folderPrefix = "GT";
+                        }
+
+                        // e.g. /GLOBAL TECHNICS/GT_ARVED/GT_arved_meile/GT_arved_meile_2026/GT_arved_meile_2026_3
+                        payload.dropboxFolderPath = `/${folderBasePath}/${folderPrefix}_ARVED/${folderPrefix}_arved_meile/${folderPrefix}_arved_meile_${payload.invoiceYear}/${folderPrefix}_arved_meile_${payload.invoiceYear}_${payload.invoiceMonth}`;
+
                         const response = await fetch(compData.zapierWebhookUrl, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
