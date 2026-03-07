@@ -201,6 +201,7 @@ Examples: "Jan" or "January" -> 01, "Feb" -> 02, "Mar" -> 03, "Apr" -> 04, "May"
 Estonian Translation Guide: "Tähtaeg", "Maksetähtaeg", or "Maksetähtpäev" ALWAYS unequivocally mean DUE DATE.
 If the Date is "Mar 6, 2026", dateCreated MUST be "06-03-2026".
 If the Due Date is "Mar 8, 2026", dueDate MUST be "08-03-2026".
+If there is NO explicit Due Date (maksetähtaeg) on the invoice, you MUST set the dueDate to be exactly the same as the dateCreated.
 Do NOT hallucinate or add months or hardcode 30 days unless explicitly told to.
 
 ${customRulesSection}
@@ -356,8 +357,8 @@ async function writeToFirestore(dataArray) {
                         amount: numAmount,
                         currency: data.currency || 'EUR',
                         dateCreated: data.dateCreated || '',
-                invoiceYear: data.dateCreated ? data.dateCreated.split("-")[2] || data.dateCreated.split(".")[2] : new Date().getFullYear().toString(),
-                invoiceMonth: data.dateCreated ? parseInt(data.dateCreated.split("-")[1] || data.dateCreated.split(".")[1] || "1", 10).toString() : (new Date().getMonth() + 1).toString(),
+                        invoiceYear: data.dateCreated ? data.dateCreated.split("-")[2] || data.dateCreated.split(".")[2] : new Date().getFullYear().toString(),
+                        invoiceMonth: data.dateCreated ? parseInt(data.dateCreated.split("-")[1] || data.dateCreated.split(".")[1] || "1", 10).toString() : (new Date().getMonth() + 1).toString(),
                         dueDate: data.dueDate || '',
                         status: 'Unpaid',
                         fileUrl: data.fileUrl,
