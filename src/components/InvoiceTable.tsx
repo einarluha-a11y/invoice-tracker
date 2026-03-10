@@ -33,7 +33,11 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
         let active = true;
         if (viewingPdfUrl && viewingPdfUrl.toLowerCase().includes('.pdf')) {
             setIsLoadingPdf(true);
-            fetch(viewingPdfUrl)
+
+            // Route through a free CORS proxy to bypass Firebase's strict bucket rules
+            const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(viewingPdfUrl)}`;
+
+            fetch(proxyUrl)
                 .then(res => res.blob())
                 .then(blob => {
                     if (active) {
@@ -88,7 +92,8 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
         // For PDFs, we bypass the Chrome PWA download behavior by fetching as a native Blob 
         // and using a hidden iframe to trigger the physical printer dialog directly.
         try {
-            const response = await fetch(url);
+            const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+            const response = await fetch(proxyUrl);
             const blob = await response.blob();
             const blobUrl = URL.createObjectURL(blob);
 
