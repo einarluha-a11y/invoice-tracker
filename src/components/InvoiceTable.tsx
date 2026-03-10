@@ -25,6 +25,7 @@ export type SortDirection = 'asc' | 'desc';
 export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, endDate, sortField, sortDirection, onSort, onEdit, onDelete, companyName }: InvoiceTableProps) {
     const { t, i18n } = useTranslation();
     const [isExportingPDF, setIsExportingPDF] = useState(false);
+    const [viewingPdfUrl, setViewingPdfUrl] = useState<string | null>(null);
 
     const handleSort = (field: SortField) => {
         onSort(field);
@@ -317,18 +318,16 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                                             title="Delete"
                                         >🗑</button>
                                         {invoice.fileUrl && (
-                                            <a
-                                                href={invoice.fileUrl}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', padding: '4px', fontSize: '1.2rem', opacity: 0.9, display: 'flex', alignItems: 'center', textDecoration: 'none' }}
+                                            <button
+                                                onClick={() => setViewingPdfUrl(invoice.fileUrl!)}
+                                                style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center', opacity: 0.9 }}
                                                 title="View Document"
                                             >
-                                                <svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                <svg width="1.2em" height="1.2em" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                                     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                                                     <polyline points="14 2 14 8 20 8"></polyline>
                                                 </svg>
-                                            </a>
+                                            </button>
                                         )}
                                     </div>
                                 </td>
@@ -337,6 +336,31 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                     </tbody>
                 </table>
             </div>
+
+            {/* Inline PDF Viewer Modal */}
+            {viewingPdfUrl && (
+                <div style={{
+                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                    backgroundColor: 'rgba(0, 0, 0, 0.85)', zIndex: 9999,
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                    backdropFilter: 'blur(5px)'
+                }}>
+                    <div style={{ width: '100%', maxWidth: '1000px', display: 'flex', justifyContent: 'flex-end', padding: '1rem' }}>
+                        <button
+                            onClick={() => setViewingPdfUrl(null)}
+                            style={{ background: 'var(--bg-card)', border: '1px solid rgba(255,255,255,0.2)', color: '#fff', borderRadius: '50%', width: '40px', height: '40px', fontSize: '1.5rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                            title="Close Viewer"
+                        >
+                            &times;
+                        </button>
+                    </div>
+                    <iframe
+                        src={`${viewingPdfUrl}#view=FitH`}
+                        style={{ width: '90%', height: '85vh', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 'var(--radius-lg)', background: '#fff' }}
+                        title="PDF Viewer"
+                    />
+                </div>
+            )}
         </div>
     );
 }
