@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { Invoice, InvoiceStatus } from '../data/mockInvoices';
-import { InvoicePdfViewer } from './InvoicePdfViewer';
 import './InvoiceTable.css';
 
 interface InvoiceTableProps {
@@ -338,12 +337,39 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                 </table>
             </div>
 
-            {/* Inline PDF Viewer Modal */}
+            {/* Universal Inline Viewer Modal */}
             {viewingPdfUrl && (
-                <InvoicePdfViewer
-                    url={viewingPdfUrl}
-                    onClose={() => setViewingPdfUrl(null)}
-                />
+                <div style={{
+                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                    backgroundColor: 'rgba(0, 0, 0, 0.85)', zIndex: 9999,
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                    backdropFilter: 'blur(5px)'
+                }}>
+                    <div style={{ width: '100%', maxWidth: '1000px', display: 'flex', justifyContent: 'flex-end', padding: '1rem' }}>
+                        <button
+                            onClick={() => setViewingPdfUrl(null)}
+                            style={{ background: 'var(--bg-card)', border: '1px solid rgba(255,255,255,0.2)', color: '#fff', borderRadius: '50%', width: '40px', height: '40px', fontSize: '1.5rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                            title="Close Viewer"
+                        >
+                            &times;
+                        </button>
+                    </div>
+                    {viewingPdfUrl.toLowerCase().includes('.pdf') ? (
+                        <iframe
+                            src={`https://docs.google.com/viewer?url=${encodeURIComponent(viewingPdfUrl)}&embedded=true`}
+                            style={{ width: '90%', height: '85vh', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 'var(--radius-lg)', background: '#fff' }}
+                            title="PDF Viewer"
+                        />
+                    ) : (
+                        <div style={{ width: '90%', height: '85vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fff', borderRadius: 'var(--radius-lg)' }}>
+                            <img
+                                src={viewingPdfUrl}
+                                alt="Invoice Document"
+                                style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: 'var(--radius-lg)' }}
+                            />
+                        </div>
+                    )}
+                </div>
             )}
         </div>
     );
