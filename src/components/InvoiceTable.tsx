@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -26,6 +26,37 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
     const { t, i18n } = useTranslation();
     const [isExportingPDF, setIsExportingPDF] = useState(false);
     const [viewingPdfUrl, setViewingPdfUrl] = useState<string | null>(null);
+    const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
+    const [isLoadingPdf, setIsLoadingPdf] = useState(false);
+
+    useEffect(() => {
+        let active = true;
+        if (viewingPdfUrl && viewingPdfUrl.toLowerCase().includes('.pdf')) {
+            setIsLoadingPdf(true);
+            fetch(viewingPdfUrl)
+                .then(res => res.blob())
+                .then(blob => {
+                    if (active) {
+                        const url = URL.createObjectURL(blob);
+                        setPdfBlobUrl(url);
+                        setIsLoadingPdf(false);
+                    }
+                })
+                .catch(err => {
+                    console.error('Failed to load PDF blob:', err);
+                    setIsLoadingPdf(false);
+                });
+        } else {
+            setPdfBlobUrl(null);
+        }
+
+        return () => {
+            active = false;
+            if (pdfBlobUrl) {
+                URL.revokeObjectURL(pdfBlobUrl);
+            }
+        };
+    }, [viewingPdfUrl]);
 
     const handleSort = (field: SortField) => {
         onSort(field);
@@ -431,11 +462,23 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                         </button>
                     </div>
                     {viewingPdfUrl.toLowerCase().includes('.pdf') ? (
-                        <iframe
-                            src={`https://docs.google.com/viewer?url=${encodeURIComponent(viewingPdfUrl)}&embedded=true`}
-                            style={{ width: '90%', height: '85vh', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 'var(--radius-lg)', background: '#fff' }}
-                            title="PDF Viewer"
-                        />
+                        <div style={{ width: '90%', height: '85vh', background: '#fff', borderRadius: 'var(--radius-lg)', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+                            {isLoadingPdf ? (
+                                <div style={{ color: '#666', fontSize: '1.2rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
+                                    <div className="spinner" style={{ width: '40px', height: '40px', border: '3px solid rgba(0,0,0,0.1)', borderTop: '3px solid var(--accent-color)', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+                                    Loading Document...
+                                    <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
+                                </div>
+                            ) : pdfBlobUrl ? (
+                                <iframe
+                                    src={`${pdfBlobUrl}#view=FitH`}
+                                    style={{ width: '100%', height: '100%', border: 'none', borderRadius: 'var(--radius-lg)' }}
+                                    title="PDF Viewer"
+                                />
+                            ) : (
+                                <div style={{ color: 'red' }}>Failed to load PDF</div>
+                            )}
+                        </div>
                     ) : (
                         <div style={{ width: '90%', height: '85vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fff', borderRadius: 'var(--radius-lg)' }}>
                             <img
