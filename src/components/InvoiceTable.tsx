@@ -318,7 +318,7 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                                         >🗑</button>
                                         {invoice.fileUrl && (
                                             <a
-                                                href={`https://docs.google.com/viewer?url=${encodeURIComponent(invoice.fileUrl)}`}
+                                                href={invoice.fileUrl}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
                                                 style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', padding: '4px', fontSize: '1.2rem', opacity: 0.9, display: 'flex', alignItems: 'center', textDecoration: 'none' }}
