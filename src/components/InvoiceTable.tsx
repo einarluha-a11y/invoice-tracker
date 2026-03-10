@@ -31,11 +31,14 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
         onSort(field);
     };
 
-    const handlePrint = (url: string) => {
+    const handleSave = (url: string) => {
+        window.open(url, '_blank');
+    };
+
+    const handleActualPrint = async (url: string) => {
         const isPdf = url.toLowerCase().includes('.pdf');
-        if (isPdf) {
-            window.open(url, '_blank');
-        } else {
+
+        if (!isPdf) {
             const printWindow = window.open('', '_blank');
             if (printWindow) {
                 printWindow.document.write(`
@@ -47,9 +50,36 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                     </html>
                 `);
                 printWindow.document.close();
-            } else {
-                window.open(url, '_blank');
             }
+            return;
+        }
+
+        // For PDFs, we bypass the Chrome PWA download behavior by fetching as a native Blob 
+        // and using a hidden iframe to trigger the physical printer dialog directly.
+        try {
+            const response = await fetch(url);
+            const blob = await response.blob();
+            const blobUrl = URL.createObjectURL(blob);
+
+            const iframe = document.createElement('iframe');
+            iframe.style.display = 'none';
+            iframe.src = blobUrl;
+
+            iframe.onload = () => {
+                setTimeout(() => {
+                    iframe.contentWindow?.print();
+                    setTimeout(() => {
+                        URL.revokeObjectURL(blobUrl);
+                        document.body.removeChild(iframe);
+                    }, 1000);
+                }, 100);
+            };
+
+            document.body.appendChild(iframe);
+        } catch (error) {
+            console.error("Failed to print directly:", error);
+            // Fallback
+            window.open(url, '_blank');
         }
     };
 
@@ -369,7 +399,19 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                 }}>
                     <div style={{ width: '100%', maxWidth: '1000px', display: 'flex', justifyContent: 'flex-end', gap: '1rem', padding: '1rem' }}>
                         <button
-                            onClick={() => handlePrint(viewingPdfUrl)}
+                            onClick={() => handleSave(viewingPdfUrl)}
+                            style={{ background: 'var(--bg-secondary)', border: '1px solid rgba(255,255,255,0.2)', color: '#fff', borderRadius: 'var(--radius-md)', padding: '0.5rem 1rem', fontSize: '1rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600 }}
+                            title={t('table.save', 'Save')}
+                        >
+                            <svg width="1.2em" height="1.2em" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="7 10 12 15 17 10"></polyline>
+                                <line x1="12" y1="15" x2="12" y2="3"></line>
+                            </svg>
+                            {t('table.save', 'Save')}
+                        </button>
+                        <button
+                            onClick={() => handleActualPrint(viewingPdfUrl)}
                             style={{ background: 'var(--accent-color, #3b82f6)', border: 'none', color: '#fff', borderRadius: 'var(--radius-md)', padding: '0.5rem 1rem', fontSize: '1rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600 }}
                             title={t('table.print', 'Print')}
                         >
@@ -382,7 +424,7 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                         </button>
                         <button
                             onClick={() => setViewingPdfUrl(null)}
-                            style={{ background: 'var(--bg-card)', border: '1px solid rgba(255,255,255,0.2)', color: '#fff', borderRadius: '50%', width: '40px', height: '40px', fontSize: '1.5rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                            style={{ background: 'var(--bg-card)', border: '1px solid rgba(255,255,255,0.2)', color: '#fff', borderRadius: '50%', width: '40px', height: '40px', fontSize: '1.5rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', marginLeft: '1rem' }}
                             title="Close Viewer"
                         >
                             &times;
