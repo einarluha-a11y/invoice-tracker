@@ -1,10 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 
-// Initialize PDF.js worker
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+// Initialize PDF.js worker locally from installed package to avoid unpkg blocks
+pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+    'pdfjs-dist/build/pdf.worker.min.js',
+    import.meta.url,
+).toString();
 
 interface InvoicePdfViewerProps {
     url: string;
@@ -14,6 +17,39 @@ export const InvoicePdfViewer: React.FC<InvoicePdfViewerProps> = ({ url }) => {
     const [numPages, setNumPages] = useState<number>();
     const [pageNumber, setPageNumber] = useState<number>(1);
     const [error, setError] = useState<string | null>(null);
+    const [pdfFile, setPdfFile] = useState<Blob | string | null>(null);
+
+    useEffect(() => {
+        let active = true;
+
+        // Use a more reliable proxy for binary data, or attempt direct fetch
+        // Sometimes Firebase allows direct fetch if security rules permit or public tokens are used.
+        // We will try direct fetch, and if it fails, fallback to a proxy.
+        // Actually, since we explicitly know Firebase has strict CORS, we will proxy it securely using standard fetch APIs locally.
+
+        const loadPdf = async () => {
+            try {
+                // Try direct proxy fetch carefully capturing the Blob
+                // allorigins.win can corrupt binary data. We use a more reliable standard fetch approach with corsproxy.io
+                const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
+                const response = await fetch(proxyUrl);
+                if (!response.ok) throw new Error('Network response was not ok');
+                const blob = await response.blob();
+                if (active) {
+                    setPdfFile(blob);
+                }
+            } catch (err) {
+                console.error('Failed to fetch PDF blob:', err);
+                if (active) {
+                    setError('Failed to download PDF data.');
+                }
+            }
+        };
+
+        loadPdf();
+
+        return () => { active = false; };
+    }, [url]);
 
     function onDocumentLoadSuccess({ numPages }: { numPages: number }): void {
         setNumPages(numPages);
@@ -34,10 +70,10 @@ export const InvoicePdfViewer: React.FC<InvoicePdfViewerProps> = ({ url }) => {
                         Click here to download/open the file directly
                     </a>
                 </div>
-            ) : (
+            ) : pdfFile ? (
                 <>
                     <Document
-                        file={url}
+                        file={pdfFile}
                         onLoadSuccess={onDocumentLoadSuccess}
                         onLoadError={onDocumentLoadError}
                         loading={
@@ -76,6 +112,12 @@ export const InvoicePdfViewer: React.FC<InvoicePdfViewerProps> = ({ url }) => {
                         </div>
                     )}
                 </>
+            ) : (
+                <div style={{ color: '#666', fontSize: '1.2rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', marginTop: '2rem' }}>
+                    <div className="spinner" style={{ width: '40px', height: '40px', border: '3px solid rgba(0,0,0,0.1)', borderTop: '3px solid var(--accent-color)', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+                    Downloading PDF Data...
+                    <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
+                </div>
             )}
         </div>
     );

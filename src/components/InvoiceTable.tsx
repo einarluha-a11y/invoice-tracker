@@ -469,10 +469,7 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                     </div>
                     {viewingPdfUrl.toLowerCase().includes('.pdf') ? (
                         <div style={{ width: '90%', height: '85vh', background: '#fff', borderRadius: 'var(--radius-lg)', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden' }}>
-                            <InvoicePdfViewer url={
-                                // Use the proxy for the Canvas viewer to ensure no CORS blocks from Firebase
-                                `https://api.allorigins.win/raw?url=${encodeURIComponent(viewingPdfUrl)}`
-                            } />
+                            <InvoicePdfViewer url={viewingPdfUrl} />
                         </div>
                     ) : (
                         <div style={{ width: '90%', height: '85vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fff', borderRadius: 'var(--radius-lg)' }}>
