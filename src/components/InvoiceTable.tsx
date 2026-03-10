@@ -95,6 +95,8 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
         try {
             const proxyUrl = `/api/proxy?url=${encodeURIComponent(url)}`;
             const response = await fetch(proxyUrl);
+            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+
             const blob = await response.blob();
             const blobUrl = URL.createObjectURL(blob);
 
@@ -103,13 +105,21 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
             iframe.src = blobUrl;
 
             iframe.onload = () => {
-                setTimeout(() => {
-                    iframe.contentWindow?.print();
+                try {
+                    if (iframe.contentWindow) {
+                        iframe.contentWindow.print();
+                    } else {
+                        console.error('Print iframe contentWindow is null');
+                    }
+                } catch (e) {
+                    console.error('Error executing print command:', e);
+                } finally {
+                    // Cleanup after a delay to ensure print dialog has time to open
                     setTimeout(() => {
-                        URL.revokeObjectURL(blobUrl);
                         document.body.removeChild(iframe);
-                    }, 1000);
-                }, 100);
+                        URL.revokeObjectURL(blobUrl);
+                    }, 2000);
+                }
             };
 
             document.body.appendChild(iframe);
