@@ -31,6 +31,28 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
         onSort(field);
     };
 
+    const handlePrint = (url: string) => {
+        const isPdf = url.toLowerCase().includes('.pdf');
+        if (isPdf) {
+            window.open(url, '_blank');
+        } else {
+            const printWindow = window.open('', '_blank');
+            if (printWindow) {
+                printWindow.document.write(`
+                    <html>
+                        <head><title>Print Invoice</title></head>
+                        <body style="margin: 0; display: flex; justify-content: center; align-items: flex-start;">
+                            <img src="${url}" style="max-width: 100%;" onload="window.print(); window.close();" />
+                        </body>
+                    </html>
+                `);
+                printWindow.document.close();
+            } else {
+                window.open(url, '_blank');
+            }
+        }
+    };
+
     const filteredAndSortedInvoices = useMemo(() => {
         return invoices
             .filter((invoice) => {
@@ -345,7 +367,19 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                     display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                     backdropFilter: 'blur(5px)'
                 }}>
-                    <div style={{ width: '100%', maxWidth: '1000px', display: 'flex', justifyContent: 'flex-end', padding: '1rem' }}>
+                    <div style={{ width: '100%', maxWidth: '1000px', display: 'flex', justifyContent: 'flex-end', gap: '1rem', padding: '1rem' }}>
+                        <button
+                            onClick={() => handlePrint(viewingPdfUrl)}
+                            style={{ background: 'var(--accent-color, #3b82f6)', border: 'none', color: '#fff', borderRadius: 'var(--radius-md)', padding: '0.5rem 1rem', fontSize: '1rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600 }}
+                            title={t('table.print', 'Print')}
+                        >
+                            <svg width="1.2em" height="1.2em" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <polyline points="6 9 6 2 18 2 18 9"></polyline>
+                                <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+                                <rect x="6" y="14" width="12" height="8"></rect>
+                            </svg>
+                            {t('table.print', 'Print')}
+                        </button>
                         <button
                             onClick={() => setViewingPdfUrl(null)}
                             style={{ background: 'var(--bg-card)', border: '1px solid rgba(255,255,255,0.2)', color: '#fff', borderRadius: '50%', width: '40px', height: '40px', fontSize: '1.5rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
