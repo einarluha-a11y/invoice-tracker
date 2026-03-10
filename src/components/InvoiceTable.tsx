@@ -91,7 +91,7 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
         }
 
         // For PDFs, we bypass the Chrome PWA download behavior by fetching as a native Blob 
-        // and using a hidden iframe to trigger the physical printer dialog directly.
+        // and opening it in a new browser tab where the native PDF viewer can safely print it.
         try {
             const proxyUrl = `/api/proxy?url=${encodeURIComponent(url)}`;
             const response = await fetch(proxyUrl);
@@ -100,32 +100,15 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
             const blob = await response.blob();
             const blobUrl = URL.createObjectURL(blob);
 
-            const iframe = document.createElement('iframe');
-            iframe.style.display = 'none';
-            iframe.src = blobUrl;
+            // Open the Blob explicitly in a new foreground tab.
+            // Hidden iframes are blocked by Chrome PWA security policies for printing PDFs.
+            window.open(blobUrl, '_blank');
 
-            iframe.onload = () => {
-                try {
-                    if (iframe.contentWindow) {
-                        iframe.contentWindow.print();
-                    } else {
-                        console.error('Print iframe contentWindow is null');
-                    }
-                } catch (e) {
-                    console.error('Error executing print command:', e);
-                } finally {
-                    // Cleanup after a delay to ensure print dialog has time to open
-                    setTimeout(() => {
-                        document.body.removeChild(iframe);
-                        URL.revokeObjectURL(blobUrl);
-                    }, 2000);
-                }
-            };
-
-            document.body.appendChild(iframe);
+            // Cleanup the blob URL after a short delay since it's just been opened in a new tab
+            setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
         } catch (error) {
-            console.error("Failed to print directly:", error);
-            // Fallback
+            console.error("Failed to fetch print document:", error);
+            // Fallback to raw URL if proxy fails completely
             window.open(url, '_blank');
         }
     };
