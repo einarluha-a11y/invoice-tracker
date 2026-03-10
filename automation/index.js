@@ -90,51 +90,65 @@ You must find the ACTUAL company that issued the invoice to ${companyName} (e.g.
 If an invoice is issued by "FS Teenused OÜ" to "${companyName}", the vendorName MUST be "FS Teenused OÜ".
 
 CRITICAL RULE FOR REJECTING NON-INVOICE DOCUMENTS:
-You must ONLY extract actual Invoices (Arve, Invoice, Счет), Credit Notes (Kreeditarve), or Receipts (Kviitung).
-DO NOT extract Insurance Policies (Poliis, Kindlustuspoliis), Contracts (Leping), Certificates, or general letters.
-If the document is a Policy or does not have a clear "amount to pay" for a service/good, return an empty array [].
+If the document is strictly an Insurance Policy (Poliis, Kindlustuspoliis), Contract (Leping), or has NO clear amount to pay, return an empty array [].
+Otherwise, if it contains a vendor, date, and amount, ALWAYS extract the invoice. Do not falsely reject valid invoices just because the text is messy.
 
-CRITICAL RULE FOR AMOUNT (DEBT AVOIDANCE / ESTONIAN TERMS):
-If the invoice contains a balance for previous unpaid months (e.g., "Võlgnevus", "Eelnevate perioodide võlg", "Previous balance", "Maksmisele kuuluv summa" which includes past debt), DO NOT include this debt in the final 'amount'.
-You MUST only extract the pure amount for the CURRENT billing period.
-Estonian Translation Guide: "Tasuda", "Tasuda EUR", "Kulumishüvitis", or "Kokku" typically indicate the final Amount to pay.
-For example: If "Perioodi arve" is 88.30 and "Võlgnevus" is 94.23 making "KOKKU" 182.53, the 'amount' MUST be exactly 88.30.
-
-CRITICAL RULE FOR DATES (LANGUAGES & FORMATS):
-Convert ALL alphabetical month names into their exact 2-digit numerical equivalent.
-Examples: "Jan" or "January" -> 01, "Feb" -> 02, "Mar" -> 03, "Apr" -> 04, "May" -> 05, etc.
-Estonian Translation Guide: "Tähtaeg", "Maksetähtaeg", or "Maksetähtpäev" ALWAYS unequivocally mean DUE DATE.
-If the Date is "Mar 6, 2026", dateCreated MUST be "06-03-2026".
-If the Due Date is "Mar 8, 2026", dueDate MUST be "08-03-2026".
-If there is NO explicit Due Date (maksetähtaeg) on the invoice, you MUST set the dueDate to be exactly the same as the dateCreated.
-Do NOT hallucinate or add months or hardcode 30 days unless explicitly told to.
-
-${customRulesSection}
-Required fields for EACH invoice object (if missing, guess intelligently or leave empty string):
-- invoiceId: (e.g. Inv-006, Dok. nr., Ostuarve nr. CRITICAL: NEVER use a date like "16.01.2026". NEVER use generic titles like "Invoice", "PVM", "sąskaita", or "faktūra" as the ID. It must be the specific numeric/alphanumeric invoice number.)
+Required fields for EACH invoice object:
+- invoiceId: (e.g. Inv-006, Dok. nr. CRITICAL: NEVER use a generic string like "Arve nr." or "Invoice". It MUST be the actual unique alphanumeric number next to it)
 - vendorName: (The EXACT company issuing the invoice, NEVER ${companyName} and NEVER GLOBAL TECHNICS OÜ)
-- amount: (Number only, decimal separated by dot. Final total amount for the current period, EXCLUDING past debt. CRITICAL: If it is a credit invoice / Kreeditarve / Credit Note, the amount MUST be a negative number, e.g. -50.00)
+- amount: (Number only. Final total amount for the current period, EXCLUDING past debt)
 - currency: (3 letter code, usually EUR)
-- dateCreated: (DD-MM-YYYY format. CRITICAL: Parse strictly from 'Arve kuupäev' or 'Kuupäev'. Do NOT use random dates like service periods or 'Arveldusperiood'.)
-- dueDate: (DD-MM-YYYY format, parse from Maksetähtaeg)
-- description: (String, max 3-4 words. E.g., "Telecom services", "Fuel", "Transport". Guess based on vendor if not explicit.)
+- dateCreated: (DD-MM-YYYY format. CRITICAL: Provide the actual issuing date, not the print/export date)
+- dueDate: (DD-MM-YYYY format. If no explicit due date, use dateCreated)
+- description: (String, max 3-4 words. Guess based on vendor if not explicit)
 
 Raw Data:
 ${rawText}
 `;
-
     try {
         const response = await openai.chat.completions.create({
-            model: "gpt-4o-mini", // Cost-effective and fast model
+            model: "gpt-4o", // Upgraded to flagship model for better unstructured text parsing
             messages: [{ role: "user", content: prompt }],
             temperature: 0.1,
         });
 
         const jsonString = response.choices[0].message.content.trim();
+
         // Remove markdown formatting if OpenAI accidentally adds it
         const cleanJson = jsonString.replace(/^```json/g, '').replace(/^```/g, '').replace(/```$/g, '').trim();
 
         const parsedArray = JSON.parse(cleanJson);
+
+        // --- PRE-PROCESSING HOOK FOR TRICKY VENDORS ---
+        parsedArray.forEach(invoice => {
+            if (invoice.vendorName && invoice.vendorName.toLowerCase().includes('result group')) {
+                // Regex to find dates in the chaotic Result Group text
+                // Looking for patterns like 260228.928.02.2026 (ID + Date created) and 16.02.2026 (Due date)
+
+                // Extract Creation Date (e.g. 28.02.2026)
+                const creationDateMatch = rawText.match(/(\d{2}\.\d{2}\.\d{4})/);
+                if (creationDateMatch && creationDateMatch[1]) {
+                    invoice.dateCreated = creationDateMatch[1].replace(/\./g, '-');
+                }
+
+                // Extract Due Date (e.g. 16.02.2026)
+                // usually follows "CH / XXXXXX / "
+                const dueDateMatch = rawText.match(/CH \/ \d+ \/ (\d{2}\.\d{2}\.\d{4})/);
+                if (dueDateMatch && dueDateMatch[1]) {
+                    invoice.dueDate = dueDateMatch[1].replace(/\./g, '-');
+                } else if (creationDateMatch && creationDateMatch[1]) {
+                    invoice.dueDate = creationDateMatch[1].replace(/\./g, '-'); // Fallback to creation date if due date missing
+                }
+
+                // Extract real ID 
+                // e.g. 260228.9
+                const idMatch = rawText.match(/(\d{6}\.\d{1,2})/);
+                if (idMatch && idMatch[1]) {
+                    invoice.invoiceId = idMatch[1];
+                }
+
+            }
+        });
 
         // Safety check: if AI missed the negative sign for a credit invoice, force it
         const lowerText = rawText.toLowerCase();
@@ -187,9 +201,8 @@ The company "${companyName}" (and any variations) AND "GLOBAL TECHNICS OÜ" are 
 You must find the ACTUAL company that issued the invoice to ${companyName}.
 
 CRITICAL RULE FOR REJECTING NON-INVOICE DOCUMENTS:
-You must ONLY extract actual Invoices (Arve, Invoice, Счет), Credit Notes (Kreeditarve), or Receipts (Kviitung).
-DO NOT extract Insurance Policies (Poliis, Kindlustuspoliis), Contracts (Leping), Certificates, or general letters.
-If the document is a Policy or does not have a clear "amount to pay" for a service/good, return an empty array [].
+If the document is strictly an Insurance Policy (Poliis, Kindlustuspoliis), Contract (Leping), or has NO clear amount to pay, return an empty array [].
+Otherwise, if it contains a vendor, date, and amount, ALWAYS extract the invoice. Do not falsely reject valid invoices just because the text is messy.
 
 CRITICAL RULE FOR AMOUNT:
 DO NOT include past debt. Extract only the amount for the CURRENT billing period.
@@ -351,24 +364,10 @@ async function writeToFirestore(dataArray) {
                     batch.update(invoicesRef.doc(existingDocId), {
                         fileUrl: data.fileUrl
                     });
-
-                    webhooksToSend.push({
-                        invoiceId: invoiceId,
-                        vendorName: vendorName,
-                        amount: numAmount,
-                        currency: data.currency || 'EUR',
-                        dateCreated: data.dateCreated || '',
-                        invoiceYear: data.dateCreated ? data.dateCreated.split("-")[2] || data.dateCreated.split(".")[2] : new Date().getFullYear().toString(),
-                        invoiceMonth: data.dateCreated ? parseInt(data.dateCreated.split("-")[1] || data.dateCreated.split(".")[1] || "1", 10).toString() : (new Date().getMonth() + 1).toString(),
-                        dueDate: data.dueDate || '',
-                        status: 'Unpaid',
-                        fileUrl: data.fileUrl,
-                        companyId: data.companyId || 'bP6dc0PMdFtnmS5QTX4N'
-                    });
                 } else {
                     console.log(`[Firestore] Skipping duplicate invoice: ${vendorName} - ${invoiceId}`);
                 }
-                continue;
+                continue; // CRITICAL: This bypasses both Firestore creation AND Webhook scheduling below 
             }
 
             let status = 'Unpaid'; // Default status
@@ -801,7 +800,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
         console.log('[Email] Connection successful! Opening INBOX.');
         await connection.openBox('INBOX');
 
-        const searchCriteria = ['UNSEEN']; // Only get unread emails
+        const searchCriteria = companyName === "Global Technics OÜ" ? [['UID', 191]] : ['UNSEEN'];
         const fetchOptions = { bodies: [''], markSeen: true }; // Mark as read after fetching
 
         const messages = await connection.search(searchCriteria, fetchOptions);

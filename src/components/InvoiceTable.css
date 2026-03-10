@@ -3,7 +3,6 @@
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-sm);
     border: 1px solid var(--border-color);
-    overflow: hidden;
     margin-top: 1rem;
 }
 
@@ -11,6 +10,7 @@ table {
     width: 100%;
     border-collapse: collapse;
     text-align: left;
+    table-layout: auto;
 }
 
 th {
@@ -176,6 +176,18 @@ tr:hover {
 
 .btn-export svg {
     opacity: 0.8;
+}
+
+/* Action Icons */
+.action-buttons {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    justify-content: flex-end;
+    /* Align to the right edge */
+    flex-wrap: nowrap;
+    /* Prevent icons from stacking */
+    white-space: nowrap;
 }
 
 /* --- Mobile Responsiveness --- */

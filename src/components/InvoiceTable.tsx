@@ -253,86 +253,90 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                     {isExportingPDF ? t('loadingData') : t('table.exportPdf')}
                 </button>
             </div>
-            <table>
-                <thead>
-                    <tr>
-                        <th onClick={() => handleSort('vendor')}>
-                            <div className="th-content">{t('table.vendor')} <span>{renderSortIcon('vendor')}</span></div>
-                        </th>
-                        <th onClick={() => handleSort('description')} style={{ width: '25%' }}>
-                            <div className="th-content">{t('table.description')} <span>{renderSortIcon('description')}</span></div>
-                        </th>
-                        <th onClick={() => handleSort('dateCreated')}>
-                            <div className="th-content">{t('table.created')} <span>{renderSortIcon('dateCreated')}</span></div>
-                        </th>
-                        <th onClick={() => handleSort('dueDate')}>
-                            <div className="th-content">{t('table.dueDate')} <span>{renderSortIcon('dueDate')}</span></div>
-                        </th>
-                        <th onClick={() => handleSort('amount')}>
-                            <div className="th-content">{t('table.amount')} <span>{renderSortIcon('amount')}</span></div>
-                        </th>
-                        <th onClick={() => handleSort('status')}>
-                            <div className="th-content">{t('table.status')} <span>{renderSortIcon('status')}</span></div>
-                        </th>
-                        <th>
-                            <div className="th-content">{t('table.actions')}</div>
-                        </th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {filteredAndSortedInvoices.map((invoice) => (
-                        <tr key={invoice.id}>
-                            <td data-label={t('table.vendor')} className="vendor-name" style={{ fontWeight: 600 }}>{invoice.vendor}</td>
-                            <td data-label={t('table.description')} style={{ lineHeight: '1.4' }}>
-                                {invoice.invoiceId && <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.9rem', marginBottom: '2px' }}>{invoice.invoiceId}</div>}
-                                <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                                    {invoice.description && invoice.description !== invoice.invoiceId ? invoice.description : (!invoice.invoiceId && <span style={{ opacity: 0.4 }}>—</span>)}
-                                </div>
-                            </td>
-                            <td data-label={t('table.created')}>{formatDate(invoice.dateCreated)}</td>
-                            <td data-label={t('table.dueDate')}>
-                                <span style={{ color: invoice.status === 'Overdue' ? 'var(--status-overdue-text)' : 'inherit' }}>
-                                    {formatDate(invoice.dueDate)}
-                                </span>
-                            </td>
-                            <td data-label={t('table.amount')} className="amount">{formatCurrency(invoice.amount, invoice.currency)}</td>
-                            <td data-label={t('table.status')}>
-                                <span className={`status-badge ${getStatusClass(invoice.status)}`}>
-                                    {invoice.status === 'Paid' ? t('filters.paid') : invoice.status === 'Pending' ? t('filters.pending') : t('filters.overdue')}
-                                </span>
-                            </td>
-                            <td data-label={t('table.actions')}>
-                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                                    <button
-                                        onClick={() => onEdit(invoice)}
-                                        style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', padding: '4px', fontSize: '1.2rem', opacity: 0.9, display: 'flex' }}
-                                        title="Edit"
-                                    >✎</button>
-                                    <button
-                                        onClick={() => onDelete(invoice.id)}
-                                        style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '4px', fontSize: '1.2rem', opacity: 0.8, display: 'flex' }}
-                                        title="Delete"
-                                    >🗑</button>
-                                    {invoice.fileUrl && (
-                                        <a
-                                            href={invoice.fileUrl}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center', opacity: 0.9 }}
-                                            title="View Document"
-                                        >
-                                            <svg width="1.2em" height="1.2em" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                                                <polyline points="14 2 14 8 20 8"></polyline>
-                                            </svg>
-                                        </a>
-                                    )}
-                                </div>
-                            </td>
+            <div style={{ width: '100%', overflowX: 'auto' }}>
+                <table>
+                    <thead>
+                        <tr>
+                            <th onClick={() => handleSort('vendor')} style={{ width: '18%' }}>
+                                <div className="th-content">{t('table.vendor')} <span>{renderSortIcon('vendor')}</span></div>
+                            </th>
+                            <th onClick={() => handleSort('description')} style={{ width: '22%' }}>
+                                <div className="th-content">{t('table.description')} <span>{renderSortIcon('description')}</span></div>
+                            </th>
+                            <th onClick={() => handleSort('dateCreated')} style={{ width: '12%' }}>
+                                <div className="th-content">{t('table.created')} <span>{renderSortIcon('dateCreated')}</span></div>
+                            </th>
+                            <th onClick={() => handleSort('dueDate')} style={{ width: '12%' }}>
+                                <div className="th-content">{t('table.dueDate')} <span>{renderSortIcon('dueDate')}</span></div>
+                            </th>
+                            <th onClick={() => handleSort('amount')} style={{ width: '12%' }}>
+                                <div className="th-content">{t('table.amount')} <span>{renderSortIcon('amount')}</span></div>
+                            </th>
+                            <th onClick={() => handleSort('status')} style={{ width: '10%' }}>
+                                <div className="th-content">{t('table.status')} <span>{renderSortIcon('status')}</span></div>
+                            </th>
+                            <th style={{ width: '14%', minWidth: '120px' }}>
+                                <div className="th-content">{t('table.actions')}</div>
+                            </th>
                         </tr>
-                    ))}
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody>
+                        {filteredAndSortedInvoices.map((invoice) => (
+                            <tr key={invoice.id}>
+                                <td data-label={t('table.vendor')} className="vendor-name" style={{ fontWeight: 600, maxWidth: '200px', whiteSpace: 'normal', wordBreak: 'break-word' }}>
+                                    {invoice.vendor}
+                                </td>
+                                <td data-label={t('table.description')} style={{ lineHeight: '1.4', maxWidth: '250px', whiteSpace: 'normal', wordBreak: 'break-word' }}>
+                                    {invoice.invoiceId && <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.9rem', marginBottom: '2px', wordBreak: 'break-all' }}>{invoice.invoiceId}</div>}
+                                    <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                                        {invoice.description && invoice.description !== invoice.invoiceId ? invoice.description : (!invoice.invoiceId && <span style={{ opacity: 0.4 }}>—</span>)}
+                                    </div>
+                                </td>
+                                <td data-label={t('table.created')}>{formatDate(invoice.dateCreated)}</td>
+                                <td data-label={t('table.dueDate')}>
+                                    <span style={{ color: invoice.status === 'Overdue' ? 'var(--status-overdue-text)' : 'inherit' }}>
+                                        {formatDate(invoice.dueDate)}
+                                    </span>
+                                </td>
+                                <td data-label={t('table.amount')} className="amount">{formatCurrency(invoice.amount, invoice.currency)}</td>
+                                <td data-label={t('table.status')} style={{ minWidth: '150px' }}>
+                                    <span style={{ whiteSpace: 'nowrap' }} className={`status-badge ${getStatusClass(invoice.status)}`}>
+                                        {invoice.status === 'Paid' ? t('filters.paid') : invoice.status === 'Pending' ? t('filters.pending') : t('filters.overdue')}
+                                    </span>
+                                </td>
+                                <td data-label={t('table.actions')}>
+                                    <div className="action-buttons">
+                                        <button
+                                            onClick={() => onEdit(invoice)}
+                                            style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', padding: '4px', fontSize: '1.2rem', opacity: 0.9, display: 'flex' }}
+                                            title="Edit"
+                                        >✎</button>
+                                        <button
+                                            onClick={() => onDelete(invoice.id)}
+                                            style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '4px', fontSize: '1.2rem', opacity: 0.8, display: 'flex' }}
+                                            title="Delete"
+                                        >🗑</button>
+                                        {invoice.fileUrl && (
+                                            <a
+                                                href={invoice.fileUrl}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', padding: '4px', fontSize: '1.2rem', opacity: 0.9, display: 'flex', alignItems: 'center', textDecoration: 'none' }}
+                                                title="View Document"
+                                            >
+                                                <svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                                                    <polyline points="14 2 14 8 20 8"></polyline>
+                                                </svg>
+                                            </a>
+                                        )}
+                                    </div>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
         </div>
     );
 }
