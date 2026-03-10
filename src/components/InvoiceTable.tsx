@@ -71,39 +71,6 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
         window.open(url, '_blank');
     };
 
-    const handleActualPrint = async (url: string) => {
-        const isPdf = url.toLowerCase().includes('.pdf');
-
-        if (!isPdf) {
-            const printWindow = window.open('', '_blank');
-            if (printWindow) {
-                printWindow.document.write(`
-                    <html>
-                        <head><title>Print Invoice</title></head>
-                        <body style="margin: 0; display: flex; justify-content: center; align-items: flex-start;">
-                            <img src="${url}" style="max-width: 100%;" onload="window.print(); window.close();" />
-                        </body>
-                    </html>
-                `);
-                printWindow.document.close();
-            }
-            return;
-        }
-
-        // For PDFs, we open the secure proxy URL directly in a new tab.
-        // The proxy sets 'Content-Disposition: inline' and 'application/pdf'
-        // which forces the browser's native PDF viewing/printing tab to open 
-        // instead of treating it as an automatic blob download.
-        try {
-            const proxyUrl = `/api/proxy?url=${encodeURIComponent(url)}`;
-            window.open(proxyUrl, '_blank');
-        } catch (error) {
-            console.error("Failed to fetch print document:", error);
-            // Fallback to raw URL if proxy fails completely
-            window.open(url, '_blank');
-        }
-    };
-
     const filteredAndSortedInvoices = useMemo(() => {
         return invoices
             .filter((invoice) => {
@@ -430,18 +397,6 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                                 <line x1="12" y1="15" x2="12" y2="3"></line>
                             </svg>
                             {t('table.save', 'Save')}
-                        </button>
-                        <button
-                            onClick={() => handleActualPrint(viewingPdfUrl)}
-                            style={{ background: 'var(--accent-color, #3b82f6)', border: 'none', color: '#fff', borderRadius: 'var(--radius-md)', padding: '0.5rem 1rem', fontSize: '1rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 600 }}
-                            title={t('table.print', 'Print')}
-                        >
-                            <svg width="1.2em" height="1.2em" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <polyline points="6 9 6 2 18 2 18 9"></polyline>
-                                <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
-                                <rect x="6" y="14" width="12" height="8"></rect>
-                            </svg>
-                            {t('table.print', 'Print')}
                         </button>
                         <button
                             onClick={() => setViewingPdfUrl(null)}
