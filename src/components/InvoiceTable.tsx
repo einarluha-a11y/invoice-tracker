@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { Invoice, InvoiceStatus } from '../data/mockInvoices';
+import { InvoicePdfViewer } from './InvoicePdfViewer';
 import './InvoiceTable.css';
 
 interface InvoiceTableProps {
@@ -467,22 +468,11 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                         </button>
                     </div>
                     {viewingPdfUrl.toLowerCase().includes('.pdf') ? (
-                        <div style={{ width: '90%', height: '85vh', background: '#fff', borderRadius: 'var(--radius-lg)', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
-                            {isLoadingPdf ? (
-                                <div style={{ color: '#666', fontSize: '1.2rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
-                                    <div className="spinner" style={{ width: '40px', height: '40px', border: '3px solid rgba(0,0,0,0.1)', borderTop: '3px solid var(--accent-color)', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
-                                    Loading Document...
-                                    <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
-                                </div>
-                            ) : pdfBlobUrl ? (
-                                <iframe
-                                    src={`${pdfBlobUrl}#view=FitH`}
-                                    style={{ width: '100%', height: '100%', border: 'none', borderRadius: 'var(--radius-lg)' }}
-                                    title="PDF Viewer"
-                                />
-                            ) : (
-                                <div style={{ color: 'red' }}>Failed to load PDF</div>
-                            )}
+                        <div style={{ width: '90%', height: '85vh', background: '#fff', borderRadius: 'var(--radius-lg)', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden' }}>
+                            <InvoicePdfViewer url={
+                                // Use the proxy for the Canvas viewer to ensure no CORS blocks from Firebase
+                                `https://api.allorigins.win/raw?url=${encodeURIComponent(viewingPdfUrl)}`
+                            } />
                         </div>
                     ) : (
                         <div style={{ width: '90%', height: '85vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fff', borderRadius: 'var(--radius-lg)' }}>
