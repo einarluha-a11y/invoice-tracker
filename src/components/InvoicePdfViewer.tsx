@@ -5,7 +5,7 @@ import 'react-pdf/dist/Page/TextLayer.css';
 
 // Initialize PDF.js worker locally from installed package to avoid unpkg blocks
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-    'pdfjs-dist/build/pdf.worker.min.js',
+    'pdfjs-dist/build/pdf.worker.min.mjs',
     import.meta.url,
 ).toString();
 

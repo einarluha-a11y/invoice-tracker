@@ -15,7 +15,6 @@
     "jspdf": "^4.2.0",
     "jspdf-autotable": "^5.0.7",
     "papaparse": "^5.5.3",
-    "pdfjs-dist": "^3.11.174",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-i18next": "^16.5.4",
