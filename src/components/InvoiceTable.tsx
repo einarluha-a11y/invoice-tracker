@@ -90,22 +90,13 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
             return;
         }
 
-        // For PDFs, we bypass the Chrome PWA download behavior by fetching as a native Blob 
-        // and opening it in a new browser tab where the native PDF viewer can safely print it.
+        // For PDFs, we open the secure proxy URL directly in a new tab.
+        // The proxy sets 'Content-Disposition: inline' and 'application/pdf'
+        // which forces the browser's native PDF viewing/printing tab to open 
+        // instead of treating it as an automatic blob download.
         try {
             const proxyUrl = `/api/proxy?url=${encodeURIComponent(url)}`;
-            const response = await fetch(proxyUrl);
-            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-
-            const blob = await response.blob();
-            const blobUrl = URL.createObjectURL(blob);
-
-            // Open the Blob explicitly in a new foreground tab.
-            // Hidden iframes are blocked by Chrome PWA security policies for printing PDFs.
-            window.open(blobUrl, '_blank');
-
-            // Cleanup the blob URL after a short delay since it's just been opened in a new tab
-            setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+            window.open(proxyUrl, '_blank');
         } catch (error) {
             console.error("Failed to fetch print document:", error);
             // Fallback to raw URL if proxy fails completely

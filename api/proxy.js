@@ -11,9 +11,13 @@ export default async function handler(req, res) {
             throw new Error(`Failed to fetch from external URL: ${response.status}`);
         }
 
-        // Pass the content type, like 'application/pdf'
-        const contentType = response.headers.get('content-type') || 'application/octet-stream';
+        // Ensure content type is explicitly application/pdf for PDFs and add inline disposition
+        let contentType = response.headers.get('content-type') || 'application/octet-stream';
+        if (url.toLowerCase().includes('.pdf')) {
+            contentType = 'application/pdf';
+        }
         res.setHeader('Content-Type', contentType);
+        res.setHeader('Content-Disposition', 'inline; filename="invoice.pdf"');
 
         // Set CORS headers for our proxy
         res.setHeader('Access-Control-Allow-Origin', '*');
