@@ -93,7 +93,7 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
         // For PDFs, we bypass the Chrome PWA download behavior by fetching as a native Blob 
         // and using a hidden iframe to trigger the physical printer dialog directly.
         try {
-            const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+            const proxyUrl = `/api/proxy?url=${encodeURIComponent(url)}`;
             const response = await fetch(proxyUrl);
             const blob = await response.blob();
             const blobUrl = URL.createObjectURL(blob);

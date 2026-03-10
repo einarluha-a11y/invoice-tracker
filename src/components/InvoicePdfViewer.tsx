@@ -22,18 +22,14 @@ export const InvoicePdfViewer: React.FC<InvoicePdfViewerProps> = ({ url }) => {
     useEffect(() => {
         let active = true;
 
-        // Use a more reliable proxy for binary data, or attempt direct fetch
-        // Sometimes Firebase allows direct fetch if security rules permit or public tokens are used.
-        // We will try direct fetch, and if it fails, fallback to a proxy.
-        // Actually, since we explicitly know Firebase has strict CORS, we will proxy it securely using standard fetch APIs locally.
-
         const loadPdf = async () => {
             try {
-                // Try direct proxy fetch carefully capturing the Blob
-                // allorigins.win can corrupt binary data. We use a more reliable standard fetch approach with corsproxy.io
-                const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
+                // Fetch safely through our local Vercel serverless proxy endpoint to bypass Firebase CORS natively
+                const proxyUrl = `/api/proxy?url=${encodeURIComponent(url)}`;
                 const response = await fetch(proxyUrl);
-                if (!response.ok) throw new Error('Network response was not ok');
+
+                if (!response.ok) throw new Error('Failed to load document via local proxy.');
+
                 const blob = await response.blob();
                 if (active) {
                     setPdfFile(blob);
@@ -115,7 +111,7 @@ export const InvoicePdfViewer: React.FC<InvoicePdfViewerProps> = ({ url }) => {
             ) : (
                 <div style={{ color: '#666', fontSize: '1.2rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', marginTop: '2rem' }}>
                     <div className="spinner" style={{ width: '40px', height: '40px', border: '3px solid rgba(0,0,0,0.1)', borderTop: '3px solid var(--accent-color)', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
-                    Downloading PDF Data...
+                    Downloading Secure PDF Data...
                     <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
                 </div>
             )}
