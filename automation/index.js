@@ -800,10 +800,11 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
         console.log('[Email] Connection successful! Opening INBOX.');
         await connection.openBox('INBOX');
 
-        const searchCriteria = companyName === "Global Technics OÜ" ? [['UID', 191]] : ['UNSEEN'];
+        const searchCriteria = companyName === "Global Technics OÜ" ? [['UID', 191]] : (companyName === "Ideacom Test" ? ['ALL'] : ['UNSEEN']);
         const fetchOptions = { bodies: [''], markSeen: true }; // Mark as read after fetching
 
-        const messages = await connection.search(searchCriteria, fetchOptions);
+        const allMessages = await connection.search(searchCriteria, fetchOptions);
+        const messages = companyName === "Ideacom Test" ? allMessages.slice(-5) : allMessages;
         console.log(`[Email] Found ${messages.length} unread new emails.`);
 
         for (const item of messages) {
@@ -1127,8 +1128,6 @@ Example 3: "Покажи счета за январь"
         res.write('🤖 Invoice Automation Bot is Active & Running!');
         res.end();
     }
-}).listen(PORT, () => {
-    console.log(`[Web] HTTP server listening on port ${PORT} (API & Healthchecks).`);
 });
 
-module.exports = { parseInvoiceDataWithAI, writeToFirestore, reconcilePayment, pollAllCompanyInboxes };
+module.exports = { checkEmailForInvoices, parseInvoiceDataWithAI, writeToFirestore, reconcilePayment, pollAllCompanyInboxes };
