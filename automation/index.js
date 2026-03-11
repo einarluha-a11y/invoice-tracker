@@ -1128,6 +1128,8 @@ Example 3: "Покажи счета за январь"
         res.write('🤖 Invoice Automation Bot is Active & Running!');
         res.end();
     }
+}).listen(PORT, () => {
+    console.log(`[Web] HTTP server listening on port ${PORT} (API & Healthchecks).`);
 });
 
 module.exports = { checkEmailForInvoices, parseInvoiceDataWithAI, writeToFirestore, reconcilePayment, pollAllCompanyInboxes };
