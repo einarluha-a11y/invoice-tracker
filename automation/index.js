@@ -101,6 +101,7 @@ Required fields for EACH invoice object:
 - dateCreated: (DD-MM-YYYY format. CRITICAL: Provide the actual issuing date, not the print/export date)
 - dueDate: (DD-MM-YYYY format. If no explicit due date, use dateCreated)
 - description: (String, max 3-4 words. Guess based on vendor if not explicit)
+- isPaid: (Boolean. Set to true ONLY IF the invoice explicitly states it is already paid, e.g., "Amount Due 0.00", "Amount Due EUR 0.00", "Makstud", "Paid", "Оплачен". Otherwise, false.)
 
 Raw Data:
 ${rawText}
@@ -227,6 +228,7 @@ Required fields:
 - dateCreated: (DD-MM-YYYY format, issue date)
 - dueDate: (DD-MM-YYYY format)
 - description: (String, max 3-4 words)
+- isPaid: (Boolean. Set to true ONLY IF the invoice explicitly states it is already paid, e.g., "Amount Due 0.00", "Amount Due EUR 0.00", "Makstud", "Paid", "Оплачен". Otherwise, false.)
 `;
 
     // Ensure we don't double-prefix if base64Image somehow already contains 'data:image'
@@ -370,7 +372,7 @@ async function writeToFirestore(dataArray) {
                 continue; // CRITICAL: This bypasses both Firestore creation AND Webhook scheduling below 
             }
 
-            let status = 'Unpaid'; // Default status
+            let status = data.isPaid ? 'Paid' : 'Unpaid';
 
             // --- CREDIT INVOICE OFFSET LOGIC ---
             if (numAmount < 0) {
