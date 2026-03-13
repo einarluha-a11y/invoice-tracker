@@ -86,7 +86,10 @@ const resources = {
                 status: "Статус",
                 cancelBtn: "Отмена",
                 saveBtn: "Сохранить изменения",
-                savingBtn: "Сохранение..."
+                savingBtn: "Сохранение...",
+                deleteTitle: "Удаление инвойса",
+                deleteDesc: "Вы уверены, что хотите навсегда удалить этот инвойс? Это действие нельзя отменить.",
+                deleteConfirm: "Да, удалить"
             },
 
             chat: {
@@ -100,6 +103,7 @@ const resources = {
             errors: {
                 loadingTitle: "Ошибка загрузки",
                 loadingDesc: "Не удалось загрузить данные. Проверьте ссылку компании.",
+                deleteInvoice: "Ошибка при удалении инвойса"
             },
 
             loadingData: "Загрузка данных...",
@@ -189,7 +193,10 @@ const resources = {
                 status: "Status",
                 cancelBtn: "Cancel",
                 saveBtn: "Save Changes",
-                savingBtn: "Saving..."
+                savingBtn: "Saving...",
+                deleteTitle: "Delete Invoice",
+                deleteDesc: "Are you sure you want to permanently delete this invoice? This action cannot be undone.",
+                deleteConfirm: "Yes, delete"
             },
 
             chat: {
@@ -203,6 +210,7 @@ const resources = {
             errors: {
                 loadingTitle: "Loading Error",
                 loadingDesc: "Failed to load data. Please check the company's link.",
+                deleteInvoice: "Error deleting invoice"
             },
 
             loadingData: "Loading data...",
@@ -292,7 +300,10 @@ const resources = {
                 status: "Staatus",
                 cancelBtn: "Tühista",
                 saveBtn: "Salvesta Muudatused",
-                savingBtn: "Salvestan..."
+                savingBtn: "Salvestan...",
+                deleteTitle: "Kustuta Arve",
+                deleteDesc: "Kas olete kindel, et soovite selle arve jäädavalt kustutada? Seda tegevust ei saa tagasi võtta.",
+                deleteConfirm: "Jah, kustuta"
             },
 
             chat: {
@@ -306,6 +317,7 @@ const resources = {
             errors: {
                 loadingTitle: "Laadimise viga",
                 loadingDesc: "Andmete laadimine ebaõnnestus. Palun kontrollige ettevõtte linki.",
+                deleteInvoice: "Viga arve kustutamisel"
             },
 
             loadingData: "Andmete laadimine...",

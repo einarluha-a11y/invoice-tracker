@@ -96,7 +96,7 @@ function App() {
             setDeletingInvoiceId(null);
         } catch (err) {
             console.error("Failed to delete", err);
-            alert("Ошибка при удалении инвойса");
+            alert(t('errors.deleteInvoice'));
         }
     };
 
@@ -349,11 +349,11 @@ function App() {
             {deletingInvoiceId && (
                 <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
                     <div className="modal-content" style={{ maxWidth: '400px', width: '90%', background: 'var(--bg-secondary)', padding: '2rem', borderRadius: 'var(--radius-lg)', textAlign: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }}>
-                        <h3 style={{ marginBottom: '1rem', color: 'var(--text-primary)', fontSize: '1.25rem', fontWeight: 600 }}>Удаление инвойса</h3>
-                        <p style={{ marginBottom: '2rem', color: 'var(--text-secondary)', lineHeight: '1.5' }}>Вы уверены, что хотите навсегда удалить этот инвойс? Это действие нельзя отменить.</p>
+                        <h3 style={{ marginBottom: '1rem', color: 'var(--text-primary)', fontSize: '1.25rem', fontWeight: 600 }}>{t('modal.deleteTitle')}</h3>
+                        <p style={{ marginBottom: '2rem', color: 'var(--text-secondary)', lineHeight: '1.5' }}>{t('modal.deleteDesc')}</p>
                         <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem' }}>
-                            <button onClick={() => setDeletingInvoiceId(null)} className="btn-secondary" style={{ borderRadius: '50px', padding: '0.75rem 1.5rem', fontWeight: 500 }}>Отмена</button>
-                            <button onClick={confirmDelete} className="btn-primary" style={{ background: 'var(--status-overdue-text)', border: '2px solid #000', borderRadius: '50px', color: '#fff', padding: '0.75rem 1.5rem', fontWeight: 600, boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}>Да, удалить</button>
+                            <button onClick={() => setDeletingInvoiceId(null)} className="btn-secondary" style={{ borderRadius: '50px', padding: '0.75rem 1.5rem', fontWeight: 500 }}>{t('modal.cancelBtn')}</button>
+                            <button onClick={confirmDelete} className="btn-primary" style={{ background: 'var(--status-overdue-text)', border: '2px solid #000', borderRadius: '50px', color: '#fff', padding: '0.75rem 1.5rem', fontWeight: 600, boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}>{t('modal.deleteConfirm')}</button>
                         </div>
                     </div>
                 </div>
