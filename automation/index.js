@@ -90,8 +90,8 @@ You must find the ACTUAL company that issued the invoice to ${companyName} (e.g.
 If an invoice is issued by "FS Teenused OÜ" to "${companyName}", the vendorName MUST be "FS Teenused OÜ".
 
 CRITICAL RULE FOR REJECTING NON-INVOICE DOCUMENTS:
-If the document is strictly an Insurance Policy (Poliis, Kindlustuspoliis), Contract (Leping), or has NO clear amount to pay, return an empty array [].
-Otherwise, if it contains a vendor, date, and amount, ALWAYS extract the invoice. Do not falsely reject valid invoices just because the text is messy.
+You MUST ONLY extract true Invoices (Arve, Invoice, Rechnung, Lasku).
+If the document is primarily a Receipt (Kviitung, Tšekk, Kvito), a Waybill/CMR (Saateleht, Veoseleht, CMR), a Quote/Proforma (Pakkumine, Proforma, Ettemaksuarve), an Order (Tellimus), Insurance Policy (Poliis), Contract (Leping), or has NO clear amount to pay, YOU MUST REJECT IT and return an empty array []. Do NOT extract a "Kviitung" as an invoice. Do not falsely reject valid invoices just because the text is messy.
 
 Required fields for EACH invoice object:
 - invoiceId: (e.g. Inv-006, Dok. nr. CRITICAL: NEVER use a generic string like "Arve nr." or "Invoice". It MUST be the actual unique alphanumeric number next to it)
@@ -206,8 +206,8 @@ The company "${companyName}" (and any variations) AND "GLOBAL TECHNICS OÜ" are 
 You must find the ACTUAL company that issued the invoice to ${companyName}.
 
 CRITICAL RULE FOR REJECTING NON-INVOICE DOCUMENTS:
-If the document is strictly an Insurance Policy (Poliis, Kindlustuspoliis), Contract (Leping), or has NO clear amount to pay, return an empty array [].
-Otherwise, if it contains a vendor, date, and amount, ALWAYS extract the invoice. Do not falsely reject valid invoices just because the text is messy.
+You MUST ONLY extract true Invoices (Arve, Invoice, Rechnung, Lasku).
+If the document is primarily a Receipt (Kviitung, Tšekk, Kvito), a Waybill/CMR (Saateleht, Veoseleht, CMR), a Quote/Proforma (Pakkumine, Proforma, Ettemaksuarve), an Order (Tellimus), Insurance Policy (Poliis), Contract (Leping), or has NO clear amount to pay, YOU MUST REJECT IT and return an empty array []. Do NOT extract a "Kviitung" as an invoice. Do not falsely reject valid invoices just because the text is messy.
 
 CRITICAL RULE FOR AMOUNT:
 DO NOT include past debt. Extract only the amount for the CURRENT billing period.
