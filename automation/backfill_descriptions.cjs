@@ -1,5 +1,5 @@
 const admin = require('firebase-admin');
-const { OpenAI } = require('openai');
+const { OpenAI } = require('@anthropic-ai/sdk');
 require('dotenv').config();
 
 const serviceAccount = require('./google-credentials.json');
@@ -10,7 +10,7 @@ if (!admin.apps.length) {
     });
 }
 const db = admin.firestore();
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openai = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 
 const delay = (ms) => new Promise(res => setTimeout(res, ms));

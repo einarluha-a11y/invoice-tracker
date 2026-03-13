@@ -1,11 +1,11 @@
 const fs = require('fs');
 const pdfParse = require('pdf-parse');
 const path = require('path');
-const OpenAI = require('openai');
+const { Anthropic } = require('@anthropic-ai/sdk');
 require('dotenv').config();
 
-const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY
+const anthropic = new Anthropic({
+    apiKey: process.env.ANTHROPIC_API_KEY
 });
 
 async function standaloneAITest() {
@@ -32,23 +32,20 @@ INVOICE TEXT:
 ${textToParse}
         `;
 
-        const completion = await openai.chat.completions.create({
-            model: "gpt-4o-mini",
+        const completion = await anthropic.messages.create({
+            model: "claude-sonnet-4-6",
             temperature: 0,
+            max_tokens: 1000,
+            system: "You are a professional accounting data extractor. Output ONLY valid JSON, with keys: vendorName, invoiceId, amount (number), dateCreated (YYYY-MM-DD), dueDate (YYYY-MM-DD), description (string, max 3 words).",
             messages: [
-                {
-                    role: "system",
-                    content: "You are a professional accounting data extractor. Output ONLY valid JSON, with keys: vendorName, invoiceId, amount (number), dateCreated (YYYY-MM-DD), dueDate (YYYY-MM-DD), description (string, max 3 words)."
-                },
                 {
                     role: "user",
                     content: prompt
                 }
-            ],
-            response_format: { type: "json_object" }
+            ]
         });
 
-        const rawJsonStr = completion.choices[0].message.content;
+        const rawJsonStr = completion.content[0].text;
         console.log("\n---- AI JSON OUTPUT ----");
         console.log(rawJsonStr);
 

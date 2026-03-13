@@ -1,10 +1,10 @@
 const admin = require('firebase-admin');
 const serviceAccount = require('./google-credentials.json');
 const pdfParse = require('pdf-parse');
-const { OpenAI } = require('openai');
+const { OpenAI } = require('@anthropic-ai/sdk');
 require('dotenv').config();
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openai = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 
 async function parseBankStatementWithAI(rawText) {

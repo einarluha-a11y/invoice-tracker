@@ -4,9 +4,9 @@ const imaps = require('imap-simple');
 const admin = require('firebase-admin');
 const { simpleParser } = require('mailparser');
 const { fromBuffer } = require('pdf2pic');
-const { OpenAI } = require('openai');
+const { OpenAI } = require('@anthropic-ai/sdk');
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openai = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const serviceAccount = JSON.parse(fs.readFileSync('./google-credentials.json', 'utf8'));
 
 if (!admin.apps.length) {
