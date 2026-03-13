@@ -132,19 +132,17 @@ ${rawText}
                 // Regex to find dates in the chaotic Result Group text
                 // Looking for patterns like 260228.928.02.2026 (ID + Date created) and 16.02.2026 (Due date)
 
-                // Extract Creation Date (e.g. 28.02.2026)
-                const creationDateMatch = rawText.match(/(\d{2}\.\d{2}\.\d{4})/);
-                if (creationDateMatch && creationDateMatch[1]) {
-                    invoice.dateCreated = creationDateMatch[1].replace(/\./g, '-');
-                }
-
-                // Extract Due Date (e.g. 16.02.2026)
-                // usually follows "CH / XXXXXX / "
-                const dueDateMatch = rawText.match(/CH \/ \d+ \/ (\d{2}\.\d{2}\.\d{4})/);
-                if (dueDateMatch && dueDateMatch[1]) {
-                    invoice.dueDate = dueDateMatch[1].replace(/\./g, '-');
-                } else if (creationDateMatch && creationDateMatch[1]) {
-                    invoice.dueDate = creationDateMatch[1].replace(/\./g, '-'); // Fallback to creation date if due date missing
+                // Find all dates in the text
+                const extractedDates = Array.from(rawText.matchAll(/(\d{2}\.\d{2}\.\d{4})/g)).map(m => m[1]);
+                if (extractedDates.length >= 1) {
+                    invoice.dateCreated = extractedDates[0].replace(/\./g, '-'); // First date is usually creation
+                    
+                    // Look for a date that corresponds to a typical Due Date (either the 2nd date generally, or one that is > creation date)
+                    if (extractedDates.length >= 2) {
+                        invoice.dueDate = extractedDates[1].replace(/\./g, '-');
+                    } else {
+                        invoice.dueDate = invoice.dateCreated;
+                    }
                 }
 
                 // Extract real ID 
