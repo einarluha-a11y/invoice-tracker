@@ -129,21 +129,6 @@ ${rawText}
         // --- PRE-PROCESSING HOOK FOR TRICKY VENDORS ---
         parsedArray.forEach(invoice => {
             if (invoice.vendorName && invoice.vendorName.toLowerCase().includes('result group')) {
-                // Regex to find dates in the chaotic Result Group text
-                // Looking for patterns like 260228.928.02.2026 (ID + Date created) and 16.02.2026 (Due date)
-
-                // Find all dates in the text
-                const extractedDates = Array.from(rawText.matchAll(/(\d{2}\.\d{2}\.\d{4})/g)).map(m => m[1]);
-                if (extractedDates.length >= 1) {
-                    invoice.dateCreated = extractedDates[0].replace(/\./g, '-'); // First date is usually creation
-                    
-                    // Look for a date that corresponds to a typical Due Date (either the 2nd date generally, or one that is > creation date)
-                    if (extractedDates.length >= 2) {
-                        invoice.dueDate = extractedDates[1].replace(/\./g, '-');
-                    } else {
-                        invoice.dueDate = invoice.dateCreated;
-                    }
-                }
 
                 // Extract real ID 
                 // e.g. 260228.9
