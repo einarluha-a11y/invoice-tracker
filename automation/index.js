@@ -88,6 +88,7 @@ The company "${companyName}" (and any variations) AND "GLOBAL TECHNICS OÜ" are 
 They are NEVER the vendor/seller. 
 You must find the ACTUAL company that issued the invoice to ${companyName} (e.g., look for "Müüja", "Saatja", "Tarnija", or the company logo text). 
 If an invoice is issued by "FS Teenused OÜ" to "${companyName}", the vendorName MUST be "FS Teenused OÜ".
+If the invoice is clearly addressed to a COMPLETELY DIFFERENT BUYER (e.g., "Chempack OÜ" or someone else) and NOT to "${companyName}" or "GLOBAL TECHNICS OÜ", YOU MUST REJECT IT and return an empty array [].
 
 CRITICAL RULE FOR REJECTING NON-INVOICE DOCUMENTS:
 You MUST ONLY extract true Invoices (Arve, Invoice, Rechnung, Lasku).
@@ -204,6 +205,7 @@ Even if there is only one invoice, return it as an ARRAY containing that single 
 CRITICAL RULE FOR VENDOR NAME:
 The company "${companyName}" (and any variations) AND "GLOBAL TECHNICS OÜ" are ALWAYS the BUYER/CUSTOMER. 
 You must find the ACTUAL company that issued the invoice to ${companyName}.
+If the invoice is clearly addressed to a COMPLETELY DIFFERENT BUYER (e.g., "Chempack OÜ" or someone else) and NOT to "${companyName}" or "GLOBAL TECHNICS OÜ", YOU MUST REJECT IT and return an empty array [].
 
 CRITICAL RULE FOR REJECTING NON-INVOICE DOCUMENTS:
 You MUST ONLY extract true Invoices (Arve, Invoice, Rechnung, Lasku).
