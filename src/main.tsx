@@ -10,8 +10,10 @@ import { registerSW } from 'virtual:pwa-register';
 // Register service worker with auto-update
 const updateSW = registerSW({
   onNeedRefresh() {
-    // Automatically accept the update and reload the page
-    updateSW(true);
+    // A new update was found on Vercel. 
+    // We do NOT forcefully reload the page here anymore to prevent 
+    // interrupting the CEO's work every time a background push happens.
+    console.log('New app version available. Refresh the window to apply.');
   },
   onOfflineReady() {
     console.log('App is ready for offline use.');
