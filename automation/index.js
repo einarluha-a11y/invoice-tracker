@@ -118,8 +118,9 @@ ${rawText}
         // Depending on response structure from Anthropic, text is typically in content[0].text
         const jsonString = response.content[0].text.trim();
 
-        // Remove markdown formatting if Claude adds it
-        const cleanJson = jsonString.replace(/^```json/g, '').replace(/^```/g, '').replace(/```$/g, '').trim();
+        // Extract just the JSON array, ignoring any potential conversational text or markdown blocks
+        const match = jsonString.match(/\[[\s\S]*\]/);
+        const cleanJson = match ? match[0] : '[]';
 
         const parsedArray = JSON.parse(cleanJson);
 
@@ -262,7 +263,8 @@ Required fields:
         });
 
         const jsonString = response.content[0].text.trim();
-        const cleanJson = jsonString.replace(/^```json/g, '').replace(/^```/g, '').replace(/```$/g, '').trim();
+        const match = jsonString.match(/\[[\s\S]*\]/);
+        const cleanJson = match ? match[0] : '[]';
         return JSON.parse(cleanJson);
     } catch (error) {
         console.error('[AI Vision Error] Failed to parse image data:', error);
