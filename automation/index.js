@@ -945,7 +945,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                 } else {
                                     // --- Detect Bank Statement vs Invoice ---
                                     const lowerText = rawContent.toLowerCase();
-                                    if (lowerText.includes('выписка') || lowerText.includes('revolut business') || lowerText.includes('revolut bank') || lowerText.includes('account statement')) {
+                                    if (lowerText.includes('выписка по счету') || lowerText.includes('konto väljavõte') || lowerText.includes('account statement')) {
                                         console.log(`[Email] Detected Bank Statement PDF: ${attachment.filename || 'unknown'}`);
                                         const parsedTransactions = await parseBankStatementWithAI(rawContent);
 
