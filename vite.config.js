@@ -7,11 +7,11 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'prompt', // Don't auto-reload the page when an update is found
+      registerType: 'autoUpdate', // Systemically updates the PWA as soon as a new version drops
       workbox: {
         cleanupOutdatedCaches: true,
-        skipWaiting: false, // Wait until all tabs are closed before updating
-        clientsClaim: false, // Don't forcefully take over existing clients
+        skipWaiting: true, // Force the new service worker to activate immediately 
+        clientsClaim: true, // Force the new service worker to take control of all open desktop windows
       },
       includeAssets: ['favicon.ico', 'apple-touch-icon-180x180.png', 'maskable-icon-512x512.png'],
       manifest: {
