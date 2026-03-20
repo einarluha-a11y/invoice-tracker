@@ -104,6 +104,10 @@ export const subscribeToInvoices = (
                 dueDate: parsedDueDate,
                 status: parseStatus(data.status || '', parsedDueDate),
                 fileUrl: data.fileUrl,
+                subtotalAmount: data.subtotalAmount,
+                taxAmount: data.taxAmount,
+                lineItems: data.lineItems,
+                validationWarnings: data.validationWarnings,
             });
         });
 

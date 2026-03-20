@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -25,6 +25,7 @@ export type SortDirection = 'asc' | 'desc';
 
 export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, endDate, sortField, sortDirection, onSort, onEdit, onDelete, companyName }: InvoiceTableProps) {
     const { t, i18n } = useTranslation();
+    const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
     const [isExportingPDF, setIsExportingPDF] = useState(false);
     const [viewingPdfUrl, setViewingPdfUrl] = useState<string | null>(null);
     const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
@@ -65,6 +66,13 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
 
     const handleSort = (field: SortField) => {
         onSort(field);
+    };
+
+    const toggleRow = (id: string) => {
+        const newSet = new Set(expandedRows);
+        if (newSet.has(id)) newSet.delete(id);
+        else newSet.add(id);
+        setExpandedRows(newSet);
     };
 
     const handleSave = (url: string) => {
@@ -323,10 +331,20 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                     </thead>
                     <tbody>
                         {filteredAndSortedInvoices.map((invoice) => (
-                            <tr key={invoice.id}>
-                                <td data-label={t('table.vendor')} className="vendor-name" style={{ fontWeight: 600, maxWidth: '200px', whiteSpace: 'normal', wordBreak: 'break-word' }}>
-                                    {invoice.vendor}
-                                </td>
+                            <React.Fragment key={invoice.id}>
+                                <tr className={expandedRows.has(invoice.id) ? 'expanded-parent-row' : ''}>
+                                    <td data-label={t('table.vendor')} className="vendor-name" style={{ fontWeight: 600, maxWidth: '200px', whiteSpace: 'normal', wordBreak: 'break-word' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <button 
+                                                onClick={(e) => { e.stopPropagation(); toggleRow(invoice.id); }} 
+                                                className="btn-expand"
+                                                title="Expand details"
+                                            >
+                                                {expandedRows.has(invoice.id) ? '▼' : '▶'}
+                                            </button>
+                                            {invoice.vendor}
+                                        </div>
+                                    </td>
                                 <td data-label={t('table.description')} style={{ lineHeight: '1.4', maxWidth: '250px', whiteSpace: 'normal', wordBreak: 'break-word' }}>
                                     {invoice.invoiceId && <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.9rem', marginBottom: '2px', wordBreak: 'break-all' }}>{invoice.invoiceId}</div>}
                                     <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
@@ -341,9 +359,14 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                                 </td>
                                 <td data-label={t('table.amount')} className="amount">{formatCurrency(invoice.amount, invoice.currency)}</td>
                                 <td data-label={t('table.status')} style={{ minWidth: '150px' }}>
-                                    <span style={{ whiteSpace: 'nowrap' }} className={`status-badge ${getStatusClass(invoice.status)}`}>
-                                        {invoice.status === 'Paid' ? t('filters.paid') : invoice.status === 'Pending' ? t('filters.pending') : t('filters.overdue')}
-                                    </span>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <span style={{ whiteSpace: 'nowrap' }} className={`status-badge ${getStatusClass(invoice.status)}`}>
+                                            {invoice.status === 'Paid' ? t('filters.paid') : invoice.status === 'Pending' ? t('filters.pending') : t('filters.overdue')}
+                                        </span>
+                                        {invoice.validationWarnings && invoice.validationWarnings.length > 0 && (
+                                            <span className="warning-icon" title={invoice.validationWarnings.join('\n')}>⚠️</span>
+                                        )}
+                                    </div>
                                 </td>
                                 <td data-label={t('table.actions')}>
                                     <div className="action-buttons">
@@ -372,8 +395,42 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                                     </div>
                                 </td>
                             </tr>
-                        ))}
-                    </tbody>
+                            {expandedRows.has(invoice.id) && (
+                                <tr className="expanded-child-row">
+                                    <td colSpan={7} style={{ padding: 0, borderTop: 'none' }}>
+                                        <div className="expanded-content">
+                                            <div className="financial-summary">
+                                                <span><strong>Subtotal:</strong> {formatCurrency(invoice.subtotalAmount || 0, invoice.currency)}</span>
+                                                <span><strong>Tax (VAT):</strong> {formatCurrency(invoice.taxAmount || 0, invoice.currency)}</span>
+                                                <span className="total-highlight"><strong>Total:</strong> {formatCurrency(invoice.amount, invoice.currency)}</span>
+                                            </div>
+                                            {invoice.lineItems && invoice.lineItems.length > 0 ? (
+                                                <table className="line-items-table">
+                                                    <thead>
+                                                        <tr>
+                                                            <th>Item Description</th>
+                                                            <th style={{ textAlign: 'right' }}>Amount</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {invoice.lineItems.map((item, idx) => (
+                                                            <tr key={idx}>
+                                                                <td>{item.description}</td>
+                                                                <td style={{ textAlign: 'right', fontWeight: 600 }}>{formatCurrency(item.amount, invoice.currency)}</td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            ) : (
+                                                <div className="no-line-items">No line items extracted.</div>
+                                            )}
+                                        </div>
+                                    </td>
+                                </tr>
+                            )}
+                        </React.Fragment>
+                    ))}
+                </tbody>
                 </table>
             </div>
 

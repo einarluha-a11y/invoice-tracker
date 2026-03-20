@@ -1042,43 +1042,24 @@ console.log('Automated Invoice Processor Started. Checking every 60 seconds...')
 setInterval(pollAllCompanyInboxes, 60000);
 
 // --- CLOUD HOSTING & API SUPPORT ---
-// Render.com and frontend Dashboard require a web server to bind to a PORT.
-const http = require('http');
+// Render.com and Railway require a web server to bind to a single PORT.
+const app = require('./webhook_server.cjs');
 const PORT = process.env.PORT || 3000;
 
-http.createServer(async (req, res) => {
-    // Enable CORS for all requests from the frontend
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'OPTIONS, GET, POST');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+app.post('/api/chat', async (req, res) => {
+    try {
+        const { message } = req.body;
+        if (!message) {
+            return res.status(400).json({ error: 'Message is required' });
+        }
 
-    if (req.method === 'OPTIONS') {
-        res.writeHead(204);
-        res.end();
-        return;
-    }
-
-    if (req.method === 'POST' && req.url === '/api/chat') {
-        let body = '';
-        req.on('data', chunk => {
-            body += chunk.toString();
-        });
-        req.on('end', async () => {
-            try {
-                const { message } = JSON.parse(body);
-                if (!message) {
-                    res.writeHead(400, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ error: 'Message is required' }));
-                    return;
-                }
-
-                // AI Chat Filter Logic
-                const today = new Date().toISOString().split('T')[0];
-                const response = await anthropic.messages.create({
-                    model: "claude-sonnet-4-6",
-                    max_tokens: 1000,
-                    temperature: 0.1,
-                    system: `You are an AI assistant managing an invoice tracking system. 
+        // AI Chat Filter Logic
+        const today = new Date().toISOString().split('T')[0];
+        const response = await anthropic.messages.create({
+            model: "claude-sonnet-4-6",
+            max_tokens: 1000,
+            temperature: 0.1,
+            system: `You are an AI assistant managing an invoice tracking system. 
 Today's date is ${today}. 
 The user will ask you a question in natural language about their invoices. 
 Your goal is to translate their intent into specific table filter parameters and a polite reply.
@@ -1103,32 +1084,25 @@ Example 2: "Сколько я должен заплатить Теле2 на э�
 Example 3: "Покажи счета за январь"
 {"filters": {"searchTerm":"", "status":"All", "dateFilterType":"created", "dateFrom":"2026-01-01", "dateTo":"2026-01-31"}, "reply": "Показываю все счета, созданные в январе."}
 `,
-                    messages: [
-                        {
-                            role: "user",
-                            content: message
-                        }
-                    ]
-                });
-
-                const jsonString = response.content[0].text.trim();
-                const cleanJson = jsonString.replace(/^```json/g, '').replace(/^```/g, '').replace(/```$/g, '').trim();
-                const aiOutput = JSON.parse(cleanJson);
-                res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify(aiOutput));
-            } catch (error) {
-                console.error("[API Error] /api/chat failed:", error);
-                res.writeHead(500, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ error: 'Internal server error processing AI response.' }));
-            }
+            messages: [{ role: "user", content: message }]
         });
-    } else {
-        res.writeHead(200, { 'Content-Type': 'text/plain' });
-        res.write('🤖 Invoice Automation Bot is Active & Running!');
-        res.end();
+
+        const jsonString = response.content[0].text.trim();
+        const cleanJson = jsonString.replace(/^```json/g, '').replace(/^```/g, '').replace(/```$/g, '').trim();
+        const aiOutput = JSON.parse(cleanJson);
+        res.json(aiOutput);
+    } catch (error) {
+        console.error("[API Error] /api/chat failed:", error);
+        res.status(500).json({ error: 'Internal server error processing AI response.' });
     }
-}).listen(PORT, () => {
-    console.log(`[Web] HTTP server listening on port ${PORT} (API & Healthchecks).`);
+});
+
+app.get('/', (req, res) => {
+    res.send('🤖 Invoice Automation Bot is Active & Running!');
+});
+
+app.listen(PORT, () => {
+    console.log(`[Web] Express server listening on port ${PORT} (Webhook API & Chat & Healthchecks).`);
 });
 
 module.exports = { checkEmailForInvoices, parseInvoiceDataWithAI, writeToFirestore, reconcilePayment, pollAllCompanyInboxes };

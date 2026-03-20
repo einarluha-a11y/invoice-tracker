@@ -11,6 +11,10 @@ export interface Invoice {
     dueDate: string;
     status: InvoiceStatus;
     fileUrl?: string;
+    subtotalAmount?: number;
+    taxAmount?: number;
+    lineItems?: Array<{ description: string; amount: number; }>;
+    validationWarnings?: string[];
 }
 
 export const mockInvoices: Invoice[] = [
