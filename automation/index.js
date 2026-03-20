@@ -1,10 +1,9 @@
 require('dotenv').config();
 const imaps = require('imap-simple');
 const simpleParser = require('mailparser').simpleParser;
-const { Anthropic } = require('@anthropic-ai/sdk');
-const pdfParse = require('pdf-parse');
+const Anthropic = require('@anthropic-ai/sdk');
+const { processInvoiceWithDocAI } = require('./document_ai_service.cjs');
 const { parse } = require('csv-parse/sync');
-const { fromBuffer } = require('pdf2pic');
 
 // Initialize Anthropic API
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -873,89 +872,30 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                 const pdfData = await pdfParse(attachment.content);
                                 rawContent = pdfData.text;
 
-                                if (rawContent.trim().length < 10) {
-                                    console.log(`[PDF] Extracted text is empty (likely a scanned image). Attempting pure JS extraction with pdf-lib...`);
-                                    try {
-                                        const { PDFDocument, PDFName, PDFStream } = require('pdf-lib');
-                                        const doc = await PDFDocument.load(attachment.content, { ignoreEncryption: true });
-                                        const context = doc.context;
+                                // --- Detect Bank Statement vs Invoice ---
+                                const lowerText = rawContent.toLowerCase();
+                                if (lowerText.includes('выписка по счету') || lowerText.includes('konto väljavõte') || lowerText.includes('account statement')) {
+                                    console.log(`[Email] Detected Bank Statement PDF: ${attachment.filename || 'unknown'}`);
+                                    const parsedTransactions = await parseBankStatementWithAI(rawContent);
 
-                                        let foundJpeg = null;
-                                        for (const [ref, obj] of context.enumerateIndirectObjects()) {
-                                            if (obj instanceof PDFStream) {
-                                                const dict = obj.dict;
-                                                const subtype = dict.get(PDFName.of('Subtype'));
-                                                if (subtype === PDFName.of('Image')) {
-                                                    const filter = dict.get(PDFName.of('Filter'));
-                                                    let filterName = filter ? filter.toString() : '';
-                                                    if (filterName.includes('DCTDecode')) {
-                                                        foundJpeg = obj.contents;
-                                                        break;
-                                                    }
-                                                }
-                                            }
+                                    if (parsedTransactions && Array.isArray(parsedTransactions)) {
+                                        for (const tx of parsedTransactions) {
+                                            await reconcilePayment(tx.reference || '', tx.description || '', tx.amount, tx.date || (new Date().toISOString().split('T')[0]));
                                         }
-
-                                        if (foundJpeg) {
-                                            console.log(`[PDF] Successfully extracted raw JPEG image from PDF stream! (${foundJpeg.length} bytes)`);
-                                            const base64Data = Buffer.from(foundJpeg).toString('base64');
-                                            const parsedData = await parseInvoiceImageWithAI(base64Data, companyName, customRules, "image/jpeg");
-
-                                            if (await saveParsedData(parsedData)) {
-                                                console.log(`[Email] Email UID ${id} successfully processed from Scanned PDF Image!`);
-                                            }
-                                        } else {
-                                            console.log(`[PDF] No embedded JPEG found in scanned document. Cannot process.`);
-                                            // Fallback to body text ONLY if there is actual text
-                                            const fallbackBody = (parsedEmail.text || parsedEmail.html || '').trim();
-                                            if (fallbackBody.length > 250) {
-                                                rawContent = `[Attachment Name: ${attachment.filename || 'unknown'}]\n\n${fallbackBody}`;
-                                                const parsedData = await parseInvoiceDataWithAI(rawContent, companyName, customRules);
-                                                if (await saveParsedData(parsedData)) {
-                                                    console.log(`[Email] Email UID ${id} successfully processed from body text fallback!`);
-                                                }
-                                            }
-                                        }
-
-                                    } catch (conversionError) {
-                                        console.error(`[PDF Extraction Error] Failed to extract from scanned PDF:`, conversionError.message || conversionError);
-                                        // Fallback to body text ONLY if there is actual text
-                                        const fallbackBody = (parsedEmail.text || parsedEmail.html || '').trim();
-                                        if (fallbackBody.length > 250) {
-                                            rawContent = `[Attachment Name: ${attachment.filename || 'unknown'}]\n\n${fallbackBody}`;
-                                            const parsedData = await parseInvoiceDataWithAI(rawContent, companyName, customRules);
-                                            if (await saveParsedData(parsedData)) {
-                                                console.log(`[Email] Email UID ${id} successfully processed from body text fallback!`);
-                                            }
-                                        }
+                                        console.log(`[Email] Email UID ${id} successfully processed as PDF Bank Statement!`);
                                     }
                                 } else {
-                                    // --- Detect Bank Statement vs Invoice ---
-                                    const lowerText = rawContent.toLowerCase();
-                                    if (lowerText.includes('выписка по счету') || lowerText.includes('konto väljavõte') || lowerText.includes('account statement')) {
-                                        console.log(`[Email] Detected Bank Statement PDF: ${attachment.filename || 'unknown'}`);
-                                        const parsedTransactions = await parseBankStatementWithAI(rawContent);
-
-                                        if (parsedTransactions && Array.isArray(parsedTransactions)) {
-                                            for (const tx of parsedTransactions) {
-                                                await reconcilePayment(tx.reference || '', tx.description || '', tx.amount, tx.date || (new Date().toISOString().split('T')[0]));
-                                            }
-                                            console.log(`[Email] Email UID ${id} successfully processed as PDF Bank Statement!`);
-                                        }
-                                    } else {
-                                        // Parse regular PDF invoice with Claude
-                                        const parsedData = await parseInvoiceDataWithAI(rawContent, companyName, customRules);
-                                        if (await saveParsedData(parsedData)) {
-                                            console.log(`[Email] Email UID ${id} successfully processed!`);
-                                        }
+                                    console.log('[Email] Detected Invoice. Sending pristine PDF Buffer to Google Document AI...');
+                                    const parsedData = await processInvoiceWithDocAI(attachment.content, mime || 'application/pdf');
+                                    if (await saveParsedData(parsedData)) {
+                                        console.log(`[Email] Email UID ${id} successfully processed by Document AI!`);
                                     }
                                 }
                             } else if (mime.includes('image/') || filename.endsWith('.jpg') || filename.endsWith('.jpeg') || filename.endsWith('.png')) {
-                                console.log(`[Image] Native Image detected: ${filename}. Sending directly to Vision AI...`);
-                                const base64Data = attachment.content.toString('base64');
-                                const parsedData = await parseInvoiceImageWithAI(base64Data, companyName, customRules);
+                                console.log(`[Image] Native Image detected: ${filename}. Sending directly to Google Document AI...`);
+                                const parsedData = await processInvoiceWithDocAI(attachment.content, mime);
                                 if (await saveParsedData(parsedData)) {
-                                    console.log(`[Email] Email UID ${id} successfully processed from Image Attachment!`);
+                                    console.log(`[Email] Email UID ${id} successfully processed by Document AI from Image!`);
                                 }
                             } else {
                                 // Default for CSV and readable texts
