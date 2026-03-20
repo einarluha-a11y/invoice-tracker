@@ -55,8 +55,14 @@ async function processInvoiceWithDocAI(fileBuffer, mimeType) {
 
                 if (entity.type === 'supplier_name') { parsedData.vendorName = text; parsedData.confidenceScores.vendor = conf; }
                 if (entity.type === 'invoice_id') { parsedData.invoiceId = text; parsedData.confidenceScores.invoiceId = conf; }
-                if (entity.type === 'invoice_date') { parsedData.dateCreated = text.split(' ')[0]; }
-                if (entity.type === 'due_date') { parsedData.dueDate = text.split(' ')[0]; }
+                if (entity.type === 'invoice_date') { 
+                    const isoText = entity.normalizedValue && entity.normalizedValue.text ? entity.normalizedValue.text : text.split(' ')[0];
+                    parsedData.dateCreated = isoText.includes('T') ? isoText.split('T')[0] : isoText; 
+                }
+                if (entity.type === 'due_date') { 
+                    const isoText = entity.normalizedValue && entity.normalizedValue.text ? entity.normalizedValue.text : text.split(' ')[0];
+                    parsedData.dueDate = isoText.includes('T') ? isoText.split('T')[0] : isoText; 
+                }
                 if (entity.type === 'total_amount') { parsedData.total = cleanNum(text); parsedData.confidenceScores.total = conf; }
                 if (entity.type === 'total_tax_amount') { parsedData.tax = cleanNum(text); parsedData.confidenceScores.tax = conf; }
                 if (entity.type === 'subtotal') { parsedData.subtotal = cleanNum(text); parsedData.confidenceScores.subtotal = conf; }
@@ -75,9 +81,26 @@ async function processInvoiceWithDocAI(fileBuffer, mimeType) {
             }
         }
 
-        // --- VALIDATION RULES ---
+        // --- FALLBACKS & VALIDATION RULES ---
         let validationWarnings = [];
         let systemStatus = 'Unpaid'; // Maps to 'Pending' via api.ts parseStatus
+
+        // Subtotal fallback if missing but solvable
+        if (parsedData.subtotal === 0 && parsedData.total > 0 && parsedData.tax > 0) {
+            parsedData.subtotal = parseFloat((parsedData.total - parsedData.tax).toFixed(2));
+            console.log(`[Document AI] Recovered missing subtotal: ${parsedData.subtotal}`);
+        }
+
+        // Fix non-ISO dates manually if normalization failed (e.g. 28.02.2026 -> 2026-02-28)
+        const fixDate = (dateStr) => {
+            if (/^\d{2}\.\d{2}\.\d{4}$/.test(dateStr)) {
+                const parts = dateStr.split('.');
+                return `${parts[2]}-${parts[1]}-${parts[0]}`;
+            }
+            return dateStr;
+        };
+        parsedData.dateCreated = fixDate(parsedData.dateCreated);
+        parsedData.dueDate = fixDate(parsedData.dueDate);
 
         const computedTotal = parseFloat((parsedData.subtotal + parsedData.tax).toFixed(2));
         if (parsedData.total > 0 && Math.abs(computedTotal - parsedData.total) > 0.05) {
