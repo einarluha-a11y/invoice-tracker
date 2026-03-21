@@ -129,7 +129,11 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
 
     const formatCurrency = (amount: number, currency: string) => {
         const langCode = i18n.language === 'en' ? 'en-US' : i18n.language === 'et' ? 'et-EE' : 'ru-RU';
-        return new Intl.NumberFormat(langCode, { style: 'currency', currency }).format(amount);
+        try {
+            return new Intl.NumberFormat(langCode, { style: 'currency', currency }).format(amount);
+        } catch (e) {
+            return `${amount.toFixed(2)} ${currency}`;
+        }
     };
 
     const getStatusClass = (status: InvoiceStatus) => {
