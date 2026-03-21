@@ -66,7 +66,13 @@ async function processInvoiceWithDocAI(fileBuffer, mimeType) {
                 if (entity.type === 'total_amount') { parsedData.total = cleanNum(text); parsedData.confidenceScores.total = conf; }
                 if (entity.type === 'total_tax_amount') { parsedData.tax = cleanNum(text); parsedData.confidenceScores.tax = conf; }
                 if (entity.type === 'subtotal') { parsedData.subtotal = cleanNum(text); parsedData.confidenceScores.subtotal = conf; }
-                if (entity.type === 'currency') parsedData.currency = text;
+                if (entity.type === 'currency') { 
+                    let c = text.trim().toUpperCase();
+                    if (c === '€') c = 'EUR';
+                    if (c === '$') c = 'USD';
+                    if (c === '£') c = 'GBP';
+                    parsedData.currency = c; 
+                }
                 
                 if (entity.type === 'line_item') {
                     let desc = '', amt = 0;
