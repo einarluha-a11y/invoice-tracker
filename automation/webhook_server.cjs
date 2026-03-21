@@ -14,7 +14,7 @@ if (!admin.apps.length) {
     });
 }
 const db = admin.firestore();
-const bucket = admin.storage().bucket();
+const bucket = admin.storage().bucket('invoice-tracker-xyz.firebasestorage.app');
 
 // --- Document AI Setup ---
 const docaiClient = new DocumentProcessorServiceClient({

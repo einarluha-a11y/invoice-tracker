@@ -15,6 +15,12 @@ export interface Invoice {
     taxAmount?: number;
     lineItems?: Array<{ description: string; amount: number; }>;
     validationWarnings?: string[];
+    supplierRegistration?: string;
+    supplierVat?: string;
+    receiverName?: string;
+    receiverVat?: string;
+    paymentTerms?: string;
+    viesValidation?: { isValid: boolean; name: string | null; address: string | null; error: string | null; };
 }
 
 export const mockInvoices: Invoice[] = [

@@ -346,7 +346,15 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                                             >
                                                 {expandedRows.has(invoice.id) ? '▼' : '▶'}
                                             </button>
-                                            {invoice.vendor}
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                                <span>{invoice.vendor}</span>
+                                                {(invoice.supplierVat || invoice.supplierRegistration) && (
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', fontSize: '0.75rem', fontWeight: 400, color: 'var(--text-secondary)', marginTop: '4px' }}>
+                                                        {invoice.supplierVat && <span style={{ whiteSpace: 'nowrap' }}>VAT: {invoice.supplierVat}</span>}
+                                                        {invoice.supplierRegistration && <span style={{ wordBreak: 'break-word', lineHeight: '1.2' }}>Reg No: {invoice.supplierRegistration}</span>}
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
                                     </td>
                                 <td data-label={t('table.description')} style={{ lineHeight: '1.4', maxWidth: '250px', whiteSpace: 'normal', wordBreak: 'break-word' }}>
@@ -361,7 +369,17 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                                         {formatDate(invoice.dueDate)}
                                     </span>
                                 </td>
-                                <td data-label={t('table.amount')} className="amount">{formatCurrency(invoice.amount, invoice.currency)}</td>
+                                <td data-label={t('table.amount')} className="amount">
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'flex-start' }}>
+                                        <span style={{ fontWeight: 600 }}>{formatCurrency(invoice.amount, invoice.currency)}</span>
+                                        {invoice.subtotalAmount !== undefined && (
+                                            <div style={{ display: 'flex', flexDirection: 'column', fontSize: '0.7rem', fontWeight: 400, color: 'var(--text-secondary)', marginTop: '2px' }}>
+                                                <span>Sub: {formatCurrency(invoice.subtotalAmount, invoice.currency)}</span>
+                                                {invoice.taxAmount !== undefined && <span>Tax: {formatCurrency(invoice.taxAmount, invoice.currency)}</span>}
+                                            </div>
+                                        )}
+                                    </div>
+                                </td>
                                 <td data-label={t('table.status')} style={{ minWidth: '150px' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                         <span style={{ whiteSpace: 'nowrap' }} className={`status-badge ${getStatusClass(invoice.status)}`}>
@@ -427,6 +445,29 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                                                 </table>
                                             ) : (
                                                 <div className="no-line-items">No line items extracted.</div>
+                                            )}
+                                            { (invoice.supplierVat || invoice.supplierRegistration || invoice.viesValidation) && (
+                                                <div className="compliance-audit" style={{ marginTop: '15px', padding: '15px', background: 'var(--bg-secondary)', borderRadius: '8px', borderLeft: '4px solid #1a73e8' }}>
+                                                    <h4 style={{ margin: '0 0 10px 0', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-primary)' }}>
+                                                        <span>🛡️</span> Compliance & Identity Audit
+                                                    </h4>
+                                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', fontSize: '0.95rem', color: 'var(--text-secondary)' }}>
+                                                        {invoice.supplierVat && (
+                                                            <div><strong style={{ color: 'var(--text-primary)' }}>Supplier VAT:</strong> {invoice.supplierVat}
+                                                                {invoice.viesValidation && (
+                                                                    <span style={{ marginLeft: '10px', padding: '2px 6px', borderRadius: '4px', fontSize: '0.8rem', background: invoice.viesValidation.isValid ? 'rgba(40,167,69,0.1)' : 'rgba(220,53,69,0.1)', color: invoice.viesValidation.isValid ? '#28a745' : '#dc3545', fontWeight: 600 }}>
+                                                                        {invoice.viesValidation.isValid ? 'VIES VERIFIED ✅' : 'VIES INVALID ❌'}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                        {invoice.supplierRegistration && <div><strong style={{ color: 'var(--text-primary)' }}>Supplier Reg:</strong> {invoice.supplierRegistration}</div>}
+                                                        {invoice.paymentTerms && <div><strong style={{ color: 'var(--text-primary)' }}>Bank Details:</strong> {invoice.paymentTerms}</div>}
+                                                        {invoice.viesValidation && invoice.viesValidation.name && (
+                                                            <div style={{ gridColumn: '1 / -1' }}><strong style={{ color: 'var(--text-primary)' }}>Registered EU Entity:</strong> {invoice.viesValidation.name}</div>
+                                                        )}
+                                                    </div>
+                                                </div>
                                             )}
                                         </div>
                                     </td>

@@ -1,145 +1,94 @@
-const { DocumentProcessorServiceClient } = require('@google-cloud/documentai').v1;
-const path = require('path');
+const { Anthropic } = require('@anthropic-ai/sdk');
 
-// --- Document AI Setup ---
-const docaiClient = new DocumentProcessorServiceClient({
-    keyFilename: path.join(__dirname, 'google-credentials.json'),
-    apiEndpoint: 'eu-documentai.googleapis.com'
+const anthropic = new Anthropic({
+    apiKey: process.env.ANTHROPIC_API_KEY
 });
-const PROJECT_ID = 'invoice-tracker-xyz';
-const LOCATION = 'eu';
-const PROCESSOR_ID = '8087614a36686ed4'; // Invoice Parser
-const PROCESSOR_NAME = `projects/${PROJECT_ID}/locations/${LOCATION}/processors/${PROCESSOR_ID}`;
 
 /**
- * Processes a raw file buffer using Google Cloud Document AI's Invoice Parser.
- * Maps the entities to the Invoice Tracker DB Schema.
+ * PURE CLAUDE EXTRACTION ENGINE 
+ * Now supports Supervisor Reflection Loops (criticism parameter).
  */
-async function processInvoiceWithDocAI(fileBuffer, mimeType) {
-    if (!fileBuffer) throw new Error("File buffer is required for Document AI");
-    
-    // Ensure accurate mime/type
-    const validMime = mimeType === 'application/pdf' || mimeType.includes('image/') ? mimeType : 'application/pdf';
-
-    console.log(`[Document AI] Sending to Invoice Parser (${PROCESSOR_ID}) with precise MIME type: ${validMime}`);
+async function processInvoiceWithDocAI(buffer, mimeType = 'application/pdf', supervisorCritique = null) {
+    if (supervisorCritique) {
+        console.log(`[Cognitive Extractor] 🧠 Receiving orders from Supervisor... Executing deep re-scan for missing data!`);
+    } else {
+        console.log(`[Cognitive Extractor] 🧠 Routing document natively through Claude 3.5 Sonnet...`);
+    }
     
     try {
-        const request = {
-            name: PROCESSOR_NAME,
-            rawDocument: {
-                content: fileBuffer.toString('base64'),
-                mimeType: validMime,
-            },
-        };
-        const [result] = await docaiClient.processDocument(request);
-        const { document } = result;
+        const base64Data = buffer.toString('base64');
+        const isPdf = mimeType.toLowerCase().includes('pdf');
+        let normalizedMime = isPdf ? 'application/pdf' : (mimeType.toLowerCase().includes('png') ? 'image/png' : 'image/jpeg');
+        const blockType = isPdf ? "document" : "image";
 
-        let parsedData = {
-            vendorName: 'Unknown',
-            invoiceId: `Auto-${Date.now()}`,
-            dateCreated: '',
-            dueDate: '',
-            subtotal: 0,
-            tax: 0,
-            total: 0,
-            currency: 'EUR',
-            lineItems: [],
-            confidenceScores: {}
-        };
+        let systemPrompt = `You are the Supreme AI Extraction Engine for a European Enterprise.
+Your job is to read the attached financial document and extract the core accounting data into a strict JSON format.
 
-        if (document.entities) {
-            for (const entity of document.entities) {
-                const text = entity.mentionText;
-                const conf = entity.confidence;
-                const cleanNum = (str) => parseFloat(String(str).replace(/[^0-9,-]/g, '').replace(',', '.')) || 0;
+CRITICAL DIRECTIVES:
+1. INTELLIGENT CURRENCY: Extract the TRUE AMOUNT TO PAY in the international billing currency (EUR/USD). DO NOT extract the local tax conversion equivalent (e.g., if you see "Wartość brutto 3 600 EUR... 15 386 PLN", the amount is 3600!).
+2. MANDATORY FIELDS: The Supervisor requires Vendor, Subtotal, Tax, Total, Supplier Reg No, and VAT Reg No. 
+3. EXPLICIT NOT_FOUND FLAG: If you search the ENTIRE document and a requested field (like VAT Reg No) physically DOES NOT EXIST on the paper (e.g. it's a non-VAT receipt), you MUST output the exact string "NOT_FOUND_ON_INVOICE" for that field. Do not leave it blank. Provide the string "NOT_FOUND_ON_INVOICE".
 
-                if (entity.type === 'supplier_name') { parsedData.vendorName = text; parsedData.confidenceScores.vendor = conf; }
-                if (entity.type === 'invoice_id') { parsedData.invoiceId = text; parsedData.confidenceScores.invoiceId = conf; }
-                if (entity.type === 'invoice_date') { 
-                    const isoText = entity.normalizedValue && entity.normalizedValue.text ? entity.normalizedValue.text : text.split(' ')[0];
-                    parsedData.dateCreated = isoText.includes('T') ? isoText.split('T')[0] : isoText; 
-                }
-                if (entity.type === 'due_date') { 
-                    const isoText = entity.normalizedValue && entity.normalizedValue.text ? entity.normalizedValue.text : text.split(' ')[0];
-                    parsedData.dueDate = isoText.includes('T') ? isoText.split('T')[0] : isoText; 
-                }
-                if (entity.type === 'total_amount') { parsedData.total = cleanNum(text); parsedData.confidenceScores.total = conf; }
-                if (entity.type === 'total_tax_amount') { parsedData.tax = cleanNum(text); parsedData.confidenceScores.tax = conf; }
-                if (entity.type === 'subtotal') { parsedData.subtotal = cleanNum(text); parsedData.confidenceScores.subtotal = conf; }
-                if (entity.type === 'currency') { 
-                    let c = text.trim().toUpperCase();
-                    if (c === '€') c = 'EUR';
-                    if (c === '$') c = 'USD';
-                    if (c === '£') c = 'GBP';
-                    parsedData.currency = c; 
-                }
-                
-                if (entity.type === 'line_item') {
-                    let desc = '', amt = 0;
-                    if (entity.properties) {
-                        const d = entity.properties.find(p => p.type === 'line_item/description');
-                        const a = entity.properties.find(p => p.type === 'line_item/amount');
-                        if (d) desc = d.mentionText.replace(/\n/g, ' ');
-                        if (a) amt = cleanNum(a.mentionText);
-                    }
-                    parsedData.lineItems.push({ description: desc, amount: amt });
-                }
-            }
+Respond ONLY with a JSON array matching this schema:
+[
+  {
+    "invoiceId": "string",
+    "vendorName": "string",
+    "supplierRegistration": "string or NOT_FOUND_ON_INVOICE",
+    "supplierVat": "string or NOT_FOUND_ON_INVOICE",
+    "receiverName": "string",
+    "receiverVat": "string",
+    "amount": number,
+    "taxAmount": number,
+    "subtotalAmount": number,
+    "currency": "EUR/USD/GBP",
+    "dateCreated": "YYYY-MM-DD",
+    "dueDate": "YYYY-MM-DD",
+    "status": "OOTEL",
+    "lineItems": [ { "description": "string", "amount": number } ]
+  }
+]`;
+
+        if (supervisorCritique) {
+            systemPrompt += `\n\n🚨 SUPERVISOR CRITIQUE FROM PREVIOUS ATTEMPT:\n${supervisorCritique}\n\nThe Supervisor rejected your last JSON because you missed mandatory fields. You must scan the document again, pixel by pixel, specifically looking for the fields mentioned by the Supervisor. If you still cannot find them, you MUST write "NOT_FOUND_ON_INVOICE".`;
         }
 
-        // --- FALLBACKS & VALIDATION RULES ---
-        let validationWarnings = [];
-        let systemStatus = 'Unpaid'; // Maps to 'Pending' via api.ts parseStatus
+        const response = await anthropic.messages.create({
+            model: "claude-sonnet-4-6",
+            max_tokens: 2000,
+            temperature: 0.1,
+            system: "You are the world's most intelligent accounting extraction AI.",
+            messages: [
+                {
+                    role: "user",
+                    content: [
+                        { type: "text", text: systemPrompt },
+                        {
+                            type: blockType,
+                            source: {
+                                type: "base64",
+                                media_type: normalizedMime,
+                                data: base64Data
+                            }
+                        }
+                    ]
+                }
+            ]
+        });
 
-        // Subtotal fallback if missing but solvable
-        if (parsedData.subtotal === 0 && parsedData.total > 0 && parsedData.tax > 0) {
-            parsedData.subtotal = parseFloat((parsedData.total - parsedData.tax).toFixed(2));
-            console.log(`[Document AI] Recovered missing subtotal: ${parsedData.subtotal}`);
-        }
+        const rawJson = response.content[0].text.trim().replace(/^```json\n|\n```$/g, '');
+        const extractedData = JSON.parse(rawJson);
+        
+        console.log(`[Cognitive Extractor] ✅ Extraction Complete:`);
+        console.log(`   -> Vendor: ${extractedData[0].vendorName}`);
+        console.log(`   -> Total: ${extractedData[0].amount} | Sub: ${extractedData[0].subtotalAmount} | Tax: ${extractedData[0].taxAmount}`);
+        console.log(`   -> RegNo: ${extractedData[0].supplierRegistration} | VAT: ${extractedData[0].supplierVat}`);
+        
+        return extractedData;
 
-        // Fix non-ISO dates manually if normalization failed (e.g. 28.02.2026 -> 2026-02-28)
-        const fixDate = (dateStr) => {
-            if (/^\d{2}\.\d{2}\.\d{4}$/.test(dateStr)) {
-                const parts = dateStr.split('.');
-                return `${parts[2]}-${parts[1]}-${parts[0]}`;
-            }
-            return dateStr;
-        };
-        parsedData.dateCreated = fixDate(parsedData.dateCreated);
-        parsedData.dueDate = fixDate(parsedData.dueDate);
-
-        const computedTotal = parseFloat((parsedData.subtotal + parsedData.tax).toFixed(2));
-        if (parsedData.total > 0 && Math.abs(computedTotal - parsedData.total) > 0.05) {
-            validationWarnings.push(`Mathematics mismatch: Subtotal (${parsedData.subtotal}) + Tax (${parsedData.tax}) != Total (${parsedData.total})`);
-            systemStatus = 'Needs Action';
-        }
-
-        if ((parsedData.confidenceScores.total && parsedData.confidenceScores.total < 0.85) || 
-            (parsedData.confidenceScores.vendor && parsedData.confidenceScores.vendor < 0.85)) {
-            validationWarnings.push(`Low confidence score detected from OCR (Total: ${parsedData.confidenceScores.total}, Vendor: ${parsedData.confidenceScores.vendor})`);
-            systemStatus = 'Needs Action';
-        }
-
-        if (!parsedData.dueDate) parsedData.dueDate = parsedData.dateCreated;
-
-        // Map strictly to InvoiceTracker array requirement
-        return [{
-            invoiceId: parsedData.invoiceId,
-            vendorName: parsedData.vendorName,
-            amount: parsedData.total,
-            taxAmount: parsedData.tax,
-            subtotalAmount: parsedData.subtotal,
-            currency: parsedData.currency,
-            dateCreated: parsedData.dateCreated || new Date().toISOString().split('T')[0],
-            dueDate: parsedData.dueDate || new Date().toISOString().split('T')[0],
-            status: systemStatus,
-            lineItems: parsedData.lineItems,
-            validationWarnings: validationWarnings
-        }];
-
-    } catch (err) {
-        console.error("[DocAI Error]", err);
-        throw err;
+    } catch (error) {
+        console.error(`[Cognitive Extractor] 🚨 Local Exception:`, error.message);
+        throw error;
     }
 }
 

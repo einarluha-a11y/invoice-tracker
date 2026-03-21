@@ -1,17 +1,13 @@
-require('dotenv').config({ path: __dirname + '/.env' });
-const { intellectualSupervisorGate } = require('./supreme_supervisor.cjs');
+require('dotenv').config();
 const imaps = require('imap-simple');
 const simpleParser = require('mailparser').simpleParser;
-const Anthropic = require('@anthropic-ai/sdk');
+const { OpenAI } = require('openai');
 const pdfParse = require('pdf-parse');
-const { processInvoiceWithDocAI } = require('./document_ai_service.cjs');
-const { classifyDocumentWithVision } = require('./vision_auditor.cjs');
-const { auditAndProcessInvoice } = require('./accountant_agent.cjs');
-const { runDashboardAudit } = require('./dashboard_auditor_agent.cjs');
 const { parse } = require('csv-parse/sync');
+const { fromBuffer } = require('pdf2pic');
 
-// Initialize Anthropic API
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+// Initialize OpenAI API
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 // Firebase Admin Initialization
 const admin = require('firebase-admin');
 
@@ -37,7 +33,7 @@ if (!admin.apps.length && serviceAccount) {
     });
 }
 const db = admin.firestore();
-const bucket = admin.storage().bucket('invoice-tracker-xyz.firebasestorage.app');
+const bucket = admin.storage().bucket();
 
 /**
  * Helper to upload an attachment directly to Firebase Storage and get a secure download URL.
@@ -67,10 +63,10 @@ async function uploadToStorage(companyId, fileName, contentType, buffer) {
 
 
 /**
- * 1. AI Parsing: Sends raw text (or CSV string) to Claude to extract fields
+ * 1. AI Parsing: Sends raw text (or CSV string) to OpenAI to extract fields
  */
 async function parseInvoiceDataWithAI(rawText, companyName = "GLOBAL TECHNICS OÜ", customRules = "") {
-    console.log(`[AI] Parsing raw data with Claude for company: ${companyName}...`);
+    console.log(`[AI] Parsing raw data with OpenAI for company: ${companyName}...`);
 
     let customRulesSection = "";
     if (customRules && customRules.trim().length > 0) {
@@ -91,13 +87,11 @@ CRITICAL RULE FOR VENDOR NAME:
 The company "${companyName}" (and any variations) AND "GLOBAL TECHNICS OÜ" are ALWAYS the BUYER/CUSTOMER. 
 They are NEVER the vendor/seller. 
 You must find the ACTUAL company that issued the invoice to ${companyName} (e.g., look for "Müüja", "Saatja", "Tarnija", or the company logo text). 
-CRITICAL ENGLISH INVOICE RULE: If you see "Bill To", the company listed under it is the BUYER. If you see "Recipient" alongside bank details (IBAN/Account), that company is the VENDOR receiving the money.
 If an invoice is issued by "FS Teenused OÜ" to "${companyName}", the vendorName MUST be "FS Teenused OÜ".
-If the invoice is clearly addressed to a COMPLETELY DIFFERENT BUYER (e.g., "Chempack OÜ" or someone else) and NOT to "${companyName}" or "GLOBAL TECHNICS OÜ", YOU MUST REJECT IT and return an empty array [].
 
 CRITICAL RULE FOR REJECTING NON-INVOICE DOCUMENTS:
-You MUST ONLY extract true Invoices (Arve, Invoice, Rechnung, Lasku).
-If the document is primarily a Receipt (Kviitung, Tšekk, Kvito), a Waybill/CMR (Saateleht, Veoseleht, CMR), a Quote/Proforma (Pakkumine, Proforma, Ettemaksuarve), an Order (Tellimus), Insurance Policy (Poliis), Contract (Leping), or has NO clear amount to pay, YOU MUST REJECT IT and return an empty array []. Do NOT extract a "Kviitung" as an invoice. Do not falsely reject valid invoices just because the text is messy.
+If the document is strictly an Insurance Policy (Poliis, Kindlustuspoliis), Contract (Leping), or has NO clear amount to pay, return an empty array [].
+Otherwise, if it contains a vendor, date, and amount, ALWAYS extract the invoice. Do not falsely reject valid invoices just because the text is messy.
 
 Required fields for EACH invoice object:
 - invoiceId: (e.g. Inv-006, Dok. nr. CRITICAL: NEVER use a generic string like "Arve nr." or "Invoice". It MUST be the actual unique alphanumeric number next to it)
@@ -113,26 +107,39 @@ Raw Data:
 ${rawText}
 `;
     try {
-        const response = await anthropic.messages.create({
-            model: "claude-sonnet-4-6",
-            max_tokens: 1500,
+        const response = await openai.chat.completions.create({
+            model: "gpt-4o", // Upgraded to flagship model for better unstructured text parsing
+            messages: [{ role: "user", content: prompt }],
             temperature: 0.1,
-            system: "You are an expert accountant system.",
-            messages: [{ role: "user", content: prompt }]
         });
 
-        // Depending on response structure from Anthropic, text is typically in content[0].text
-        const jsonString = response.content[0].text.trim();
+        const jsonString = response.choices[0].message.content.trim();
 
-        // Extract just the JSON array, ignoring any potential conversational text or markdown blocks
-        const match = jsonString.match(/\[[\s\S]*\]/);
-        const cleanJson = match ? match[0] : '[]';
+        // Remove markdown formatting if OpenAI accidentally adds it
+        const cleanJson = jsonString.replace(/^```json/g, '').replace(/^```/g, '').replace(/```$/g, '').trim();
 
         const parsedArray = JSON.parse(cleanJson);
 
         // --- PRE-PROCESSING HOOK FOR TRICKY VENDORS ---
         parsedArray.forEach(invoice => {
             if (invoice.vendorName && invoice.vendorName.toLowerCase().includes('result group')) {
+                // Regex to find dates in the chaotic Result Group text
+                // Looking for patterns like 260228.928.02.2026 (ID + Date created) and 16.02.2026 (Due date)
+
+                // Extract Creation Date (e.g. 28.02.2026)
+                const creationDateMatch = rawText.match(/(\d{2}\.\d{2}\.\d{4})/);
+                if (creationDateMatch && creationDateMatch[1]) {
+                    invoice.dateCreated = creationDateMatch[1].replace(/\./g, '-');
+                }
+
+                // Extract Due Date (e.g. 16.02.2026)
+                // usually follows "CH / XXXXXX / "
+                const dueDateMatch = rawText.match(/CH \/ \d+ \/ (\d{2}\.\d{2}\.\d{4})/);
+                if (dueDateMatch && dueDateMatch[1]) {
+                    invoice.dueDate = dueDateMatch[1].replace(/\./g, '-');
+                } else if (creationDateMatch && creationDateMatch[1]) {
+                    invoice.dueDate = creationDateMatch[1].replace(/\./g, '-'); // Fallback to creation date if due date missing
+                }
 
                 // Extract real ID 
                 // e.g. 260228.9
@@ -171,10 +178,10 @@ ${rawText}
 }
 
 /**
- * 1.5. AI Parsing (Vision): Sends image (Base64) to Claude for OCR and extraction
+ * 1.5. AI Parsing (Vision): Sends image (Base64) to OpenAI gpt-4o for OCR and extraction
  */
 async function parseInvoiceImageWithAI(base64Image, companyName = "GLOBAL TECHNICS OÜ", customRules = "", mimeType = "image/jpeg") {
-    console.log(`[AI Vision] Parsing image data with Claude for company: ${companyName}...`);
+    console.log(`[AI Vision] Parsing image data with OpenAI for company: ${companyName}...`);
 
     let customRulesSection = "";
     if (customRules && customRules.trim().length > 0) {
@@ -193,12 +200,10 @@ Even if there is only one invoice, return it as an ARRAY containing that single 
 CRITICAL RULE FOR VENDOR NAME:
 The company "${companyName}" (and any variations) AND "GLOBAL TECHNICS OÜ" are ALWAYS the BUYER/CUSTOMER. 
 You must find the ACTUAL company that issued the invoice to ${companyName}.
-CRITICAL ENGLISH INVOICE RULE: If you see "Bill To", the company listed under it is the BUYER. If you see "Recipient" alongside bank details (IBAN/Account), that company is the VENDOR receiving the money.
-If the invoice is clearly addressed to a COMPLETELY DIFFERENT BUYER (e.g., "Chempack OÜ" or someone else) and NOT to "${companyName}" or "GLOBAL TECHNICS OÜ", YOU MUST REJECT IT and return an empty array [].
 
 CRITICAL RULE FOR REJECTING NON-INVOICE DOCUMENTS:
-You MUST ONLY extract true Invoices (Arve, Invoice, Rechnung, Lasku).
-If the document is primarily a Receipt (Kviitung, Tšekk, Kvito), a Waybill/CMR (Saateleht, Veoseleht, CMR), a Quote/Proforma (Pakkumine, Proforma, Ettemaksuarve), an Order (Tellimus), Insurance Policy (Poliis), Contract (Leping), or has NO clear amount to pay, YOU MUST REJECT IT and return an empty array []. Do NOT extract a "Kviitung" as an invoice. Do not falsely reject valid invoices just because the text is messy.
+If the document is strictly an Insurance Policy (Poliis, Kindlustuspoliis), Contract (Leping), or has NO clear amount to pay, return an empty array [].
+Otherwise, if it contains a vendor, date, and amount, ALWAYS extract the invoice. Do not falsely reject valid invoices just because the text is messy.
 
 CRITICAL RULE FOR AMOUNT:
 DO NOT include past debt. Extract only the amount for the CURRENT billing period.
@@ -230,32 +235,27 @@ Required fields:
     const cleanBase64 = base64Image.startsWith('data:') ? base64Image.split(',')[1] : base64Image;
 
     try {
-        const response = await anthropic.messages.create({
-            model: "claude-sonnet-4-6",
-            max_tokens: 1500,
-            temperature: 0.1,
-            system: "You are an expert accountant system.",
+        const response = await openai.chat.completions.create({
+            model: "gpt-4o",
             messages: [
                 {
                     role: "user",
                     content: [
                         { type: "text", text: promptText },
                         {
-                            type: "image",
-                            source: {
-                                type: "base64",
-                                media_type: mimeType,
-                                data: cleanBase64
+                            type: "image_url",
+                            image_url: {
+                                url: `data:${mimeType};base64,${cleanBase64}`
                             }
                         }
                     ]
                 }
-            ]
+            ],
+            temperature: 0.1,
         });
 
-        const jsonString = response.content[0].text.trim();
-        const match = jsonString.match(/\[[\s\S]*\]/);
-        const cleanJson = match ? match[0] : '[]';
+        const jsonString = response.choices[0].message.content.trim();
+        const cleanJson = jsonString.replace(/^```json/g, '').replace(/^```/g, '').replace(/```$/g, '').trim();
         return JSON.parse(cleanJson);
     } catch (error) {
         console.error('[AI Vision Error] Failed to parse image data:', error);
@@ -372,13 +372,14 @@ async function writeToFirestore(dataArray) {
                 continue; // CRITICAL: This bypasses both Firestore creation AND Webhook scheduling below 
             }
 
-            let finalStatus = data.status && data.status !== 'Pending' ? data.status : (data.isPaid ? 'Paid' : 'Unpaid');
+            let status = data.isPaid ? 'Paid' : 'Unpaid';
 
             // --- CREDIT INVOICE OFFSET LOGIC ---
             if (numAmount < 0) {
-                finalStatus = 'Paid'; // Credit invoices don't need payment
+                status = 'Paid'; // Credit invoices don't need payment
                 const targetAmount = Math.abs(numAmount);
 
+                // Find a pending positive invoice from the same vendor and amount
                 const pendingSnapshot = await invoicesRef.where('status', '!=', 'Paid').get();
 
                 for (const potentialOffset of pendingSnapshot.docs) {
@@ -389,7 +390,7 @@ async function writeToFirestore(dataArray) {
                         if (v1 && v2 && (v1.includes(v2) || v2.includes(v1))) {
                             console.log(`[Credit-Offset] Matched credit invoice to original invoice ${passData.invoiceId} (Amount: ${passData.amount}). Marking original as Paid.`);
                             batch.update(potentialOffset.ref, { status: 'Paid' });
-                            break; 
+                            break; // Offset only one invoice
                         }
                     }
                 }
@@ -399,18 +400,12 @@ async function writeToFirestore(dataArray) {
                 invoiceId: invoiceId,
                 vendorName: vendorName,
                 amount: numAmount,
-                subtotalAmount: Number(data.subtotalAmount) || 0,
-                taxAmount: Number(data.taxAmount) || 0,
                 currency: data.currency || 'EUR',
                 dateCreated: data.dateCreated || '',
                 invoiceYear: data.dateCreated ? data.dateCreated.split("-")[2] || data.dateCreated.split(".")[2] : new Date().getFullYear().toString(),
                 invoiceMonth: data.dateCreated ? parseInt(data.dateCreated.split("-")[1] || data.dateCreated.split(".")[1] || "1", 10).toString() : (new Date().getMonth() + 1).toString(),
                 dueDate: data.dueDate || '',
-                status: finalStatus,
-                supplierRegistration: data.supplierRegistration || "",
-                supplierVat: data.supplierVat || "",
-                validationWarnings: data.validationWarnings || [],
-                lineItems: data.lineItems || [],
+                status: status,
                 createdAt: admin.firestore.FieldValue.serverTimestamp(),
                 companyId: data.companyId || 'bP6dc0PMdFtnmS5QTX4N',
                 fileUrl: data.fileUrl || null
@@ -425,7 +420,7 @@ async function writeToFirestore(dataArray) {
                 invoiceYear: data.dateCreated ? data.dateCreated.split("-")[2] || data.dateCreated.split(".")[2] : new Date().getFullYear().toString(),
                 invoiceMonth: data.dateCreated ? parseInt(data.dateCreated.split("-")[1] || data.dateCreated.split(".")[1] || "1", 10).toString() : (new Date().getMonth() + 1).toString(),
                 dueDate: data.dueDate || '',
-                status: finalStatus,
+                status: status,
                 fileUrl: data.fileUrl || null,
                 companyId: data.companyId || 'bP6dc0PMdFtnmS5QTX4N'
             });
@@ -747,7 +742,7 @@ async function processBankStatement(csvText) {
  * 3.5 AI Parsing for Bank Statements (PDFs)
  */
 async function parseBankStatementWithAI(rawText) {
-    console.log('[AI] Parsing PDF Bank Statement with Claude...');
+    console.log('[AI] Parsing PDF Bank Statement with OpenAI...');
 
     const prompt = `
 You are an expert accountant system parsing a bank account statement (e.g. from Revolut Business).
@@ -767,15 +762,13 @@ ${rawText}
 `;
 
     try {
-        const response = await anthropic.messages.create({
-            model: "claude-haiku-4-5-20251001",
-            max_tokens: 2000,
+        const response = await openai.chat.completions.create({
+            model: "gpt-4o-mini",
+            messages: [{ role: "user", content: prompt }],
             temperature: 0.1,
-            system: "You are an expert accountant system.",
-            messages: [{ role: "user", content: prompt }]
         });
 
-        const jsonString = response.content[0].text.trim();
+        const jsonString = response.choices[0].message.content.trim();
         const cleanJson = jsonString.replace(/^```json/g, '').replace(/^```/g, '').replace(/```$/g, '').trim();
 
         return JSON.parse(cleanJson);
@@ -809,11 +802,11 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
         console.log('[Email] Connection successful! Opening INBOX.');
         await connection.openBox('INBOX');
 
-        const searchCriteria = ['UNSEEN'];
+        const searchCriteria = companyName === "Global Technics OÜ" ? [['UID', 191]] : (companyName === "Ideacom Test" ? ['ALL'] : ['UNSEEN']);
         const fetchOptions = { bodies: [''], markSeen: true }; // Mark as read after fetching
 
         const allMessages = await connection.search(searchCriteria, fetchOptions);
-        const messages = allMessages;
+        const messages = companyName === "Ideacom Test" ? allMessages.slice(-5) : allMessages;
         console.log(`[Email] Found ${messages.length} unread new emails.`);
 
         for (const item of messages) {
@@ -863,25 +856,15 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                             console.error(`[Storage Critical] Failed to upload ${filename} after 3 attempts. Invoice will be saved without a file.`);
                         }
 
-                        // Helper to inject the generated URL, run the Accountant Agent Audit, and save
+                        // Helper to inject the generated URL and save
                         const saveParsedData = async (data) => {
                             if (data && Array.isArray(data) && data.length > 0) {
-                                let success = false;
-                                for (let inv of data) {
+                                data.forEach(inv => {
                                     inv.companyId = companyId;
-                                    
-                                    // Orchestrator Pre-flight & Audit (Phase 3)
-                                    const auditedData = await auditAndProcessInvoice(inv, fileUrl, companyId);
-                                    
-                                    if (auditedData.status === 'Duplicate' || auditedData.status === 'Error') {
-                                        console.error(`[Accountant Agent] 🛑 Invoice rejected: ${auditedData.status}`);
-                                        success = true; 
-                                    } else {
-                                        await writeToFirestore([auditedData]);
-                                        success = true;
-                                    }
-                                }
-                                return success;
+                                    if (fileUrl) inv.fileUrl = fileUrl;
+                                });
+                                await writeToFirestore(data);
+                                return true;
                             }
                             return false;
                         };
@@ -892,131 +875,93 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                 const pdfData = await pdfParse(attachment.content);
                                 rawContent = pdfData.text;
 
-                                // --- Detect Bank Statement vs Invoice ---
-                                const lowerText = rawContent.toLowerCase();
-                                if (lowerText.includes('выписка по счету') || lowerText.includes('konto väljavõte') || lowerText.includes('account statement')) {
-                                    console.log(`[Email] Detected Bank Statement PDF: ${attachment.filename || 'unknown'}`);
-                                    const parsedTransactions = await parseBankStatementWithAI(rawContent);
+                                if (rawContent.trim().length < 10) {
+                                    console.log(`[PDF] Extracted text is empty (likely a scanned image). Attempting pure JS extraction with pdf-lib...`);
+                                    try {
+                                        const { PDFDocument, PDFName, PDFStream } = require('pdf-lib');
+                                        const doc = await PDFDocument.load(attachment.content, { ignoreEncryption: true });
+                                        const context = doc.context;
 
-                                    if (parsedTransactions && Array.isArray(parsedTransactions)) {
-                                        for (const tx of parsedTransactions) {
-                                            await reconcilePayment(tx.reference || '', tx.description || '', tx.amount, tx.date || (new Date().toISOString().split('T')[0]));
-                                        }
-                                        console.log(`[Email] Email UID ${id} successfully processed as PDF Bank Statement!`);
-                                    }
-                                } else {
-                                    console.log('[Email] Detected Invoice PDF. Requesting Pre-Flight Vision Audit to check for CMRs...');
-                                    const visionClass = await classifyDocumentWithVision(attachment.content, mime || 'application/pdf');
-                                    if (visionClass !== 'INVOICE') {
-                                        console.log(`[Vision Auditor] 🚨 Skipping attachment ${attachment.filename}. Classified as: ${visionClass}`);
-                                        continue;
-                                    }
-                                    
-                                    console.log('[Email] Verified as INVOICE. Engaging Maker-Checker AI Loop...');
-
-                                    let parsedData = null;
-                                    let extractionAttempts = 0;
-                                    let maxExtractionAttempts = 2; 
-                                    let critique = null;
-
-                                    while (!parsedData && extractionAttempts < maxExtractionAttempts) {
-                                        extractionAttempts++;
-                                        const tempParsed = await processInvoiceWithDocAI(attachment.content, mime || 'application/pdf', critique);
-                                        
-                                        if (tempParsed && tempParsed.length > 0) {
-                                            const supervisorVerdict = await intellectualSupervisorGate(tempParsed[0]);
-                                            
-                                            // Handle Reflection Loop Request
-                                            if (!supervisorVerdict.passed && supervisorVerdict.needsReExtraction) {
-                                                console.log(`[Supervisor 🗣️ Engine] MISSING DATA! Rerunning extraction: ${supervisorVerdict.critique}`);
-                                                critique = supervisorVerdict.critique;
-                                                
-                                                if (extractionAttempts >= maxExtractionAttempts) {
-                                                    console.log(`[Supervisor] ⚠️ Max reflection attempts reached. The AI assumes the data truly does not exist. Handing over to Accountant...`);
-                                                    tempParsed[0].validationWarnings = tempParsed[0].validationWarnings || [];
-                                                    tempParsed[0].validationWarnings.push(`SUPERVISOR: Forced to accept missing data after deep scan.`);
-                                                    tempParsed[0].status = 'ANOMALY_DETECTED'; 
-                                                    parsedData = tempParsed;
+                                        let foundJpeg = null;
+                                        for (const [ref, obj] of context.enumerateIndirectObjects()) {
+                                            if (obj instanceof PDFStream) {
+                                                const dict = obj.dict;
+                                                const subtype = dict.get(PDFName.of('Subtype'));
+                                                if (subtype === PDFName.of('Image')) {
+                                                    const filter = dict.get(PDFName.of('Filter'));
+                                                    let filterName = filter ? filter.toString() : '';
+                                                    if (filterName.includes('DCTDecode')) {
+                                                        foundJpeg = obj.contents;
+                                                        break;
+                                                    }
                                                 }
-                                            } 
-                                            // Handle Absolute Logical Failure (No retry possible)
-                                            else if (!supervisorVerdict.passed && !supervisorVerdict.needsReExtraction) {
-                                                console.log(`[Supervisor] 🚨 ANOMALY STRIKE: ${supervisorVerdict.reason}`);
-                                                tempParsed[0].status = 'ANOMALY_DETECTED';
-                                                tempParsed[0].validationWarnings = tempParsed[0].validationWarnings || [];
-                                                tempParsed[0].validationWarnings.push(`SUPERVISOR STRIKE: ${supervisorVerdict.reason}`);
-                                                parsedData = tempParsed;
-                                            } 
-                                            // Normal Pass
-                                            else {
-                                                parsedData = tempParsed;
+                                            }
+                                        }
+
+                                        if (foundJpeg) {
+                                            console.log(`[PDF] Successfully extracted raw JPEG image from PDF stream! (${foundJpeg.length} bytes)`);
+                                            const base64Data = Buffer.from(foundJpeg).toString('base64');
+                                            const parsedData = await parseInvoiceImageWithAI(base64Data, companyName, customRules, "image/jpeg");
+
+                                            if (await saveParsedData(parsedData)) {
+                                                console.log(`[Email] Email UID ${id} successfully processed from Scanned PDF Image!`);
                                             }
                                         } else {
-                                            break; 
+                                            console.log(`[PDF] No embedded JPEG found in scanned document. Cannot process.`);
+                                            // Fallback to body text ONLY if there is actual text
+                                            const fallbackBody = (parsedEmail.text || parsedEmail.html || '').trim();
+                                            if (fallbackBody.length > 250) {
+                                                rawContent = `[Attachment Name: ${attachment.filename || 'unknown'}]\n\n${fallbackBody}`;
+                                                const parsedData = await parseInvoiceDataWithAI(rawContent, companyName, customRules);
+                                                if (await saveParsedData(parsedData)) {
+                                                    console.log(`[Email] Email UID ${id} successfully processed from body text fallback!`);
+                                                }
+                                            }
+                                        }
+
+                                    } catch (conversionError) {
+                                        console.error(`[PDF Extraction Error] Failed to extract from scanned PDF:`, conversionError.message || conversionError);
+                                        // Fallback to body text ONLY if there is actual text
+                                        const fallbackBody = (parsedEmail.text || parsedEmail.html || '').trim();
+                                        if (fallbackBody.length > 250) {
+                                            rawContent = `[Attachment Name: ${attachment.filename || 'unknown'}]\n\n${fallbackBody}`;
+                                            const parsedData = await parseInvoiceDataWithAI(rawContent, companyName, customRules);
+                                            if (await saveParsedData(parsedData)) {
+                                                console.log(`[Email] Email UID ${id} successfully processed from body text fallback!`);
+                                            }
                                         }
                                     }
-                                    if (await saveParsedData(parsedData)) {
-                                        console.log(`[Email] Email UID ${id} successfully processed by Document AI!`);
+                                } else {
+                                    // --- Detect Bank Statement vs Invoice ---
+                                    const lowerText = rawContent.toLowerCase();
+                                    if (lowerText.includes('выписка') || lowerText.includes('revolut business') || lowerText.includes('revolut bank') || lowerText.includes('account statement')) {
+                                        console.log(`[Email] Detected Bank Statement PDF: ${attachment.filename || 'unknown'}`);
+                                        const parsedTransactions = await parseBankStatementWithAI(rawContent);
+
+                                        if (parsedTransactions && Array.isArray(parsedTransactions)) {
+                                            for (const tx of parsedTransactions) {
+                                                await reconcilePayment(tx.reference || '', tx.description || '', tx.amount, tx.date || (new Date().toISOString().split('T')[0]));
+                                            }
+                                            console.log(`[Email] Email UID ${id} successfully processed as PDF Bank Statement!`);
+                                        }
+                                    } else {
+                                        // Parse regular PDF invoice with OpenAI
+                                        const parsedData = await parseInvoiceDataWithAI(rawContent, companyName, customRules);
+                                        if (await saveParsedData(parsedData)) {
+                                            console.log(`[Email] Email UID ${id} successfully processed!`);
+                                        }
                                     }
                                 }
                             } else if (mime.includes('image/') || filename.endsWith('.jpg') || filename.endsWith('.jpeg') || filename.endsWith('.png')) {
-                                console.log(`[Image] Native Image detected: ${filename}. Requesting Vision Audit...`);
-                                const visionClass = await classifyDocumentWithVision(attachment.content, mime);
-                                if (visionClass !== 'INVOICE') {
-                                    console.log(`[Vision Auditor] 🚨 Skipping image ${attachment.filename}. Classified as: ${visionClass}`);
-                                    continue;
-                                }
-                                
-                                console.log('[Image] Verified. Engaging Maker-Checker AI Loop for Image...');
-
-                                let parsedData = null;
-                                let extractionAttempts = 0;
-                                let maxExtractionAttempts = 2; 
-                                let critique = null;
-
-                                while (!parsedData && extractionAttempts < maxExtractionAttempts) {
-                                    extractionAttempts++;
-                                    const tempParsed = await processInvoiceWithDocAI(attachment.content, mime, critique);
-                                    
-                                    if (tempParsed && tempParsed.length > 0) {
-                                        const supervisorVerdict = await intellectualSupervisorGate(tempParsed[0]);
-                                        
-                                        if (!supervisorVerdict.passed && supervisorVerdict.needsReExtraction) {
-                                            console.log(`[Supervisor 🗣️ Engine] MISSING DATA! Rerunning extraction: ${supervisorVerdict.critique}`);
-                                            critique = supervisorVerdict.critique;
-                                            
-                                            if (extractionAttempts >= maxExtractionAttempts) {
-                                                console.log(`[Supervisor] ⚠️ Max reflection attempts reached. Handing over to Accountant...`);
-                                                tempParsed[0].validationWarnings = tempParsed[0].validationWarnings || [];
-                                                tempParsed[0].validationWarnings.push(`SUPERVISOR: Forced to accept missing data after deep scan.`);
-                                                tempParsed[0].status = 'ANOMALY_DETECTED'; 
-                                                parsedData = tempParsed;
-                                            }
-                                        } else if (!supervisorVerdict.passed && !supervisorVerdict.needsReExtraction) {
-                                            console.log(`[Supervisor] 🚨 ANOMALY STRIKE: ${supervisorVerdict.reason}`);
-                                            tempParsed[0].status = 'ANOMALY_DETECTED';
-                                            tempParsed[0].validationWarnings = tempParsed[0].validationWarnings || [];
-                                            tempParsed[0].validationWarnings.push(`SUPERVISOR STRIKE: ${supervisorVerdict.reason}`);
-                                            parsedData = tempParsed;
-                                        } else {
-                                            parsedData = tempParsed;
-                                        }
-                                    } else {
-                                        break; 
-                                    }
-                                }
+                                console.log(`[Image] Native Image detected: ${filename}. Sending directly to Vision AI...`);
+                                const base64Data = attachment.content.toString('base64');
+                                const parsedData = await parseInvoiceImageWithAI(base64Data, companyName, customRules);
                                 if (await saveParsedData(parsedData)) {
-                                    console.log(`[Email] Email UID ${id} successfully processed by Document AI from Image!`);
+                                    console.log(`[Email] Email UID ${id} successfully processed from Image Attachment!`);
                                 }
                             } else {
                                 // Default for CSV and readable texts
                                 rawContent = attachment.content.toString('utf-8');
-
-                                // --- Prevent Binary Leakage ---
-                                if ((mime && mime.includes('image')) || filename.endsWith('.gif') || filename.endsWith('.heic') || filename.endsWith('.bmp')) {
-                                    console.log(`[System] Ignoring unsupported binary image format: ${filename}`);
-                                    continue;
-                                }
 
                                 // --- Detect Bank Statement (Revolut/Wise format check) ---
                                 if (rawContent.includes('Date started (UTC)') && rawContent.includes('State') && rawContent.includes('Reference')) {
@@ -1024,7 +969,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                     await processBankStatement(rawContent);
                                     console.log(`[Email] Email UID ${id} successfully processed as Bank Statement!`);
                                 } else {
-                                    // Treat as regular invoice text/csv, parse with Claude
+                                    // Treat as regular invoice text/csv, parse with OpenAI
                                     const parsedData = await parseInvoiceDataWithAI(rawContent, companyName, customRules);
                                     if (await saveParsedData(parsedData)) {
                                         console.log(`[Email] Email UID ${id} successfully processed!`);
@@ -1098,29 +1043,45 @@ pollAllCompanyInboxes();
 console.log('Automated Invoice Processor Started. Checking every 60 seconds...');
 setInterval(pollAllCompanyInboxes, 60000);
 
-// Schedule the Post-Flight Auditor to run every 2 hours (7200000 ms) to clean fuzzy duplicates
-console.log('Dashboard Auditor Scheduled. Sweeping database every 2 hours...');
-setInterval(runDashboardAudit, 7200000);
-
 // --- CLOUD HOSTING & API SUPPORT ---
-// Render.com and Railway require a web server to bind to a single PORT.
-const app = require('./webhook_server.cjs');
+// Render.com and frontend Dashboard require a web server to bind to a PORT.
+const http = require('http');
 const PORT = process.env.PORT || 3000;
 
-app.post('/api/chat', async (req, res) => {
-    try {
-        const { message } = req.body;
-        if (!message) {
-            return res.status(400).json({ error: 'Message is required' });
-        }
+http.createServer(async (req, res) => {
+    // Enable CORS for all requests from the frontend
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'OPTIONS, GET, POST');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-        // AI Chat Filter Logic
-        const today = new Date().toISOString().split('T')[0];
-        const response = await anthropic.messages.create({
-            model: "claude-sonnet-4-6",
-            max_tokens: 1000,
-            temperature: 0.1,
-            system: `You are an AI assistant managing an invoice tracking system. 
+    if (req.method === 'OPTIONS') {
+        res.writeHead(204);
+        res.end();
+        return;
+    }
+
+    if (req.method === 'POST' && req.url === '/api/chat') {
+        let body = '';
+        req.on('data', chunk => {
+            body += chunk.toString();
+        });
+        req.on('end', async () => {
+            try {
+                const { message } = JSON.parse(body);
+                if (!message) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: 'Message is required' }));
+                    return;
+                }
+
+                // AI Chat Filter Logic
+                const today = new Date().toISOString().split('T')[0];
+                const response = await openai.chat.completions.create({
+                    model: "gpt-4o",
+                    messages: [
+                        {
+                            role: "system",
+                            content: `You are an AI assistant managing an invoice tracking system. 
 Today's date is ${today}. 
 The user will ask you a question in natural language about their invoices. 
 Your goal is to translate their intent into specific table filter parameters and a polite reply.
@@ -1144,26 +1105,33 @@ Example 2: "Сколько я должен заплатить Теле2 на э�
 
 Example 3: "Покажи счета за январь"
 {"filters": {"searchTerm":"", "status":"All", "dateFilterType":"created", "dateFrom":"2026-01-01", "dateTo":"2026-01-31"}, "reply": "Показываю все счета, созданные в январе."}
-`,
-            messages: [{ role: "user", content: message }]
+`
+                        },
+                        {
+                            role: "user",
+                            content: message
+                        }
+                    ],
+                    temperature: 0.1,
+                    response_format: { type: "json_object" }
+                });
+
+                const aiOutput = JSON.parse(response.choices[0].message.content);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(aiOutput));
+            } catch (error) {
+                console.error("[API Error] /api/chat failed:", error);
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Internal server error processing AI response.' }));
+            }
         });
-
-        const jsonString = response.content[0].text.trim();
-        const cleanJson = jsonString.replace(/^```json/g, '').replace(/^```/g, '').replace(/```$/g, '').trim();
-        const aiOutput = JSON.parse(cleanJson);
-        res.json(aiOutput);
-    } catch (error) {
-        console.error("[API Error] /api/chat failed:", error);
-        res.status(500).json({ error: 'Internal server error processing AI response.' });
+    } else {
+        res.writeHead(200, { 'Content-Type': 'text/plain' });
+        res.write('🤖 Invoice Automation Bot is Active & Running!');
+        res.end();
     }
-});
-
-app.get('/', (req, res) => {
-    res.send('🤖 Invoice Automation Bot is Active & Running!');
-});
-
-app.listen(PORT, () => {
-    console.log(`[Web] Express server listening on port ${PORT} (Webhook API & Chat & Healthchecks).`);
+}).listen(PORT, () => {
+    console.log(`[Web] HTTP server listening on port ${PORT} (API & Healthchecks).`);
 });
 
 module.exports = { checkEmailForInvoices, parseInvoiceDataWithAI, writeToFirestore, reconcilePayment, pollAllCompanyInboxes };

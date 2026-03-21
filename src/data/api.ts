@@ -108,6 +108,12 @@ export const subscribeToInvoices = (
                 taxAmount: data.taxAmount,
                 lineItems: data.lineItems,
                 validationWarnings: data.validationWarnings,
+                supplierRegistration: data.supplierRegistration,
+                supplierVat: data.supplierVat,
+                receiverName: data.receiverName,
+                receiverVat: data.receiverVat,
+                paymentTerms: data.paymentTerms,
+                viesValidation: data.viesValidation,
             });
         });
 
