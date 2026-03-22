@@ -368,10 +368,17 @@ async function writeToFirestore(dataArray) {
 
             if (isDuplicate) {
                 if (data.fileUrl && existingDocId) {
-                    console.log(`[Firestore] Updating duplicate invoice with new fileUrl: ${vendorName} - ${invoiceId}`);
-                    batch.update(invoicesRef.doc(existingDocId), {
-                        fileUrl: data.fileUrl
-                    });
+                    // Prevent AI hallucinations (mistaking 39 for 41) from maliciously overwriting the real 41's PDF.
+                    // Only patch the fileUrl if the existing record in the DB is completely empty (no file attached).
+                    const currDoc = await invoicesRef.doc(existingDocId).get();
+                    if (!currDoc.data().fileUrl) {
+                        console.log(`[Firestore] Patching duplicate invoice with missing fileUrl: ${vendorName} - ${invoiceId}`);
+                        batch.update(invoicesRef.doc(existingDocId), {
+                            fileUrl: data.fileUrl
+                        });
+                    } else {
+                        console.log(`[Firestore] Audit Guard: Refusing to overwrite existing valid fileUrl for duplicate invoice: ${vendorName} - ${invoiceId}`);
+                    }
                 } else {
                     console.log(`[Firestore] Skipping duplicate invoice: ${vendorName} - ${invoiceId}`);
                 }
