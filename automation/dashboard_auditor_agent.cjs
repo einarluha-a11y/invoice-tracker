@@ -66,6 +66,7 @@ RULES FOR DELETION:
 4. PREFERENCE RULE: Always keep the record where 'hasFile' is true. If both have files or both lack files, just pick one to keep and delete the rest.
 5. Do NOT delete invoices that are just from the same vendor but clearly different transactions (different dates, different amounts).
 6. NON-INVOICE PRUNING: This database must ONLY contain financial invoices. If a record has an 'amount' of 0 or null, or if its 'description' / 'invoiceId' strongly suggests it is a CMR (Waybill), an Account Statement (Konto väljavõte), a Quote, or junk text, you MUST flag its 'dbId' for deletion.
+7. ⚠️ CRITICAL CREDIT EXEMPTION: Invoices with negative amounts (e.g. -80000) are CREDIT BILLS/LOANS and are HIGHLY VALID. You must NEVER delete negative amount invoices under any circumstances!
 
 Return ONLY a perfectly formatted, valid JSON array of strings containing the 'dbId' of the records that MUST BE DELETED.
 Example if id1 and id2 are duplicates of a master: ["id1", "id2"]
