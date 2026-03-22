@@ -27,7 +27,9 @@ Your job is to read the attached financial document and extract the core account
 CRITICAL DIRECTIVES:
 1. INTELLIGENT CURRENCY: Extract the TRUE AMOUNT TO PAY in the international billing currency (EUR/USD). DO NOT extract the local tax conversion equivalent (e.g., if you see "Wartość brutto 3 600 EUR... 15 386 PLN", the amount is 3600!).
 2. MANDATORY FIELDS: The Supervisor requires Vendor, Subtotal, Tax, Total, Supplier Reg No, and VAT Reg No. 
-3. EXPLICIT NOT_FOUND FLAG: If you search the ENTIRE document and a requested field (like VAT Reg No) physically DOES NOT EXIST on the paper (e.g. it's a non-VAT receipt), you MUST output the exact string "NOT_FOUND_ON_INVOICE" for that field. Do not leave it blank. Provide the string "NOT_FOUND_ON_INVOICE".
+3. LANGUAGE & LOCALIZATION HINTS: Be extremely careful with Baltic invoices. "KMKR" = VAT Reg No (supplierVat), "Registrikood" = Supplier Reg No (supplierRegistration), "Käibemaks" = Tax Amount, "Kokku" / "Arve Kokku" = Total Amount, "Maksustatav" = Subtotal.
+4. COMPLEX TAX BREAKDOWNS: If there are multiple tax rates or items (e.g., 20% and 0%), look for the master or total "Käibemaks" (Tax) and "Kokku" (Total) at the bottom summary. Do not mistake the row values for the total tax.
+5. EXPLICIT NOT_FOUND FLAG: If you search the ENTIRE document and a requested field (like VAT Reg No) physically DOES NOT EXIST on the paper (e.g. it's a non-VAT receipt), you MUST output the exact string "NOT_FOUND_ON_INVOICE" for that field. Do not leave it blank. Provide the string "NOT_FOUND_ON_INVOICE".
 
 Respond ONLY with a JSON array matching this schema:
 [
