@@ -319,6 +319,12 @@ async function writeToFirestore(dataArray) {
                 }
             }
 
+            // --- FILE INTEGRITY CHECK ---
+            if (!data.fileUrl) {
+                console.warn(`[Firestore] 🛑 CRITICAL REJECTION: Refusing to write invoice without a file attachment (Vendor: ${vendorName}, Invoice: ${invoiceId}). Audit block active.`);
+                continue; // Completely bypass Firebase write
+            }
+
             // --- DUPLICATE PREVENTION LOGIC ---
             let isDuplicate = false;
             let existingDocId = null;
