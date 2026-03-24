@@ -498,6 +498,53 @@ async function writeToFirestore(dataArray) {
 }
 
 /**
+ * Runs the Maker-Checker AI extraction loop for a single document.
+ * Shared by both PDF and Image processing paths.
+ * @param {Buffer} content - Raw file content
+ * @param {string} mimeType - MIME type (e.g. 'application/pdf', 'image/jpeg')
+ * @param {Object} companyData - Company config including customAiRules
+ * @param {number} maxAttempts - Max retry attempts (default 5)
+ * @returns {Array|null} Parsed invoice data array, or null if extraction failed
+ */
+async function runMakerCheckerLoop(content, mimeType, companyData, maxAttempts = 5) {
+    let parsedData = null;
+    let extractionAttempts = 0;
+    let critique = null;
+
+    while (!parsedData && extractionAttempts < maxAttempts) {
+        extractionAttempts++;
+        const tempParsed = await processInvoiceWithDocAI(content, mimeType, critique, companyData.customAiRules);
+
+        if (!tempParsed || tempParsed.length === 0) break;
+
+        const supervisorVerdict = await intellectualSupervisorGate(tempParsed[0]);
+
+        if (!supervisorVerdict.passed && supervisorVerdict.needsReExtraction) {
+            console.log(`[Supervisor 🗣️ Engine] MISSING DATA! Rerunning extraction: ${supervisorVerdict.critique}`);
+            critique = supervisorVerdict.critique;
+
+            if (extractionAttempts >= maxAttempts) {
+                console.log(`[Supervisor] ⚠️ Max reflection attempts reached. Accepting with missing data flag.`);
+                tempParsed[0].validationWarnings = tempParsed[0].validationWarnings || [];
+                tempParsed[0].validationWarnings.push(`SUPERVISOR: Forced to accept missing data after deep scan.`);
+                tempParsed[0].status = 'ANOMALY_DETECTED';
+                parsedData = tempParsed;
+            }
+        } else if (!supervisorVerdict.passed && !supervisorVerdict.needsReExtraction) {
+            console.log(`[Supervisor] 🚨 ANOMALY STRIKE: ${supervisorVerdict.reason}`);
+            tempParsed[0].status = 'ANOMALY_DETECTED';
+            tempParsed[0].validationWarnings = tempParsed[0].validationWarnings || [];
+            tempParsed[0].validationWarnings.push(`SUPERVISOR STRIKE: ${supervisorVerdict.reason}`);
+            parsedData = tempParsed;
+        } else {
+            parsedData = tempParsed;
+        }
+    }
+
+    return parsedData;
+}
+
+/**
  * 3. Bank Reconciliation Logic
  */
 async function reconcilePayment(reference, description, paidAmount, totalBankDrain = null, bankFee = null, paymentDateStr = null, foreignAmount = null, foreignCurrency = null, companyId = null) {
@@ -981,47 +1028,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                     
                                     console.log('[Email] Verified as INVOICE. Engaging Maker-Checker AI Loop...');
 
-                                    let parsedData = null;
-                                    let extractionAttempts = 0;
-                                    let maxExtractionAttempts = 5; 
-                                    let critique = null;
-
-                                    while (!parsedData && extractionAttempts < maxExtractionAttempts) {
-                                        extractionAttempts++;
-                                        const tempParsed = await processInvoiceWithDocAI(attachment.content, mime || 'application/pdf', critique, companyData.customAiRules);
-                                        
-                                        if (tempParsed && tempParsed.length > 0) {
-                                            const supervisorVerdict = await intellectualSupervisorGate(tempParsed[0]);
-                                            
-                                            // Handle Reflection Loop Request
-                                            if (!supervisorVerdict.passed && supervisorVerdict.needsReExtraction) {
-                                                console.log(`[Supervisor 🗣️ Engine] MISSING DATA! Rerunning extraction: ${supervisorVerdict.critique}`);
-                                                critique = supervisorVerdict.critique;
-                                                
-                                                if (extractionAttempts >= maxExtractionAttempts) {
-                                                    console.log(`[Supervisor] ⚠️ Max reflection attempts reached. The AI assumes the data truly does not exist. Handing over to Accountant...`);
-                                                    tempParsed[0].validationWarnings = tempParsed[0].validationWarnings || [];
-                                                    tempParsed[0].validationWarnings.push(`SUPERVISOR: Forced to accept missing data after deep scan.`);
-                                                    tempParsed[0].status = 'ANOMALY_DETECTED'; 
-                                                    parsedData = tempParsed;
-                                                }
-                                            } 
-                                            // Handle Absolute Logical Failure (No retry possible)
-                                            else if (!supervisorVerdict.passed && !supervisorVerdict.needsReExtraction) {
-                                                console.log(`[Supervisor] 🚨 ANOMALY STRIKE: ${supervisorVerdict.reason}`);
-                                                tempParsed[0].status = 'ANOMALY_DETECTED';
-                                                tempParsed[0].validationWarnings = tempParsed[0].validationWarnings || [];
-                                                tempParsed[0].validationWarnings.push(`SUPERVISOR STRIKE: ${supervisorVerdict.reason}`);
-                                                parsedData = tempParsed;
-                                            } 
-                                            // Normal Pass
-                                            else {
-                                                parsedData = tempParsed;
-                                            }
-                                        } else {
-                                            break; 
-                                        }
-                                    }
+                                    const parsedData = await runMakerCheckerLoop(attachment.content, mime || 'application/pdf', companyData);
                                     if (await saveParsedData(parsedData)) {
                                         console.log(`[Email] Email UID ${id} successfully processed by Document AI!`);
                                         // FIX Reliability: mark as seen only AFTER successful Firestore write
@@ -1038,42 +1045,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                 
                                 console.log('[Image] Verified. Engaging Maker-Checker AI Loop for Image...');
 
-                                let parsedData = null;
-                                let extractionAttempts = 0;
-                                let maxExtractionAttempts = 5; 
-                                let critique = null;
-
-                                while (!parsedData && extractionAttempts < maxExtractionAttempts) {
-                                    extractionAttempts++;
-                                    const tempParsed = await processInvoiceWithDocAI(attachment.content, mime, critique, companyData.customAiRules);
-                                    
-                                    if (tempParsed && tempParsed.length > 0) {
-                                        const supervisorVerdict = await intellectualSupervisorGate(tempParsed[0]);
-                                        
-                                        if (!supervisorVerdict.passed && supervisorVerdict.needsReExtraction) {
-                                            console.log(`[Supervisor 🗣️ Engine] MISSING DATA! Rerunning extraction: ${supervisorVerdict.critique}`);
-                                            critique = supervisorVerdict.critique;
-                                            
-                                            if (extractionAttempts >= maxExtractionAttempts) {
-                                                console.log(`[Supervisor] ⚠️ Max reflection attempts reached. Handing over to Accountant...`);
-                                                tempParsed[0].validationWarnings = tempParsed[0].validationWarnings || [];
-                                                tempParsed[0].validationWarnings.push(`SUPERVISOR: Forced to accept missing data after deep scan.`);
-                                                tempParsed[0].status = 'ANOMALY_DETECTED'; 
-                                                parsedData = tempParsed;
-                                            }
-                                        } else if (!supervisorVerdict.passed && !supervisorVerdict.needsReExtraction) {
-                                            console.log(`[Supervisor] 🚨 ANOMALY STRIKE: ${supervisorVerdict.reason}`);
-                                            tempParsed[0].status = 'ANOMALY_DETECTED';
-                                            tempParsed[0].validationWarnings = tempParsed[0].validationWarnings || [];
-                                            tempParsed[0].validationWarnings.push(`SUPERVISOR STRIKE: ${supervisorVerdict.reason}`);
-                                            parsedData = tempParsed;
-                                        } else {
-                                            parsedData = tempParsed;
-                                        }
-                                    } else {
-                                        break; 
-                                    }
-                                }
+                                const parsedData = await runMakerCheckerLoop(attachment.content, mime, companyData);
                                 if (await saveParsedData(parsedData)) {
                                     console.log(`[Email] Email UID ${id} successfully processed by Document AI from Image!`);
                                     // FIX Reliability: mark as seen only AFTER successful Firestore write
