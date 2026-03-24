@@ -1,4 +1,5 @@
 require('dotenv').config({ path: __dirname + '/.env' });
+const { reportError } = require('./error_reporter.cjs');
 const { intellectualSupervisorGate } = require('./supreme_supervisor.cjs');
 const imaps = require('imap-simple');
 const simpleParser = require('mailparser').simpleParser;
@@ -494,6 +495,7 @@ async function writeToFirestore(dataArray) {
 
     } catch (error) {
         console.error('[Firestore Error] Database upload failed:', error.message);
+        await reportError('FIREBASE_WRITE_ERROR', 'Batch/Multiple', error).catch(() => {});
     }
 }
 
@@ -1112,6 +1114,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
         console.log(`[System] IMAP connection closed for ${companyName}.`);
     } catch (error) {
         console.error(`[Email Error] IMAP Failure for ${companyName} (${config.imap.user}):`, error);
+        await reportError('IMAP_ERROR', config.imap.user || companyId, error).catch(() => {});
     }
 }
 
@@ -1144,6 +1147,7 @@ async function pollAllCompanyInboxes() {
         }
     } catch (err) {
         console.error('[System Error] Failed to poll company inboxes:', err);
+        await reportError('SYSTEM_POLL_ERROR', 'All Inboxes', err).catch(() => {});
     }
 }
 
