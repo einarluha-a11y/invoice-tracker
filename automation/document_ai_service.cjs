@@ -8,7 +8,7 @@ const anthropic = new Anthropic({
  * PURE CLAUDE EXTRACTION ENGINE 
  * Now supports Supervisor Reflection Loops (criticism parameter).
  */
-async function processInvoiceWithDocAI(buffer, mimeType = 'application/pdf', supervisorCritique = null) {
+async function processInvoiceWithDocAI(buffer, mimeType = 'application/pdf', supervisorCritique = null, customRules = null) {
     if (supervisorCritique) {
         console.log(`[Cognitive Extractor] 🧠 Receiving orders from Supervisor... Executing deep re-scan for missing data!`);
     } else {
@@ -22,22 +22,33 @@ async function processInvoiceWithDocAI(buffer, mimeType = 'application/pdf', sup
         const blockType = isPdf ? "document" : "image";
 
         let systemPrompt = `You are the Supreme AI Extraction Engine for a European Enterprise.
-Your job is to read the attached financial document and extract the core accounting data into a strict JSON format.
+Your job is to read the attached financial document and extract the core data into a strict JSON format.
+
+First, determine the TYPE of document:
+TYPE A: INVOICE (Arve, Faktura, Invoice, Bill, Receipt)
+TYPE B: BANK STATEMENT (Выписка, Account Statement, Ledger, Transaction History)
+TYPE C: JUNK (CMR, Delivery Note, Advertisement, Ettemaksuteatis, Pro forma, Tellimuse kinnitus)
 
 CRITICAL DIRECTIVES:
-1. INTELLIGENT CURRENCY: Extract the TRUE AMOUNT TO PAY in the international billing currency (EUR/USD). DO NOT extract the local tax conversion equivalent (e.g., if you see "Wartość brutto 3 600 EUR... 15 386 PLN", the amount is 3600!).
-2. MANDATORY FIELDS: The Supervisor requires Vendor, Subtotal, Tax, Total, Supplier Reg No, and VAT Reg No. 
-3. LANGUAGE & LOCALIZATION HINTS: Be extremely careful with Baltic invoices. "KMKR" = VAT Reg No (supplierVat), "Registrikood" = Supplier Reg No (supplierRegistration), "Käibemaks" = Tax Amount, "Kokku" / "Arve Kokku" = Total Amount, "Maksustatav" = Subtotal.
+1. INTELLIGENT CURRENCY: Extract the TRUE AMOUNT TO PAY in the international billing currency (EUR/USD). DO NOT extract the local tax conversion equivalent.
+2. MANDATORY FIELDS (INVOICES): Vendor, Subtotal, Tax, Total, Supplier Reg No, and VAT Reg No. 
+3. LANGUAGE & LOCALIZATION HINTS: Be extremely careful with Baltic invoices. "KMKR" or "käibemaksukohustuslase nr" = VAT Reg No (supplierVat), "Registrikood" = Supplier Reg No (supplierRegistration). THESE ARE OFTEN HIDDEN IN THE TINY PAGE FOOTER AT THE VERY BOTTOM! Always scan the absolute bottom of the document. For Czech/Slovak, "IČO" = Reg No, "DIČ" = VAT No. "Käibemaks" = Tax Amount, "Kokku" / "Arve Kokku" = Total Amount, "Maksustatav" = Subtotal.
 4. COMPLEX TAX BREAKDOWNS: If there are multiple tax rates or items (e.g., 20% and 0%), look for the master or total "Käibemaks" (Tax) and "Kokku" (Total) at the bottom summary. Do not mistake the row values for the total tax.
-5. EXPLICIT NOT_FOUND FLAG: If you search the ENTIRE document and a requested field (like VAT Reg No) physically DOES NOT EXIST on the paper (e.g. it's a non-VAT receipt), you MUST output the exact string "NOT_FOUND_ON_INVOICE" for that field. Do not leave it blank. Provide the string "NOT_FOUND_ON_INVOICE".
+5. NO HALLUCINATIONS: If a text field (especially regNo or vatNumber) is completely absent from the physical document, you MUST output 'NOT_FOUND_ON_INVOICE'. Do not invent numbers.
+6. DYNAMIC PRIORITY: I have provided a 'customRules' object detailing company-specific overrides. You must MATHEMATICALLY prioritize the customRules over any standard logic. If a customRule instructs a 30-day dueDate for a specific vendor, you MUST calculate and output that exact overridden date.
+7. THE PRE-PAID RECEIPT RULE: If the physical document contains the text 'KAARDIMAKSE', 'MAKSTUD', 'TASUTUD', 'PAID', 'Maha võetud', 'Google Pay', or 'Apple Pay', you MUST explicitly set the 'status' field to 'Paid'. If these words do NOT appear, you MUST default the 'status' field strictly to 'OOTEL' (Pending).
+8. THE RELATIONAL TEMPORAL RULE: If an invoice lacks a strict absolute Due Date (e.g. '14.03.2026') but instead provides a relational temporal clause like 'Maksetähtaeg: tasuda 14 päeva jooksul' (pay within 14 days), 'tasuda 7 päeva jooksul', or 'Neto 14 päeva', you MUST mathematically add that integer (e.g., 14) to the 'dateCreated' (Invoice Date) to calculate and output the exact YYYY-MM-DD absolute 'dueDate'. Do NOT return null if a relational day count is present.
+9. THE ABSOLUTE DATE FALLBACK (RECEIPTS): If an invoice genuinely lacks ANY Due Date or relational temporal clause whatsoever (or if it is a pre-paid receipt like Google/Esvika), you MUST mathematically fallback by cloning the exact "dateCreated" string and outputting it as the "dueDate". NEVER output "NOT_FOUND_ON_INVOICE" or null for the dueDate field. Every invoice must have a YYYY-MM-DD.
+10. THE COMPOUNDING DEBT TRAP (Võlgnevus): If an invoice contains past arrears or carried-over debt (e.g., "Võlgnevus"), the printed "Total to Pay" ("Tasuda") includes this old debt. To prevent double-counting in the ledger, you MUST strictly isolate the current month's charge: the extracted 'amount' MUST mathematically equal 'subtotalAmount' + 'taxAmount'. NEVER extract the cumulative balance ("Tasuda") or the isolated "Võlgnevus" itself as the final invoice 'amount'.
 
-Respond ONLY with a JSON array matching this schema:
+IF TYPE A (INVOICE), respond ONLY with a JSON array matching this schema:
 [
   {
+    "type": "INVOICE",
     "invoiceId": "string",
     "vendorName": "string",
-    "supplierRegistration": "string or NOT_FOUND_ON_INVOICE",
-    "supplierVat": "string or NOT_FOUND_ON_INVOICE",
+    "supplierRegistration": "string or Not_Found",
+    "supplierVat": "string or Not_Found",
     "receiverName": "string",
     "receiverVat": "string",
     "amount": number,
@@ -46,18 +57,35 @@ Respond ONLY with a JSON array matching this schema:
     "currency": "EUR/USD/GBP",
     "dateCreated": "YYYY-MM-DD",
     "dueDate": "YYYY-MM-DD",
-    "status": "OOTEL",
+    "status": "OOTEL or Paid",
     "lineItems": [ { "description": "string", "amount": number } ]
   }
-]`;
+]
+
+IF TYPE B (BANK STATEMENT), extract ALL OUTGOING PAYMENTS (money leaving the account). Respond ONLY with a JSON array where each object is a payment:
+[
+  {
+    "type": "BANK_STATEMENT",
+    "vendorName": "name of the payee/recipient",
+    "paymentReference": "invoice number or description in the reference/details field",
+    "amount": number,
+    "dateCreated": "YYYY-MM-DD"
+  }
+]
+
+IF TYPE C (JUNK), respond ONLY with an empty JSON array: []`;
 
         if (supervisorCritique) {
-            systemPrompt += `\n\n🚨 SUPERVISOR CRITIQUE FROM PREVIOUS ATTEMPT:\n${supervisorCritique}\n\nThe Supervisor rejected your last JSON because you missed mandatory fields. You must scan the document again, pixel by pixel, specifically looking for the fields mentioned by the Supervisor. If you still cannot find them, you MUST write "NOT_FOUND_ON_INVOICE".`;
+            systemPrompt += `\n\n🚨 SUPERVISOR CRITIQUE FROM PREVIOUS ATTEMPT:\n${supervisorCritique}\n\nThe Supervisor rejected your last JSON because you missed mandatory fields. You must scan the document again, pixel by pixel, specifically looking for the fields mentioned by the Supervisor. If you still cannot find them, you MUST write "Not_Found".`;
+        }
+
+        if (customRules && String(customRules).trim().length > 5) {
+            systemPrompt += `\n\n🟢 CRITICAL COMPANY-SPECIFIC INSTRUCTIONS:\n${customRules}\n\nTHESE INSTRUCTIONS OVERRIDE EVERYTHING. YOU MUST EXECUTE THEM FLAWLESSLY. If instructed to calculate a dueDate + X days from creation, you MUST mathematically compute the exact chronological string date (YYYY-MM-DD)!`;
         }
 
         const response = await anthropic.messages.create({
             model: "claude-sonnet-4-6",
-            max_tokens: 2000,
+            max_tokens: 4000,
             temperature: 0.1,
             system: "You are the world's most intelligent accounting extraction AI.",
             messages: [
@@ -67,24 +95,66 @@ Respond ONLY with a JSON array matching this schema:
                         { type: "text", text: systemPrompt },
                         {
                             type: blockType,
-                            source: {
-                                type: "base64",
-                                media_type: normalizedMime,
-                                data: base64Data
-                            }
+                            source: { type: "base64", media_type: normalizedMime, data: base64Data }
                         }
                     ]
                 }
             ]
         });
 
-        const rawJson = response.content[0].text.trim().replace(/^```json\n|\n```$/g, '');
-        const extractedData = JSON.parse(rawJson);
+        let rawJson = response.content[0].text.trim();
+        const jsonMatch = rawJson.match(/\[\s*\{[\s\S]*\}\s*\]/);
+        if (jsonMatch) {
+            rawJson = jsonMatch[0];
+        } else if (rawJson.includes('[]')) {
+            rawJson = '[]';
+        } else {
+            rawJson = rawJson.replace(/^```json\n|\n```$/g, '');
+        }
+        let extractedData = [];
+        try {
+            extractedData = JSON.parse(rawJson);
+        } catch (e) {
+            console.log(`[Cognitive Extractor] ⚠️ JSON parse failed (likely truncated 16-page ledger). Attempting strict regex array salvage...`);
+            const regex = /\{\s*"type"\s*:\s*"BANK_STATEMENT"[^\}]+\}/g;
+            const matches = rawJson.match(regex);
+            
+            if (matches && matches.length > 0) {
+                const salvagedJson = "[" + matches.join(",") + "]";
+                try {
+                    extractedData = JSON.parse(salvagedJson);
+                    console.log(`[Cognitive Extractor] 🚑 SALVAGE SUCCESS! Recovered ${extractedData.length} mathematically valid payments from the truncated stream!`);
+                } catch(e2) {
+                    console.error(`[Cognitive Extractor] 🚨 Absolute Salvage Failure. Junking document.`);
+                    return [];
+                }
+            } else {
+                return [];
+            }
+        }
+        
+        if (!Array.isArray(extractedData)) {
+            extractedData = [extractedData];
+        }
+        
+        // --- SANITIZE MISSING FIELDS EXPLICITLY ---
+        extractedData.forEach(inv => {
+            if (inv.type !== 'BANK_STATEMENT') {
+                if (!inv.supplierRegistration || String(inv.supplierRegistration).trim() === '' || String(inv.supplierRegistration).toLowerCase() === 'null') {
+                    inv.supplierRegistration = 'Not_Found';
+                }
+                if (!inv.supplierVat || String(inv.supplierVat).trim() === '' || String(inv.supplierVat).toLowerCase() === 'null') {
+                    inv.supplierVat = 'Not_Found';
+                }
+            }
+        });
         
         console.log(`[Cognitive Extractor] ✅ Extraction Complete:`);
-        console.log(`   -> Vendor: ${extractedData[0].vendorName}`);
-        console.log(`   -> Total: ${extractedData[0].amount} | Sub: ${extractedData[0].subtotalAmount} | Tax: ${extractedData[0].taxAmount}`);
-        console.log(`   -> RegNo: ${extractedData[0].supplierRegistration} | VAT: ${extractedData[0].supplierVat}`);
+        if (extractedData.length > 0) {
+            console.log(`   -> Payload Type: ${extractedData[0].type || 'INVOICE'}`);
+            console.log(`   -> First Item Vendor: ${extractedData[0].vendorName}`);
+            console.log(`   -> Items Extracted: ${extractedData.length}`);
+        }
         
         return extractedData;
 

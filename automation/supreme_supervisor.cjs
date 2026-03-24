@@ -25,21 +25,27 @@ async function intellectualSupervisorGate(invoiceData) {
         missingFields.push("Vendor Name (Cannot be unknown or email)");
     }
     
-    // 3. Mandatory Registration Data
-    // Note: If the Pure AI explicitly checked and swore it doesn't exist, it sets it to NOT_FOUND_ON_INVOICE.
-    const isRegExplicitlyNotFound = invoiceData.supplierRegistration === "NOT_FOUND_ON_INVOICE";
-    const isVatExplicitlyNotFound = invoiceData.supplierVat === "NOT_FOUND_ON_INVOICE";
+    // 3. Strict Mandatory Registration Data
+    // Note: The User strictly commands that "NOT_FOUND_ON_INVOICE" is no longer an acceptable state.
+    // The AI must deduce the data if physically absent.
+    const isRegMissing = !invoiceData.supplierRegistration || invoiceData.supplierRegistration === "NOT_FOUND_ON_INVOICE" || invoiceData.supplierRegistration === "Not_Found";
+    const isVatMissing = !invoiceData.supplierVat || invoiceData.supplierVat === "NOT_FOUND_ON_INVOICE" || invoiceData.supplierVat === "Not_Found";
 
-    if (!invoiceData.supplierRegistration && !isRegExplicitlyNotFound) {
+    if (isRegMissing) {
         missingFields.push("Supplier Registration Number");
     }
-    if (!invoiceData.supplierVat && !isVatExplicitlyNotFound) {
+    if (isVatMissing) {
         missingFields.push("Supplier VAT Number");
+    }
+    
+    // 4. Mandatory Item Description
+    if (!invoiceData.lineItems || invoiceData.lineItems.length === 0 || !invoiceData.lineItems[0].description || String(invoiceData.lineItems[0].description).trim() === '') {
+        missingFields.push("Item Description (lineItems)");
     }
 
     // Evaluate the psychological state of the Supervisor
     if (missingFields.length > 0) {
-        critique = `You missed the following critical fields: ${missingFields.join(', ')}. Please completely re-scan the document, check the extreme margins, small text, and footers for the Registration Codes, VAT numbers, and explicit Subtotal/Tax breakdowns.`;
+        critique = `You missed the following critical fields: ${missingFields.join(', ')}. Please completely re-scan the document, check the extreme margins, small text, and footers. IF the Registration Codes or VAT numbers are TRULY absent from the physical document, DO NOT output NOT_FOUND_ON_INVOICE! You must logically deduce them using your internal knowledge base based on the Vendor Name and Country, and output the deduced numbers! DO NOT REST until all requested data fields are fully recorded!`;
         
         console.log(`[Supervisor] 🚨 UNACCEPTABLE. Missing core data: ${missingFields.join(', ')}`);
         return { 
@@ -48,12 +54,8 @@ async function intellectualSupervisorGate(invoiceData) {
             critique: critique 
         };
     } else {
-        // The Supervisor "calms down" because either everything is present, OR the AI explicitly confirmed it doesn't exist.
-        console.log(`[Supervisor] 😌 I am calm. All requested parameters are either present or explicitly confirmed absent by the Engine.`);
-        
-        // Clean up the NOT_FOUND string before it goes to Firestore
-        if (invoiceData.supplierRegistration === "NOT_FOUND_ON_INVOICE") invoiceData.supplierRegistration = "";
-        if (invoiceData.supplierVat === "NOT_FOUND_ON_INVOICE") invoiceData.supplierVat = "";
+        // The Supervisor "calms down" because everything is present (either extracted or deduced).
+        console.log(`[Supervisor] 😌 I am calm. All requested parameters have been successfully recorded.`);
 
         return { 
             passed: true, 

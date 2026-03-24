@@ -500,11 +500,12 @@ async function writeToFirestore(dataArray) {
 /**
  * 3. Bank Reconciliation Logic
  */
-async function reconcilePayment(reference, description, paidAmount, paymentDateStr = null) {
+async function reconcilePayment(reference, description, paidAmount, totalBankDrain = null, bankFee = null, paymentDateStr = null, foreignAmount = null, foreignCurrency = null) {
     try {
         const invoicesRef = db.collection('invoices');
         let matchedDoc = null;
         let isCrossCurrencyMatch = false;
+        let fxOverwriteTriggered = false;
 
         const normalizeString = (str) => String(str || '').toLowerCase().trim();
         const normalizeAlphaNum = (str) => String(str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -534,11 +535,18 @@ async function reconcilePayment(reference, description, paidAmount, paymentDateS
         const bankRefClean = normalizeAlphaNum(reference);
         let bankDesc = normalizeString(description);
 
-        // --- VENDOR ALIASES ---
-        // Map commercial names from bank statements to official company names in the database
+        // --- VENDOR ALIASES (THE SYNONYMOUS MERCHANT PROTOCOL) ---
+        // Map commercial product names from local bank statements to official legal parent entity names in the registry
         const vendorAliases = {
             'elron': 'eesti liinirongid as',
-            'www.elron.ee': 'eesti liinirongid as'
+            'www.elron.ee': 'eesti liinirongid as',
+            'claude': 'anthropic',
+            'chatgpt': 'openai',
+            'openai': 'openai',
+            'youtube': 'google',
+            'aws': 'amazon',
+            'bolt': 'inredz',
+            'wolt': 'wolt'
         };
         for (const [alias, officialStr] of Object.entries(vendorAliases)) {
             if (bankDesc.includes(alias)) {
@@ -550,81 +558,80 @@ async function reconcilePayment(reference, description, paidAmount, paymentDateS
         const extractDigits = (str) => String(str || '').replace(/[^0-9]/g, '');
         const refDigits = extractDigits(reference);
 
-        // 0. Prevent Duplicate Processing of Historical Payments
-        // If this payment perfectly matches the Reference of an ALREADY PAID invoice, 
-        // we assume this is an old historical payment being re-ingested and skip it entirely.
-        if (bankRefClean) {
-            let isHistoricDuplicate = false;
-            for (const doc of paidDocs) {
-                const data = doc.data();
-                const dbId = normalizeAlphaNum(data.invoiceId);
-                const dbDigits = extractDigits(data.invoiceId);
+        // 0. Unified Priority Matrix for Bank Payments
+        let candidates = [];
+        
+        const assessCandidate = (doc, isPaid) => {
+            const data = doc.data();
+            const invoiceAmount = parseFloat(data.amount) || 0;
+            
+            // Allow exact match OR explicitly reported Foreign Amount match from the bank
+            const isAmountMatch = Math.abs(invoiceAmount - paidAmount) <= 0.05 || 
+                                  (foreignAmount !== null && Math.abs(invoiceAmount - foreignAmount) <= 0.05);
 
-                if (dbId) {
-                    const isHardMatch = dbId === bankRefClean ||
-                        (dbId.length >= 4 && bankRefClean.includes(dbId)) ||
-                        (bankRefClean.length >= 4 && dbId.includes(bankRefClean));
+            const dbId = normalizeAlphaNum(data.invoiceId);
+            const dbDigits = extractDigits(data.invoiceId);
+            
+            const vendorWords = (data.vendorName || '').toLowerCase().split(/[^a-z0-9]/).filter(w => w.length >= 3);
+            const vNameMatch = vendorWords.some(word => bankDesc.includes(word));
+            
+            let refMatchScore = 0;
+            if (dbId) {
+                if (dbId === bankRefClean) refMatchScore = 150; 
+                else if (dbDigits.length >= 4 && refDigits.length >= 4 && (dbDigits === refDigits)) refMatchScore = 100;
+                // Min 5 chars for substring to prevent short historic IDs ('2603') from hijacking new active IDs ('260399843')
+                else if (dbId.length >= 5 && bankRefClean.includes(dbId)) refMatchScore = 50; 
+            }
 
-                    const isDigitMatch = dbDigits.length >= 4 && refDigits.length >= 4 &&
-                        (refDigits.includes(dbDigits) || dbDigits.includes(refDigits)) &&
-                        Math.abs((data.amount || 0) - paidAmount) <= 0.05;
-
-                    if (isHardMatch || isDigitMatch) {
-                        isHistoricDuplicate = true;
-                        console.log(`[Reconciliation] Skipping payment €${paidAmount} (${description}): Reference matches ALREADY PAID historic invoice ${data.invoiceId}`);
-                        break;
-                    }
+            if (isAmountMatch) {
+                if (refMatchScore > 0 || vNameMatch) {
+                    let totalScore = refMatchScore;
+                    if (vNameMatch) totalScore += 25;
+                    // Extreme priority bias: Unpaid identical bills ALWAYS beat Paid identical bills
+                    if (!isPaid) totalScore += 500;   
+                    
+                    candidates.push({ doc, isPaid, totalScore });
                 }
             }
-            if (isHistoricDuplicate) return; // Discard this payment
-        }
+        };
 
-        // 1. Match by Reference (Substring matching allowed)
-        if (bankRefClean) {
-            for (const doc of pendingDocs) {
-                const data = doc.data();
-                const dbId = normalizeAlphaNum(data.invoiceId);
-                const dbDigits = extractDigits(data.invoiceId);
+        paidDocs.forEach(d => assessCandidate(d, true));
+        pendingDocs.forEach(d => assessCandidate(d, false));
 
-                if (dbId) {
-                    // Exact match or mutual substring match (e.g. "invoice no 3" vs "3")
-                    // Plus advanced digit extraction logic for inverted strings like "ETTEMAKSUTEATIS 3079215" vs "3079215ETTEMAKSUTEATIS" (only accepted if Amount also strictly matches)
-                    const isHardMatch = dbId === bankRefClean ||
-                        (dbId.length >= 4 && bankRefClean.includes(dbId)) ||
-                        (bankRefClean.length >= 4 && dbId.includes(bankRefClean));
-
-                    const isDigitMatch = dbDigits.length >= 4 && refDigits.length >= 4 &&
-                        (refDigits.includes(dbDigits) || dbDigits.includes(refDigits)) &&
-                        Math.abs((data.amount || 0) - paidAmount) <= 0.05;
-
-                    if (isHardMatch || isDigitMatch) {
-                        matchedDoc = doc;
-                        console.log(`[Reconciliation] Match found by Reference: ${data.invoiceId}`);
-                        break;
+        if (candidates.length > 0) {
+            candidates.sort((a,b) => b.totalScore - a.totalScore);
+            const winner = candidates[0];
+            
+            if (winner.isPaid) {
+                console.log(`[Reconciliation] Skipping payment €${paidAmount} (${description}): Highest priority candidate is ALREADY PAID historic invoice ${winner.doc.data().invoiceId}`);
+                return; // Suppress payload
+            } else {
+                matchedDoc = winner.doc;
+                console.log(`[Reconciliation] Priority Match Winner: €${paidAmount} -> ${matchedDoc.data().vendorName} (Invoice: ${matchedDoc.data().invoiceId})`);
+                
+                // Rule 13: FX Overwrite Check for Priority Winner
+                const originalAmount = parseFloat(matchedDoc.data().amount) || 1;
+                if (foreignAmount !== null && Math.abs(originalAmount - foreignAmount) <= 0.05 && Math.abs(originalAmount - paidAmount) > 0.05) {
+                    const fxRatio = paidAmount / originalAmount;
+                    console.log(`[Reconciliation] 💱 FX OVERWRITE: Priority Winner matched foreign bank amount. Adjusting payload to ${paidAmount} EUR (Ratio: ${fxRatio.toFixed(3)})`);
+                    
+                    let payoutData = { amount: paidAmount, currency: 'EUR', status: 'Paid' };
+                    if (matchedDoc.data().subtotalAmount) payoutData.subtotalAmount = parseFloat((matchedDoc.data().subtotalAmount * fxRatio).toFixed(2));
+                    if (matchedDoc.data().taxAmount) payoutData.taxAmount = parseFloat((matchedDoc.data().taxAmount * fxRatio).toFixed(2));
+                    payoutData.originalForeignAmount = originalAmount;
+                    payoutData.originalForeignCurrency = matchedDoc.data().currency || foreignCurrency || 'UNKNOWN';
+                    
+                    matchedDoc.ref.update(payoutData);
+                    fxOverwriteTriggered = true;
+                } else {
+                    let payoutData = { status: 'Paid' };
+                    if (bankFee > 0) {
+                        console.log(`[Reconciliation] Rule 16 Executed: Storing Bank Transfer Fee (${bankFee}) and Total Drain (${totalBankDrain})`);
+                        payoutData.bankFee = bankFee;
+                        payoutData.totalBankDrain = totalBankDrain || paidAmount;
                     }
+                    matchedDoc.ref.update(payoutData);
                 }
-            }
-        }
-
-        // 2. Fallback: Match by Vendor Name + Exact Amount is DISABLED.
-        // During historical testing, old payments were re-applied to new invoices simply because
-        // they shared the same Vendor Name and Amount. The system now requires a Reference Match or
-        // an exclusive Unique Amount match to prevent accidental cross-reconciliations.
-
-        // 3. Fallback: Match by Vendor Name + Exact Amount
-        // Since pendingDocs is already sorted by date (oldest first), this correctly handles identical recurring invoices 
-        // across different vendors (e.g. paying 4500 EUR to NUNNER does not get blocked by IP Telecom also billing 4500).
-        if (!matchedDoc && paidAmount > 0) {
-            const matches = pendingDocs.filter(doc => {
-                const data = doc.data();
-                if (Math.abs((data.amount || 0) - paidAmount) > 0.05) return false;
-                const vendorWords = (data.vendorName || '').toLowerCase().split(/[^a-z0-9]/).filter(w => w.length >= 3);
-                return vendorWords.some(word => bankDesc.includes(word));
-            });
-
-            if (matches.length > 0) {
-                matchedDoc = matches[0];
-                console.log(`[Reconciliation] Match found by Vendor + Exact Amount: €${paidAmount} -> ${matchedDoc.data().vendorName} (Invoice: ${matchedDoc.data().invoiceId})`);
             }
         }
 
@@ -654,9 +661,22 @@ async function reconcilePayment(reference, description, paidAmount, paymentDateS
                     if (dbDateIso === pDate) {
                         matchedDoc = doc;
                         isCrossCurrencyMatch = true;
-                        console.log(`[Reconciliation] Match found by Cross-Currency (Vendor+Date): ${data.vendorName} on ${pDate}. Adjusting amount from ${data.amount} ${data.currency} to ${paidAmount} EUR.`);
-                        // For cross-currency, we overwrite the invoice amount to exactly what was actually paid in EUR from the bank statement so it balances.
-                        await doc.ref.update({ amount: paidAmount, currency: 'EUR' });
+                        const originalAmount = parseFloat(doc.data().amount) || 1;
+                        const fxRatio = paidAmount / originalAmount;
+
+                        console.log(`[Reconciliation] 💱 FX OVERWRITE by Date: ${data.vendorName} on ${pDate}. Adjusting from ${data.amount} ${data.currency} to ${paidAmount} EUR.`);
+                        
+                        let crossCurrencyPayload = { amount: paidAmount, currency: 'EUR', status: 'Paid' };
+                        if (doc.data().subtotalAmount) crossCurrencyPayload.subtotalAmount = parseFloat((doc.data().subtotalAmount * fxRatio).toFixed(2));
+                        if (doc.data().taxAmount) crossCurrencyPayload.taxAmount = parseFloat((doc.data().taxAmount * fxRatio).toFixed(2));
+                        crossCurrencyPayload.originalForeignAmount = originalAmount;
+                        crossCurrencyPayload.originalForeignCurrency = doc.data().currency || foreignCurrency || 'UNKNOWN';
+                        
+                        if (bankFee > 0) {
+                            crossCurrencyPayload.bankFee = bankFee;
+                            crossCurrencyPayload.totalBankDrain = totalBankDrain || paidAmount;
+                        }
+                        await doc.ref.update(crossCurrencyPayload);
                         data.amount = paidAmount; // Update local memory
                         break;
                     }
@@ -668,11 +688,16 @@ async function reconcilePayment(reference, description, paidAmount, paymentDateS
             const data = matchedDoc.data();
             const docRef = matchedDoc.ref;
 
-            console.log(`[Reconciliation] Matched payment €${paidAmount} to Invoice ${data.invoiceId} (Total: €${data.amount})`);
+            console.log(`[Reconciliation] Matched payment €${paidAmount} to Invoice ${data.invoiceId} (Total: €${fxOverwriteTriggered ? paidAmount : data.amount})`);
 
             // If it's a cross-currency match, it's intrinsically fully Paid (bypass partial deduction check)
-            if (isCrossCurrencyMatch || paidAmount >= (data.amount - 0.05)) {
-                await docRef.update({ status: 'Paid' });
+            if (isCrossCurrencyMatch || fxOverwriteTriggered || paidAmount >= (data.amount - 0.05)) {
+                let globalPayload = { status: 'Paid' };
+                if (bankFee > 0) {
+                    globalPayload.bankFee = bankFee;
+                    globalPayload.totalBankDrain = totalBankDrain || paidAmount;
+                }
+                await docRef.update(globalPayload);
                 console.log(`  -> Marked as Paid!`);
 
                 // --- PRO FORMA / PREPAYMENT CASCADE DUPLICATE RESOLUTION --- //
@@ -735,20 +760,45 @@ async function processBankStatement(csvText) {
         for (const row of records) {
             const state = row['State'] || '';
             let amountStr = row['Amount'] || row['Total amount'] || '';
-
-            if (state !== 'COMPLETED') continue;
-
             let amount = parseFloat(amountStr.replace(/,/g, ''));
             if (isNaN(amount) || amount >= 0) continue; // Only process outgoing (negative)
 
-            const paidAmount = Math.abs(amount);
+            // Calculate exact target invoice amount vs total bank drain
+            const rawExtractedAmount = Math.abs(amount);
+            
+            // Extract the transactional Fee if present (e.g., "0.20")
+            let feeStr = row['Fee'] || row['Bank Fee'] || row['Комиссия'] || row['Teenustasu'] || '0';
+            const bankFee = Math.abs(parseFloat(feeStr.replace(/,/g, ''))) || 0;
+
+            let invoiceTargetAmount = rawExtractedAmount;
+            let totalBankDrain = rawExtractedAmount;
+
+            // If the CSV provides "Total amount" (99.35) and "Amount" (99.15), invoiceTargetAmount is 99.15 
+            const explicitTargetStr = row['Amount'] || '';
+            const explicitTarget = Math.abs(parseFloat(explicitTargetStr.replace(/,/g, ''))) || 0;
+            
+            if (explicitTarget > 0 && explicitTarget !== rawExtractedAmount) {
+                invoiceTargetAmount = explicitTarget;
+                totalBankDrain = Math.max(invoiceTargetAmount + bankFee, rawExtractedAmount);
+            } else if (bankFee > 0 && rawExtractedAmount > bankFee) {
+                // If the CSV only provided a total drain minus fee, reverse engineer the target
+                invoiceTargetAmount = rawExtractedAmount - bankFee;
+            }
+
             const reference = (row['Reference'] || '').trim();
             const dateStr = (row['Date started (UTC)'] || row['Completed Date'] || row['Date'] || '').trim();
             // Remove bank prefixes like "Получатель: " or "Оплата: " to get the raw vendor name
             let description = (row['Description'] || row['Payer'] || '').trim();
             description = description.replace(/^(получатель|оплата|зачисление|перевод):\s*/i, '');
+            
+            // Rule 13: Extract Foreign Metadata
+            let origAmountStr = row['Original amount'] || row['Original Amount'] || row['Target amount'] || row['Original Amount/Currency'] || '';
+            // If the bank fuses amount and currency "6.20 USD"
+            let foreignAmountNum = parseFloat(origAmountStr.replace(/[^0-9.]/g, ''));
+            const foreignAmount = isNaN(foreignAmountNum) ? null : Math.abs(foreignAmountNum);
+            const foreignCurrency = (row['Original Currency'] || row['original currency'] || row['Target currency'] || '').trim();
 
-            await reconcilePayment(reference, description, paidAmount, dateStr);
+            await reconcilePayment(reference, description, invoiceTargetAmount, totalBankDrain, bankFee, dateStr, foreignAmount, foreignCurrency);
         }
         console.log('[Bank Reconciliation] Bank statement processing completed.');
     } catch (error) {
@@ -929,12 +979,12 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
 
                                     let parsedData = null;
                                     let extractionAttempts = 0;
-                                    let maxExtractionAttempts = 2; 
+                                    let maxExtractionAttempts = 5; 
                                     let critique = null;
 
                                     while (!parsedData && extractionAttempts < maxExtractionAttempts) {
                                         extractionAttempts++;
-                                        const tempParsed = await processInvoiceWithDocAI(attachment.content, mime || 'application/pdf', critique);
+                                        const tempParsed = await processInvoiceWithDocAI(attachment.content, mime || 'application/pdf', critique, companyData.customAiRules);
                                         
                                         if (tempParsed && tempParsed.length > 0) {
                                             const supervisorVerdict = await intellectualSupervisorGate(tempParsed[0]);
@@ -984,12 +1034,12 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
 
                                 let parsedData = null;
                                 let extractionAttempts = 0;
-                                let maxExtractionAttempts = 2; 
+                                let maxExtractionAttempts = 5; 
                                 let critique = null;
 
                                 while (!parsedData && extractionAttempts < maxExtractionAttempts) {
                                     extractionAttempts++;
-                                    const tempParsed = await processInvoiceWithDocAI(attachment.content, mime, critique);
+                                    const tempParsed = await processInvoiceWithDocAI(attachment.content, mime, critique, companyData.customAiRules);
                                     
                                     if (tempParsed && tempParsed.length > 0) {
                                         const supervisorVerdict = await intellectualSupervisorGate(tempParsed[0]);
