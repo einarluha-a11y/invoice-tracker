@@ -1210,8 +1210,8 @@ async function checkAndRunFlagTasks() {
 checkAndRunFlagTasks().then(() => pollAllCompanyInboxes());
 
 // Keep script alive to run every 1 minute
-console.log('Automated Invoice Processor Started. Checking every 60 seconds...');
-setInterval(pollAllCompanyInboxes, 60000);
+console.log('Automated Invoice Processor Started. Checking every 5 minutes...');
+setInterval(pollAllCompanyInboxes, 5 * 60 * 1000);
 
 // Schedule the Post-Flight Auditor to run every 2 hours (7200000 ms) to clean fuzzy duplicates
 console.log('Dashboard Auditor Scheduled. Sweeping database every 2 hours...');
