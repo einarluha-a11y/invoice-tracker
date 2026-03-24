@@ -500,7 +500,7 @@ async function writeToFirestore(dataArray) {
 /**
  * 3. Bank Reconciliation Logic
  */
-async function reconcilePayment(reference, description, paidAmount, totalBankDrain = null, bankFee = null, paymentDateStr = null, foreignAmount = null, foreignCurrency = null) {
+async function reconcilePayment(reference, description, paidAmount, totalBankDrain = null, bankFee = null, paymentDateStr = null, foreignAmount = null, foreignCurrency = null, companyId = null) {
     try {
         const invoicesRef = db.collection('invoices');
         let matchedDoc = null;
@@ -510,8 +510,10 @@ async function reconcilePayment(reference, description, paidAmount, totalBankDra
         const normalizeString = (str) => String(str || '').toLowerCase().trim();
         const normalizeAlphaNum = (str) => String(str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
-        // Fetch all invoices to intelligently split Unpaid vs Already Paid
-        const snapshot = await invoicesRef.get();
+        // Fetch only invoices for this company (performance: avoid full collection scan)
+        const snapshot = companyId
+            ? await invoicesRef.where('companyId', '==', companyId).get()
+            : await invoicesRef.get();
         const pendingDocs = [];
         const paidDocs = [];
         snapshot.forEach(doc => {
@@ -748,7 +750,7 @@ async function reconcilePayment(reference, description, paidAmount, totalBankDra
     }
 }
 
-async function processBankStatement(csvText) {
+async function processBankStatement(csvText, companyId = null) {
     console.log('[Bank Reconciliation] Processing bank statement CSV...');
     try {
         const records = parse(csvText, {
@@ -798,7 +800,7 @@ async function processBankStatement(csvText) {
             const foreignAmount = isNaN(foreignAmountNum) ? null : Math.abs(foreignAmountNum);
             const foreignCurrency = (row['Original Currency'] || row['original currency'] || row['Target currency'] || '').trim();
 
-            await reconcilePayment(reference, description, invoiceTargetAmount, totalBankDrain, bankFee, dateStr, foreignAmount, foreignCurrency);
+            await reconcilePayment(reference, description, invoiceTargetAmount, totalBankDrain, bankFee, dateStr, foreignAmount, foreignCurrency, companyId);
         }
         console.log('[Bank Reconciliation] Bank statement processing completed.');
     } catch (error) {
@@ -873,7 +875,9 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
         await connection.openBox('INBOX');
 
         const searchCriteria = ['UNSEEN'];
-        const fetchOptions = { bodies: [''], markSeen: true }; // Mark as read after fetching
+        // FIX Reliability: do NOT mark as seen on fetch — mark manually after successful Firestore write
+        // This prevents losing invoices if PM2 crashes mid-processing
+        const fetchOptions = { bodies: [''], markSeen: false };
 
         const allMessages = await connection.search(searchCriteria, fetchOptions);
         const messages = allMessages;
@@ -963,7 +967,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
 
                                     if (parsedTransactions && Array.isArray(parsedTransactions)) {
                                         for (const tx of parsedTransactions) {
-                                            await reconcilePayment(tx.reference || '', tx.description || '', tx.amount, tx.date || (new Date().toISOString().split('T')[0]));
+                                            await reconcilePayment(tx.reference || '', tx.description || '', tx.amount, null, null, tx.date || (new Date().toISOString().split('T')[0]), null, null, companyId);
                                         }
                                         console.log(`[Email] Email UID ${id} successfully processed as PDF Bank Statement!`);
                                     }
@@ -1020,6 +1024,8 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                     }
                                     if (await saveParsedData(parsedData)) {
                                         console.log(`[Email] Email UID ${id} successfully processed by Document AI!`);
+                                        // FIX Reliability: mark as seen only AFTER successful Firestore write
+                                        try { connection.imap.addFlags(id, ['\\Seen'], () => {}); } catch(_) {}
                                     }
                                 }
                             } else if (mime.includes('image/') || filename.endsWith('.jpg') || filename.endsWith('.jpeg') || filename.endsWith('.png')) {
@@ -1070,6 +1076,8 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                 }
                                 if (await saveParsedData(parsedData)) {
                                     console.log(`[Email] Email UID ${id} successfully processed by Document AI from Image!`);
+                                    // FIX Reliability: mark as seen only AFTER successful Firestore write
+                                    try { connection.imap.addFlags(id, ['\\Seen'], () => {}); } catch(_) {}
                                 }
                             } else {
                                 // Default for CSV and readable texts
@@ -1084,7 +1092,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                 // --- Detect Bank Statement (Revolut/Wise format check) ---
                                 if (rawContent.includes('Date started (UTC)') && rawContent.includes('State') && rawContent.includes('Reference')) {
                                     console.log(`[Email] Detected Bank Statement CSV: ${attachment.filename}`);
-                                    await processBankStatement(rawContent);
+                                    await processBankStatement(rawContent, companyId);
                                     console.log(`[Email] Email UID ${id} successfully processed as Bank Statement!`);
                                 } else {
                                     // Treat as regular invoice text/csv, parse with Claude
@@ -1105,8 +1113,21 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                 if (emailBody.trim().length > 10) {
                     const parsedData = await parseInvoiceDataWithAI(emailBody, companyName, customRules);
                     if (parsedData && parsedData.length > 0) {
-                        parsedData.forEach(inv => inv.companyId = companyId);
-                        await writeToFirestore(parsedData);
+                        // FIX Bug 3: route body-text invoices through auditAndProcessInvoice()
+                        // so they get cross-company routing, deduplication, and VIES checks
+                        for (let inv of parsedData) {
+                            inv.companyId = companyId;
+                            try {
+                                const auditedData = await auditAndProcessInvoice(inv, inv.fileUrl || null, companyId);
+                                if (auditedData.status !== 'Duplicate' && auditedData.status !== 'Error') {
+                                    await writeToFirestore([auditedData]);
+                                }
+                            } catch (auditErr) {
+                                if (auditErr.message !== 'BANK_STATEMENT_RECONCILIATION_COMPLETE') {
+                                    console.error(`[Email] Audit error for body-text invoice:`, auditErr.message);
+                                }
+                            }
+                        }
                         console.log(`[Email] Email UID ${id} successfully processed from body text!`);
                     } else {
                         console.log(`[Email] AI found no invoices in body text.`);
@@ -1154,8 +1175,67 @@ async function pollAllCompanyInboxes() {
     }
 }
 
+// --- FLAG FILE TASK RUNNER ---
+// Claude (Cowork) writes .flag files to automation/ to trigger tasks without manual intervention.
+// PM2 watch mode detects the new file, restarts, and this block executes the task automatically.
+async function checkAndRunFlagTasks() {
+    const fs = require('fs');
+    const path = require('path');
+    const flagDir = __dirname;
+
+    const flags = fs.readdirSync(flagDir).filter(f => f.endsWith('.flag'));
+    if (flags.length === 0) return;
+
+    console.log(`[Flag Runner] 🚩 Found ${flags.length} task flag(s). Executing...`);
+
+    for (const flag of flags) {
+        const flagPath = path.join(flagDir, flag);
+        console.log(`[Flag Runner] ▶️  Running task: ${flag}`);
+
+        // IMPORTANT: Delete the flag BEFORE running the task.
+        // If we delete it after, PM2 watch may detect other file writes
+        // (e.g. log files) and restart the process mid-task, causing an
+        // infinite restart loop where the task never completes.
+        try { fs.unlinkSync(flagPath); } catch (_) {}
+        console.log(`[Flag Runner] 🗑  Flag removed pre-emptively: ${flag}`);
+
+        // Run as a CHILD PROCESS (not via require) to give it a fully isolated
+        // Node.js environment with its own Firebase/gRPC connection.
+        // Requiring the module directly shares the gRPC state with index.js
+        // and can cause Firebase queries to hang indefinitely.
+        if (flag === 'RECOVER_NUNNER.flag') {
+            const { spawn } = require('child_process');
+            await new Promise((resolve) => {
+                const scriptPath = path.join(flagDir, 'nunner_recover.cjs');
+                console.log(`[Flag Runner] 🚀 Spawning: ${process.execPath} ${scriptPath}`);
+                const child = spawn(process.execPath, [scriptPath], {
+                    cwd: flagDir,
+                    env: { ...process.env },
+                    stdio: ['ignore', 'pipe', 'pipe']
+                });
+                child.stdout.on('data', (d) => process.stdout.write(`[Nunner] ${d}`));
+                child.stderr.on('data', (d) => process.stderr.write(`[Nunner ERR] ${d}`));
+                child.on('close', (code) => {
+                    if (code !== 0) {
+                        console.error(`[Flag Runner] ❌ Recovery process exited with code ${code}`);
+                    } else {
+                        console.log(`[Flag Runner] ✅ Recovery process complete (exit 0)`);
+                    }
+                    resolve();
+                });
+                child.on('error', (err) => {
+                    console.error(`[Flag Runner] ❌ Failed to spawn recovery process:`, err.message);
+                    resolve();
+                });
+            });
+        }
+        // Future flags can be added here:
+        // if (flag === 'SOME_OTHER_TASK.flag') { ... }
+    }
+}
+
 // Start the process immediately
-pollAllCompanyInboxes();
+checkAndRunFlagTasks().then(() => pollAllCompanyInboxes());
 
 // Keep script alive to run every 1 minute
 console.log('Automated Invoice Processor Started. Checking every 60 seconds...');
