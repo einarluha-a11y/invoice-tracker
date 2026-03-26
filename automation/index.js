@@ -1092,7 +1092,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                         for (let inv of parsedData) {
                             inv.companyId = companyId;
                             try {
-                                const auditedData = await auditAndProcessInvoice(inv, inv.fileUrl || null, companyId);
+                                const auditedData = await auditAndProcessInvoice(inv, inv.fileUrl || 'BODY_TEXT_NO_ATTACHMENT', companyId);
                                 if (auditedData.status !== 'Duplicate' && auditedData.status !== 'Error') {
                                     await writeToFirestore([auditedData]);
                                 }

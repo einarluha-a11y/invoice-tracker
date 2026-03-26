@@ -31,6 +31,7 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
             let matched = false;
             if (!snap.empty) {
                 for (const doc of snap.docs) {
+                    const invData = doc.data(); // FIX Bug 1: invData was never declared
                     const parseNum = (val) => {
                         let s = String(val || '').trim();
                         if (s.includes(',') && s.includes('.')) {
@@ -92,10 +93,16 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
     let warnings = docAiPayload.validationWarnings || [];
 
     // --- 1. PRE-FLIGHT AUDIT: File Integrity ---
-    if (!fileUrl) {
-        console.error(`[Accountant Agent] 🛑 CRITICAL REJECTION: PDF File URL is missing.`);
-        warnings.push("CRITICAL: Original PDF document was lost or failed to upload.");
-        return { ...docAiPayload, fileUrl: null, status: 'Error', validationWarnings: warnings };
+    if (!fileUrl || fileUrl === 'BODY_TEXT_NO_ATTACHMENT') {
+        if (fileUrl === 'BODY_TEXT_NO_ATTACHMENT') {
+            // Body-text invoice — no file is expected, continue with null fileUrl
+            fileUrl = null;
+            warnings.push("NOTE: Invoice extracted from email body text — no PDF attachment.");
+        } else {
+            console.error(`[Accountant Agent] 🛑 CRITICAL REJECTION: PDF File URL is missing.`);
+            warnings.push("CRITICAL: Original PDF document was lost or failed to upload.");
+            return { ...docAiPayload, fileUrl: null, status: 'Error', validationWarnings: warnings };
+        }
     }
 
     // --- 1.2. PRE-FLIGHT AUDIT: THE CROSS-COMPANY ROUTING PROTOCOL (Rule 10) ---

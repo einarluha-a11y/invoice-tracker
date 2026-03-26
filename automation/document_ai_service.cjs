@@ -32,7 +32,14 @@ TYPE C: JUNK (CMR, Delivery Note, Advertisement, Ettemaksuteatis, Pro forma, Tel
 CRITICAL DIRECTIVES:
 1. INTELLIGENT CURRENCY: Extract the TRUE AMOUNT TO PAY in the international billing currency (EUR/USD). DO NOT extract the local tax conversion equivalent.
 2. MANDATORY FIELDS (INVOICES): Vendor, Subtotal, Tax, Total, Supplier Reg No, and VAT Reg No. 
-3. LANGUAGE & LOCALIZATION HINTS: Be extremely careful with Baltic invoices. "KMKR" or "käibemaksukohustuslase nr" = VAT Reg No (supplierVat), "Registrikood" = Supplier Reg No (supplierRegistration). THESE ARE OFTEN HIDDEN IN THE TINY PAGE FOOTER AT THE VERY BOTTOM! Always scan the absolute bottom of the document. For Czech/Slovak, "IČO" = Reg No, "DIČ" = VAT No. "Käibemaks" = Tax Amount, "Kokku" / "Arve Kokku" = Total Amount, "Maksustatav" = Subtotal.
+3. LANGUAGE & LOCALIZATION HINTS: Baltic invoices are critical. For ESTONIAN (OÜ/AS companies):
+- supplierVat: look for "KMKR nr", "km.reg.nr", "käibemaksukohustuslase number", or "EE" prefix + 9 digits (e.g. EE101234567)
+- supplierRegistration: look for "Reg.nr", "registrikood", "reg.kood", or an 8-digit number in the footer
+- These fields are ALWAYS in the tiny footer at the very bottom of the page — scan it carefully
+- "Käibemaks" = VAT amount, "Kokku käibemaksuga" = Total with VAT, "Summa" or "Kokku" = Total
+- For LATVIAN (SIA companies): "PVN" = VAT, "Reģ.nr" = Reg No
+- For LITHUANIAN (UAB companies): "PVM" = VAT, "Įm.k." or "kodas" = Reg No
+- For Czech/Slovak: "IČO" = Reg No, "DIČ" = VAT No
 4. COMPLEX TAX BREAKDOWNS: If there are multiple tax rates or items (e.g., 20% and 0%), look for the master or total "Käibemaks" (Tax) and "Kokku" (Total) at the bottom summary. Do not mistake the row values for the total tax.
 5. NO HALLUCINATIONS: If a text field (especially regNo or vatNumber) is completely absent from the physical document, you MUST output 'NOT_FOUND_ON_INVOICE'. Do not invent numbers.
 6. DYNAMIC PRIORITY: I have provided a 'customRules' object detailing company-specific overrides. You must MATHEMATICALLY prioritize the customRules over any standard logic. If a customRule instructs a 30-day dueDate for a specific vendor, you MUST calculate and output that exact overridden date.
@@ -115,15 +122,19 @@ IF TYPE C (JUNK), respond ONLY with an empty JSON array: []`;
         try {
             extractedData = JSON.parse(rawJson);
         } catch (e) {
-            console.log(`[Cognitive Extractor] ⚠️ JSON parse failed (likely truncated 16-page ledger). Attempting strict regex array salvage...`);
-            const regex = /\{\s*"type"\s*:\s*"BANK_STATEMENT"[^\}]+\}/g;
-            const matches = rawJson.match(regex);
-            
-            if (matches && matches.length > 0) {
-                const salvagedJson = "[" + matches.join(",") + "]";
+            console.log(`[Cognitive Extractor] ⚠️ JSON parse failed (likely truncated response). Attempting regex salvage for all known types...`);
+            // FIX Bug 5: salvage both BANK_STATEMENT and INVOICE objects, not just bank statements
+            const bankRegex = /\{\s*"type"\s*:\s*"BANK_STATEMENT"[\s\S]*?\}/g;
+            const invoiceRegex = /\{\s*"type"\s*:\s*"INVOICE"[\s\S]*?\}/g;
+            const bankMatches = rawJson.match(bankRegex) || [];
+            const invoiceMatches = rawJson.match(invoiceRegex) || [];
+            const allMatches = [...bankMatches, ...invoiceMatches];
+
+            if (allMatches.length > 0) {
+                const salvagedJson = "[" + allMatches.join(",") + "]";
                 try {
                     extractedData = JSON.parse(salvagedJson);
-                    console.log(`[Cognitive Extractor] 🚑 SALVAGE SUCCESS! Recovered ${extractedData.length} mathematically valid payments from the truncated stream!`);
+                    console.log(`[Cognitive Extractor] 🚑 SALVAGE SUCCESS! Recovered ${extractedData.length} item(s) from truncated stream!`);
                 } catch(e2) {
                     console.error(`[Cognitive Extractor] 🚨 Absolute Salvage Failure. Junking document.`);
                     return [];
