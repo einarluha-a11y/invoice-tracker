@@ -1,6 +1,7 @@
 const { Anthropic } = require('@anthropic-ai/sdk');
 const { validateVat } = require('./vies_validator.cjs');
 const admin = require('firebase-admin');
+const { enrichCompanyData } = require('./company_enrichment.cjs');
 
 const anthropic = new Anthropic({
     apiKey: process.env.ANTHROPIC_API_KEY
@@ -155,15 +156,50 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
         return { ...docAiPayload, fileUrl: null, status: 'Error', validationWarnings: warnings };
     }
 
-    // --- 1.7. PRE-FLIGHT AUDIT: Missing Registration/VAT Enforcement ---
+    // --- 1.7. PRE-FLIGHT AUDIT: Missing Registration/VAT — with Government Fallback Lookup (Rule 29) ---
+    const vatMissing = !docAiPayload.supplierVat || docAiPayload.supplierVat === "Not_Found" || docAiPayload.supplierVat === "NOT_FOUND_ON_INVOICE" || String(docAiPayload.supplierVat).trim() === "";
+    const regMissing = !docAiPayload.supplierRegistration || docAiPayload.supplierRegistration === "Not_Found" || docAiPayload.supplierRegistration === "NOT_FOUND_ON_INVOICE" || String(docAiPayload.supplierRegistration).trim() === "";
+
+    if (vatMissing || regMissing) {
+        console.log(`[Accountant Agent] 🔍 VAT/Reg missing from document. Attempting government source lookup for: ${docAiPayload.vendorName}`);
+        try {
+            // Detect country hint from vendor name or existing VAT prefix
+            const countryHint = docAiPayload.supplierVat?.match(/^([A-Z]{2})/)?.[1]
+                || (docAiPayload.vendorName?.match(/\bOÜ\b|\bAS\b/i) ? 'EE' : null)
+                || (docAiPayload.vendorName?.match(/\bUAB\b/i) ? 'LT' : null)
+                || (docAiPayload.vendorName?.match(/\bSIA\b/i) ? 'LV' : null)
+                || 'EE';
+
+            const enriched = await enrichCompanyData(docAiPayload.vendorName, countryHint);
+
+            if (enriched) {
+                if (vatMissing && enriched.vatNumber) {
+                    docAiPayload.supplierVat = enriched.vatNumber;
+                    docAiPayload.enrichmentSource = enriched.source;
+                    warnings.push(`INFO: VAT number auto-enriched from ${enriched.source} (matched: "${enriched.matchedName}")`);
+                    console.log(`[Accountant Agent] ✅ VAT enriched from ${enriched.source}: ${enriched.vatNumber}`);
+                }
+                if (regMissing && enriched.registrationNumber) {
+                    docAiPayload.supplierRegistration = enriched.registrationNumber;
+                    docAiPayload.enrichmentSource = enriched.source;
+                    warnings.push(`INFO: Registration number auto-enriched from ${enriched.source} (matched: "${enriched.matchedName}")`);
+                    console.log(`[Accountant Agent] ✅ Reg No enriched from ${enriched.source}: ${enriched.registrationNumber}`);
+                }
+            }
+        } catch (enrichErr) {
+            console.warn(`[Accountant Agent] ⚠️ Enrichment lookup failed:`, enrichErr.message);
+        }
+    }
+
+    // Final state after enrichment attempt
     if (!docAiPayload.supplierRegistration || docAiPayload.supplierRegistration === "Not_Found" || docAiPayload.supplierRegistration === "NOT_FOUND_ON_INVOICE" || String(docAiPayload.supplierRegistration).trim() === "") {
         docAiPayload.supplierRegistration = "Not_Found";
-        warnings.push("CRITICAL: Supplier Registration Number is missing from the physical document.");
+        warnings.push("CRITICAL: Supplier Registration Number is missing from the physical document and could not be found in official sources.");
         systemStatus = 'Needs Action';
     }
     if (!docAiPayload.supplierVat || docAiPayload.supplierVat === "Not_Found" || docAiPayload.supplierVat === "NOT_FOUND_ON_INVOICE" || String(docAiPayload.supplierVat).trim() === "") {
         docAiPayload.supplierVat = "Not_Found";
-        warnings.push("CRITICAL: Supplier VAT Number is missing from the physical document.");
+        warnings.push("CRITICAL: Supplier VAT Number is missing from the physical document and could not be found in official sources.");
         systemStatus = 'Needs Action';
     }
 
