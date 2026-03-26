@@ -105,6 +105,38 @@ async function lookupViaAriregister(vendorName) {
 }
 
 /**
+ * Stage 2b: Query Polish company register (KRS API) for Polish Sp. z o.o. / S.A. companies
+ */
+async function lookupViaKRS(vendorName) {
+    try {
+        const query = encodeURIComponent(vendorName.replace(/Sp\.?\s*z\s*o\.?o\.?|S\.A\.|sp\. z o\.o\./gi, '').trim());
+        const url = `https://api-krs.ms.gov.pl/api/krs/OdpisAktualny/wyszukaj?nazwa=${query}&forma=P&rejestry=P`;
+        console.log(`[Enrichment] Querying Polish KRS for: ${vendorName}`);
+        const data = await httpsGet(url);
+        if (!data || !data.odpis || !Array.isArray(data.odpis)) return null;
+
+        for (const company of data.odpis) {
+            const name = company.naglowekA?.firma || '';
+            if (fuzzyMatch(vendorName, name)) {
+                const nip = company.naglowekA?.nip || null;
+                const krs = company.naglowekA?.numerKRS || null;
+                console.log(`[Enrichment] ✅ KRS match: "${name}" (NIP: ${nip}, KRS: ${krs})`);
+                return {
+                    registrationNumber: krs || null,
+                    vatNumber: nip ? `PL${nip}` : null,
+                    source: 'krs-poland',
+                    matchedName: name
+                };
+            }
+        }
+        return null;
+    } catch (e) {
+        console.warn(`[Enrichment] KRS Poland error:`, e.message);
+        return null;
+    }
+}
+
+/**
  * Stage 3: Query OpenCorporates as universal fallback.
  * Supports jurisdiction codes: ee (Estonia), lv (Latvia), lt (Lithuania), etc.
  */
@@ -175,9 +207,14 @@ async function enrichCompanyData(vendorName, countryHint = 'EE') {
         result = await lookupViaAriregister(vendorName);
     }
 
+    // Stage 2b: Polish KRS (for Sp. z o.o. / S.A. companies)
+    if (!result && (cc === 'PL' || vendorName.match(/Sp\.?\s*z\s*o\.?o\.?|S\.A\./i))) {
+        result = await lookupViaKRS(vendorName);
+    }
+
     // Stage 3: OpenCorporates (universal fallback)
     if (!result) {
-        const jCode = { 'EE': 'ee', 'LV': 'lv', 'LT': 'lt', 'FI': 'fi', 'SE': 'se' }[cc] || 'ee';
+        const jCode = { 'EE': 'ee', 'LV': 'lv', 'LT': 'lt', 'FI': 'fi', 'SE': 'se', 'PL': 'pl' }[cc] || 'ee';
         result = await lookupViaOpenCorporates(vendorName, jCode);
     }
 

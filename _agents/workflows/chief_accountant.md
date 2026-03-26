@@ -158,3 +158,21 @@ description: The absolute manifesto and source of truth for the AI Accountant Ag
 - **Mandate**: Any script that performs its own Firestore operations and is invoked programmatically from `index.js` MUST use one of two isolation strategies:
   1. **Named Firebase App**: Initialize with `admin.initializeApp({...}, 'unique-app-name')` instead of the default app, so a fresh gRPC connection is established independently.
   2. **Child Process Spawn** (preferred): Use `child_process.spawn(process.execPath, [scriptPath])` to run the script in a completely isolated Node.js environment with its own memory, gRPC channels, and Firebase state. Always use `process.execPath` instead of the string `'node'` to guarantee the correct binary is found regardless of PM2's PATH environment.
+
+## 29. THE GOVERNMENT SOURCE LOOKUP PROTOCOL (FALLBACK ENRICHMENT)
+- **The Problem**: When the Document AI returns `"Not_Found"` for `supplierVat` or `supplierRegistration` (per Rule 24 — no hallucination allowed), the invoice record is saved as incomplete. A human must then manually look up and fill in the missing data. This is inefficient and error-prone for recurring vendors.
+- **Mandate**: Before accepting `"Not_Found"` as the final value, the Accountant Agent MUST execute a **two-stage fallback enrichment lookup** using official government and EU sources:
+  1. **Stage 1 — EU VIES Registry** (if vendor country is known): Query `https://ec.europa.eu/taxation_customs/vies/rest-api/ms/{countryCode}/vat/{vatNumber}` using the country code extracted from the invoice (e.g. `EE` for Estonia). If the company name from VIES matches the extracted `vendorName`, accept the VAT number as authoritative.
+  2. **Stage 2 — Estonian Business Register API** (for Estonian OÜ/AS companies): Query `https://ariregister.rik.ee/api/companies?q={vendorName}`. Parse the response JSON for `registrikood` (registration number) and `kmkr_nr` (VAT number). Accept the result only if the returned company name fuzzy-matches the extracted `vendorName` (stripped of OÜ/AS tokens, case-insensitive).
+  3. **Stage 3 — OpenCorporates** (universal fallback): Query `https://api.opencorporates.com/v0.4/companies/search?q={vendorName}&jurisdiction_code=ee` (or `lv`, `lt` for Latvia/Lithuania). Use the first result whose `name` overlaps with the extracted vendor name.
+- **Action**: Create `automation/company_enrichment.cjs`. The Accountant Agent calls it as: `const enriched = await enrichCompanyData(vendorName, countryHint)`. It returns `{ vatNumber, registrationNumber, source }` where `source` is `"VIES"`, `"ariregister"`, `"opencorporates"`, or `null`. If `source` is not null, the enriched values override the `"Not_Found"` fields. If all stages fail, `"Not_Found"` is written to Firestore as the final answer.
+- **Caching**: Successful lookups MUST be cached in Firestore under `companies_cache/{vendorNameNormalized}` to avoid repeated API calls for the same vendor on future invoices.
+- **Transparency**: The field `enrichmentSource` must be saved alongside the enriched VAT/Reg values in the Firestore invoice record so auditors know which data came from the document and which was looked up automatically.
+
+## 30. THE PRIVATE PERSON & POLISH COMPANY PROTOCOL
+- **The Error**: The system applied identical "CRITICAL: VAT missing" flags to both incorporated companies (which must have VAT numbers by law) and private persons / sole traders (who are exempt from VAT registration below certain revenue thresholds). This caused all invoices from freelancers and private individuals to be permanently stuck in "Needs Action" status even when the data was correct.
+- **Mandate**:
+  1. **Private persons** (vendor name contains no company suffix: OÜ, AS, Ltd, GmbH, Sp. z o.o., UAB, SIA, etc.) must NOT be flagged critically for missing VAT/Reg. A warning note is sufficient.
+  2. **Polish companies** (Sp. z o.o., S.A.) use "NIP" for VAT (format: PL + 10 digits) and "KRS" or "REGON" for registration. The Document AI prompt must explicitly list these Polish-specific labels.
+  3. The Government Source Lookup (Rule 29) must include the Polish KRS API (`api-krs.ms.gov.pl`) in its chain for Polish companies.
+  4. Country detection must recognize "Sp. z o.o." and "S.A." as Polish company markers (country code: PL) just as "OÜ"/"AS" marks Estonian companies.

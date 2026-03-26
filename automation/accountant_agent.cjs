@@ -156,51 +156,68 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
         return { ...docAiPayload, fileUrl: null, status: 'Error', validationWarnings: warnings };
     }
 
-    // --- 1.7. PRE-FLIGHT AUDIT: Missing Registration/VAT — with Government Fallback Lookup (Rule 29) ---
-    const vatMissing = !docAiPayload.supplierVat || docAiPayload.supplierVat === "Not_Found" || docAiPayload.supplierVat === "NOT_FOUND_ON_INVOICE" || String(docAiPayload.supplierVat).trim() === "";
-    const regMissing = !docAiPayload.supplierRegistration || docAiPayload.supplierRegistration === "Not_Found" || docAiPayload.supplierRegistration === "NOT_FOUND_ON_INVOICE" || String(docAiPayload.supplierRegistration).trim() === "";
+    // --- 1.7. PRE-FLIGHT AUDIT: Missing Registration/VAT — with Government Fallback Lookup (Rule 29) & Private Person Protocol (Rule 30) ---
+    const companyMarkers = /\b(OÜ|AS|Ltd|LLC|GmbH|SIA|UAB|Sp\.?\s*z\s*o\.?o\.?|S\.A\.|Inc|Corp|BV|NV|SRL|SARL|GmbH)\b/i;
+    const isPrivatePerson = !companyMarkers.test(docAiPayload.vendorName || '');
 
-    if (vatMissing || regMissing) {
-        console.log(`[Accountant Agent] 🔍 VAT/Reg missing from document. Attempting government source lookup for: ${docAiPayload.vendorName}`);
-        try {
-            // Detect country hint from vendor name or existing VAT prefix
-            const countryHint = docAiPayload.supplierVat?.match(/^([A-Z]{2})/)?.[1]
-                || (docAiPayload.vendorName?.match(/\bOÜ\b|\bAS\b/i) ? 'EE' : null)
-                || (docAiPayload.vendorName?.match(/\bUAB\b/i) ? 'LT' : null)
-                || (docAiPayload.vendorName?.match(/\bSIA\b/i) ? 'LV' : null)
-                || 'EE';
-
-            const enriched = await enrichCompanyData(docAiPayload.vendorName, countryHint);
-
-            if (enriched) {
-                if (vatMissing && enriched.vatNumber) {
-                    docAiPayload.supplierVat = enriched.vatNumber;
-                    docAiPayload.enrichmentSource = enriched.source;
-                    warnings.push(`INFO: VAT number auto-enriched from ${enriched.source} (matched: "${enriched.matchedName}")`);
-                    console.log(`[Accountant Agent] ✅ VAT enriched from ${enriched.source}: ${enriched.vatNumber}`);
-                }
-                if (regMissing && enriched.registrationNumber) {
-                    docAiPayload.supplierRegistration = enriched.registrationNumber;
-                    docAiPayload.enrichmentSource = enriched.source;
-                    warnings.push(`INFO: Registration number auto-enriched from ${enriched.source} (matched: "${enriched.matchedName}")`);
-                    console.log(`[Accountant Agent] ✅ Reg No enriched from ${enriched.source}: ${enriched.registrationNumber}`);
-                }
-            }
-        } catch (enrichErr) {
-            console.warn(`[Accountant Agent] ⚠️ Enrichment lookup failed:`, enrichErr.message);
+    if (isPrivatePerson) {
+        console.log(`[Accountant Agent] 👤 Vendor "${docAiPayload.vendorName}" appears to be a private person. VAT/Reg may not be required.`);
+        // For private persons: missing VAT/Reg is a NOTE, not a CRITICAL error
+        if (!docAiPayload.supplierVat || docAiPayload.supplierVat === "Not_Found" || docAiPayload.supplierVat === "NOT_FOUND_ON_INVOICE") {
+            docAiPayload.supplierVat = "Not_Found";
+            warnings.push("NOTE: Vendor appears to be a private person — VAT number may not be required.");
         }
-    }
+        if (!docAiPayload.supplierRegistration || docAiPayload.supplierRegistration === "Not_Found" || docAiPayload.supplierRegistration === "NOT_FOUND_ON_INVOICE") {
+            docAiPayload.supplierRegistration = "Not_Found";
+            warnings.push("NOTE: Vendor appears to be a private person — registration number may not be required.");
+        }
+    } else {
+        const vatMissing = !docAiPayload.supplierVat || docAiPayload.supplierVat === "Not_Found" || docAiPayload.supplierVat === "NOT_FOUND_ON_INVOICE" || String(docAiPayload.supplierVat).trim() === "";
+        const regMissing = !docAiPayload.supplierRegistration || docAiPayload.supplierRegistration === "Not_Found" || docAiPayload.supplierRegistration === "NOT_FOUND_ON_INVOICE" || String(docAiPayload.supplierRegistration).trim() === "";
 
-    // Final state after enrichment attempt
-    if (!docAiPayload.supplierRegistration || docAiPayload.supplierRegistration === "Not_Found" || docAiPayload.supplierRegistration === "NOT_FOUND_ON_INVOICE" || String(docAiPayload.supplierRegistration).trim() === "") {
-        docAiPayload.supplierRegistration = "Not_Found";
-        warnings.push("CRITICAL: Supplier Registration Number is missing from the physical document and could not be found in official sources.");
-        systemStatus = 'Needs Action';
-    }
-    if (!docAiPayload.supplierVat || docAiPayload.supplierVat === "Not_Found" || docAiPayload.supplierVat === "NOT_FOUND_ON_INVOICE" || String(docAiPayload.supplierVat).trim() === "") {
-        docAiPayload.supplierVat = "Not_Found";
-        warnings.push("CRITICAL: Supplier VAT Number is missing from the physical document and could not be found in official sources.");
-        systemStatus = 'Needs Action';
+        if (vatMissing || regMissing) {
+            console.log(`[Accountant Agent] 🔍 VAT/Reg missing from document. Attempting government source lookup for: ${docAiPayload.vendorName}`);
+            try {
+                // Detect country hint from vendor name or existing VAT prefix
+                const countryHint = docAiPayload.supplierVat?.match(/^([A-Z]{2})/)?.[1]
+                    || (docAiPayload.vendorName?.match(/\bOÜ\b|\bAS\b/i) ? 'EE' : null)
+                    || (docAiPayload.vendorName?.match(/\bUAB\b/i) ? 'LT' : null)
+                    || (docAiPayload.vendorName?.match(/\bSIA\b/i) ? 'LV' : null)
+                    || (docAiPayload.vendorName?.match(/Sp\.?\s*z\s*o\.?o\.?|S\.A\./i) ? 'PL' : null)
+                    || 'EE';
+
+                const enriched = await enrichCompanyData(docAiPayload.vendorName, countryHint);
+
+                if (enriched) {
+                    if (vatMissing && enriched.vatNumber) {
+                        docAiPayload.supplierVat = enriched.vatNumber;
+                        docAiPayload.enrichmentSource = enriched.source;
+                        warnings.push(`INFO: VAT number auto-enriched from ${enriched.source} (matched: "${enriched.matchedName}")`);
+                        console.log(`[Accountant Agent] ✅ VAT enriched from ${enriched.source}: ${enriched.vatNumber}`);
+                    }
+                    if (regMissing && enriched.registrationNumber) {
+                        docAiPayload.supplierRegistration = enriched.registrationNumber;
+                        docAiPayload.enrichmentSource = enriched.source;
+                        warnings.push(`INFO: Registration number auto-enriched from ${enriched.source} (matched: "${enriched.matchedName}")`);
+                        console.log(`[Accountant Agent] ✅ Reg No enriched from ${enriched.source}: ${enriched.registrationNumber}`);
+                    }
+                }
+            } catch (enrichErr) {
+                console.warn(`[Accountant Agent] ⚠️ Enrichment lookup failed:`, enrichErr.message);
+            }
+        }
+
+        // Final state after enrichment attempt
+        if (!docAiPayload.supplierRegistration || docAiPayload.supplierRegistration === "Not_Found" || docAiPayload.supplierRegistration === "NOT_FOUND_ON_INVOICE" || String(docAiPayload.supplierRegistration).trim() === "") {
+            docAiPayload.supplierRegistration = "Not_Found";
+            warnings.push("CRITICAL: Supplier Registration Number is missing from the physical document and could not be found in official sources.");
+            systemStatus = 'Needs Action';
+        }
+        if (!docAiPayload.supplierVat || docAiPayload.supplierVat === "Not_Found" || docAiPayload.supplierVat === "NOT_FOUND_ON_INVOICE" || String(docAiPayload.supplierVat).trim() === "") {
+            docAiPayload.supplierVat = "Not_Found";
+            warnings.push("CRITICAL: Supplier VAT Number is missing from the physical document and could not be found in official sources.");
+            systemStatus = 'Needs Action';
+        }
     }
 
     // --- 1.8. PRE-FLIGHT AUDIT: KREEDITARVE (CREDIT NOTE) PROTOCOL ---

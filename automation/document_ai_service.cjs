@@ -39,6 +39,9 @@ CRITICAL DIRECTIVES:
 - "Käibemaks" = VAT amount, "Kokku käibemaksuga" = Total with VAT, "Summa" or "Kokku" = Total
 - For LATVIAN (SIA companies): "PVN" = VAT, "Reģ.nr" = Reg No
 - For LITHUANIAN (UAB companies): "PVM" = VAT, "Įm.k." or "kodas" = Reg No
+  - **Polish (Sp. z o.o. / S.A.)**: supplierVat = look for "NIP" followed by 10 digits, often formatted as PL + 10 digits (e.g. PL1234567890) or with dashes (123-456-78-90). supplierRegistration = look for "KRS" followed by a 10-digit number, or "REGON" followed by a 9-digit number. Both are usually in the invoice header or footer.
+  - **Ukrainian (ТОВ / ФОП / private persons)**: If the vendor is a private person (first name + last name, no company suffix), they may use a personal tax ID called "ІПН" or "ЄДРПОУ" (8-10 digits). If no tax number exists on the document, output Not_Found — do NOT invent one.
+  - **General rule for private persons**: If the vendor name appears to be a human name (two words, no company suffix like OÜ/AS/Ltd/GmbH/Sp.z o.o.), set supplierRegistration and supplierVat to Not_Found unless explicitly printed on the document. Private persons are not required to have VAT numbers.
 - For Czech/Slovak: "IČO" = Reg No, "DIČ" = VAT No
 4. COMPLEX TAX BREAKDOWNS: If there are multiple tax rates or items (e.g., 20% and 0%), look for the master or total "Käibemaks" (Tax) and "Kokku" (Total) at the bottom summary. Do not mistake the row values for the total tax.
 5. NO HALLUCINATIONS: If a text field (especially regNo or vatNumber) is completely absent from the physical document, you MUST output 'NOT_FOUND_ON_INVOICE'. Do not invent numbers.
