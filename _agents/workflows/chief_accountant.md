@@ -176,3 +176,14 @@ description: The absolute manifesto and source of truth for the AI Accountant Ag
   2. **Polish companies** (Sp. z o.o., S.A.) use "NIP" for VAT (format: PL + 10 digits) and "KRS" or "REGON" for registration. The Document AI prompt must explicitly list these Polish-specific labels.
   3. The Government Source Lookup (Rule 29) must include the Polish KRS API (`api-krs.ms.gov.pl`) in its chain for Polish companies.
   4. Country detection must recognize "Sp. z o.o." and "S.A." as Polish company markers (country code: PL) just as "OÜ"/"AS" marks Estonian companies.
+
+## 31. THE ZERO INVOICE LOSS GUARANTEE (SAFETY NET PROTOCOL)
+- **The Error**: The invoice pipeline contained 4 silent discard points where an invoice could be permanently and irrecoverably lost: (1) Vision Auditor rejection, (2) Accountant Agent Error status, (3) writeToFirestore file integrity check, and (4) unhandled pipeline exceptions. An invoice rejected at any of these points left no trace in the database — as if it never existed.
+- **Real Example**: An email with 3 invoices (2x Terma Sp. z o.o. + 1x Dmytro Suprun) was processed. Only 2 invoices were saved. The third was silently discarded with no error visible in the dashboard.
+- **Mandate**: NO invoice must ever be permanently lost. Every rejection must produce a fallback DRAFT record in Firestore with:
+  - `status: "NEEDS_REVIEW"`
+  - The rejection reason in `validationWarnings`
+  - Whatever partial data was successfully extracted
+  - A `safetyNetCapturedAt` timestamp
+- **Action**: The `automation/safety_net.cjs` module provides `safetyNetSave(rawData, reason, companyId, fileUrl)`. It MUST be called at every pipeline discard point. The DRAFT record appears on the dashboard with a yellow warning triangle, allowing the user to review and correct it manually.
+- **Exception**: Confirmed exact duplicates (same invoiceId + vendor + amount) do NOT trigger the Safety Net — they are intentionally skipped.

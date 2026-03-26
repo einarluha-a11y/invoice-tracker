@@ -1,5 +1,6 @@
 require('dotenv').config({ path: __dirname + '/.env' });
 const { reportError } = require('./error_reporter.cjs');
+const { safetyNetSave } = require('./safety_net.cjs');
 const { intellectualSupervisorGate } = require('./supreme_supervisor.cjs');
 const imaps = require('imap-simple');
 const simpleParser = require('mailparser').simpleParser;
@@ -989,9 +990,20 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                     // Orchestrator Pre-flight & Audit (Phase 3)
                                     const auditedData = await auditAndProcessInvoice(inv, fileUrl, companyId);
                                     
-                                    if (auditedData.status === 'Duplicate' || auditedData.status === 'Error') {
-                                        console.error(`[Accountant Agent] 🛑 Invoice rejected: ${auditedData.status}`);
-                                        success = true; 
+                                    if (auditedData.status === 'Duplicate') {
+                                        console.log(`[Accountant Agent] ℹ️ Duplicate detected — skipping.`);
+                                        success = true;
+                                    } else if (auditedData.status === 'Error') {
+                                        console.error(`[Accountant Agent] 🛑 Invoice rejected with Error status.`);
+                                        // Safety Net: save as DRAFT instead of discarding
+                                        const warnings = auditedData.validationWarnings || [];
+                                        await safetyNetSave(
+                                            auditedData,
+                                            warnings.join('; ') || 'Accountant Agent returned Error status',
+                                            companyId,
+                                            fileUrl
+                                        ).catch(() => {});
+                                        success = true;
                                     } else {
                                         await writeToFirestore([auditedData]);
                                         success = true;
@@ -1025,6 +1037,16 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                     const visionClass = await classifyDocumentWithVision(attachment.content, mime || 'application/pdf');
                                     if (visionClass !== 'INVOICE') {
                                         console.log(`[Vision Auditor] 🚨 Skipping attachment ${attachment.filename}. Classified as: ${visionClass}`);
+                                        // Safety Net: if filename suggests invoice but Vision rejected it, save as DRAFT for review
+                                        const looksLikeInvoice = /inv|arve|faktur|rechnung|factura|facture/i.test(filename);
+                                        if (looksLikeInvoice) {
+                                            await safetyNetSave(
+                                                { vendorName: 'UNKNOWN (Vision rejected)', invoiceId: `VISION-${filename}` },
+                                                `Vision Auditor classified as ${visionClass} but filename suggests invoice`,
+                                                companyId,
+                                                null
+                                            ).catch(() => {});
+                                        }
                                         continue;
                                     }
                                     
@@ -1042,6 +1064,15 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                 const visionClass = await classifyDocumentWithVision(attachment.content, mime);
                                 if (visionClass !== 'INVOICE') {
                                     console.log(`[Vision Auditor] 🚨 Skipping image ${attachment.filename}. Classified as: ${visionClass}`);
+                                    const looksLikeInvoice = /inv|arve|faktur|rechnung|factura|facture/i.test(filename);
+                                    if (looksLikeInvoice) {
+                                        await safetyNetSave(
+                                            { vendorName: 'UNKNOWN (Vision rejected)', invoiceId: `VISION-${filename}` },
+                                            `Vision Auditor classified as ${visionClass} but filename suggests invoice`,
+                                            companyId,
+                                            null
+                                        ).catch(() => {});
+                                    }
                                     continue;
                                 }
                                 
@@ -1078,6 +1109,13 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                             }
                         } catch (err) {
                             console.error(`[Error] Failed to process attachment ${filename}:`, err);
+                            // Safety Net: save a DRAFT so the invoice is never silently lost
+                            await safetyNetSave(
+                                { vendorName: filename, invoiceId: `ATTACHMENT-${filename}` },
+                                `Pipeline exception: ${err.message}`,
+                                companyId,
+                                null
+                            ).catch(() => {});
                         }
                     }
                 }
