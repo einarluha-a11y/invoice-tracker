@@ -970,6 +970,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                 console.log(`[Storage] Successfully uploaded! URL: ${fileUrl}`);
                             } catch (uploadError) {
                                 console.error(`[Storage Error] Failed to upload ${filename} on attempt ${uploadAttempts}:`, uploadError.message || uploadError);
+                                await reportError('STORAGE_UPLOAD_ERROR', filename, uploadError).catch(() => {});
                                 if (uploadAttempts < 3) {
                                     await new Promise(res => setTimeout(res, 2000)); // wait 2s before retry
                                 }
@@ -977,7 +978,8 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                         }
 
                         if (!fileUrl) {
-                            console.error(`[Storage Critical] Failed to upload ${filename} after 3 attempts. Invoice will be saved without a file.`);
+                            console.error(`[Storage Critical] Failed to upload ${filename} after 3 attempts. No record will be saved (Rule 31: no file = no record).`);
+                            await reportError('STORAGE_UPLOAD_CRITICAL', filename, new Error(`Upload failed after 3 attempts for ${filename}`)).catch(() => {});
                         }
 
                         // Helper to inject the generated URL, run the Accountant Agent Audit, and save
@@ -1052,7 +1054,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                     
                                     console.log('[Email] Verified as INVOICE. Engaging Maker-Checker AI Loop...');
 
-                                    const parsedData = await runMakerCheckerLoop(attachment.content, mime || 'application/pdf', companyData);
+                                    const parsedData = await runMakerCheckerLoop(attachment.content, mime || 'application/pdf', { customAiRules: customRules });
                                     if (await saveParsedData(parsedData)) {
                                         console.log(`[Email] Email UID ${id} successfully processed by Document AI!`);
                                         // FIX Reliability: mark as seen only AFTER successful Firestore write
@@ -1078,7 +1080,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                 
                                 console.log('[Image] Verified. Engaging Maker-Checker AI Loop for Image...');
 
-                                const parsedData = await runMakerCheckerLoop(attachment.content, mime, companyData);
+                                const parsedData = await runMakerCheckerLoop(attachment.content, mime, { customAiRules: customRules });
                                 if (await saveParsedData(parsedData)) {
                                     console.log(`[Email] Email UID ${id} successfully processed by Document AI from Image!`);
                                     // FIX Reliability: mark as seen only AFTER successful Firestore write

@@ -39,9 +39,22 @@ export const parseStatus = (rawStatus: string, parsedDueDate?: string): InvoiceS
 
 export const parseAmount = (rawAmount: string): number => {
     if (!rawAmount) return 0;
-    // Убираем все символы кроме цифр, точек и запятых, затем меняем запятую на точку для Float
-    const cleanStr = rawAmount.replace(/[^\d.,-]/g, '').replace(',', '.');
-    const amount = parseFloat(cleanStr);
+    // FIX Bug 4: handle European number formats correctly (e.g. 1.200,50 → 1200.5)
+    let s = rawAmount.replace(/[^\d.,-]/g, '').trim();
+    if (s.includes(',') && s.includes('.')) {
+        // Both separators present: determine which is the decimal separator
+        if (s.lastIndexOf(',') > s.lastIndexOf('.')) {
+            // European: 1.200,50 → remove dots, replace comma with dot
+            s = s.replace(/\./g, '').replace(',', '.');
+        } else {
+            // US: 1,200.50 → remove commas
+            s = s.replace(/,/g, '');
+        }
+    } else if (s.includes(',')) {
+        // Only comma present: treat as decimal separator (e.g. 831,20 → 831.20)
+        s = s.replace(',', '.');
+    }
+    const amount = parseFloat(s);
     return isNaN(amount) ? 0 : amount;
 };
 

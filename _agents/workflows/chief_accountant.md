@@ -177,13 +177,18 @@ description: The absolute manifesto and source of truth for the AI Accountant Ag
   3. The Government Source Lookup (Rule 29) must include the Polish KRS API (`api-krs.ms.gov.pl`) in its chain for Polish companies.
   4. Country detection must recognize "Sp. z o.o." and "S.A." as Polish company markers (country code: PL) just as "OÜ"/"AS" marks Estonian companies.
 
-## 31. THE ZERO INVOICE LOSS GUARANTEE (SAFETY NET PROTOCOL)
-- **The Error**: The invoice pipeline contained 4 silent discard points where an invoice could be permanently and irrecoverably lost: (1) Vision Auditor rejection, (2) Accountant Agent Error status, (3) writeToFirestore file integrity check, and (4) unhandled pipeline exceptions. An invoice rejected at any of these points left no trace in the database — as if it never existed.
-- **Real Example**: An email with 3 invoices (2x Terma Sp. z o.o. + 1x Dmytro Suprun) was processed. Only 2 invoices were saved. The third was silently discarded with no error visible in the dashboard.
-- **Mandate**: NO invoice must ever be permanently lost. Every rejection must produce a fallback DRAFT record in Firestore with:
-  - `status: "NEEDS_REVIEW"`
-  - The rejection reason in `validationWarnings`
-  - Whatever partial data was successfully extracted
-  - A `safetyNetCapturedAt` timestamp
-- **Action**: The `automation/safety_net.cjs` module provides `safetyNetSave(rawData, reason, companyId, fileUrl)`. It MUST be called at every pipeline discard point. The DRAFT record appears on the dashboard with a yellow warning triangle, allowing the user to review and correct it manually.
+## 31. THE FILE ATTACHMENT GUARANTEE
+- **Core Invariant**: EVERY record on the dashboard MUST have the original invoice PDF/image file attached. A record without a file is unacceptable — it is worse than no record at all, because it clutters the dashboard with unverifiable data.
+- **The Previous Mistake**: The Safety Net was saving DRAFT records even when the file upload had failed. This produced garbage records with `fileUrl: null` and the PDF filename used as the vendor name (e.g. `"b03494.pdf"`). These records had no value and confused the user.
+- **Corrected Rule**:
+  - `safetyNetSave()` MUST refuse to write to Firestore if `fileUrl` is null or missing. It logs the failure and returns null.
+  - A record is only saved (normal or DRAFT) after the file is confirmed uploaded to Firebase Storage.
+  - If the Firebase Storage upload fails after 3 retries, NO record is created. The failure is logged to `backend_errors.log` via `reportError()`.
+  - A record with `status: "NEEDS_REVIEW"` is acceptable on the dashboard — but only when it has the file attached and the issue is with extracted fields (VAT, Reg No, amount), not with the file itself.
+- **What the Safety Net IS for**: If file upload succeeds but field extraction fails (e.g. AI returned garbage vendor name, or VAT not found), `safetyNetSave()` saves a DRAFT with the real file attached and `vendorName: "UNKNOWN VENDOR"`, so the user can manually review it.
 - **Exception**: Confirmed exact duplicates (same invoiceId + vendor + amount) do NOT trigger the Safety Net — they are intentionally skipped.
+
+## 32. THE IDENTICAL SUM FALLACY & IMAP HORIZON CRASH
+- **The Error**: An agent saw an invoice for 4500€ failing to appear on the frontend, checked the database, saw a *historical* 4500€ record from the same vendor, and mistakenly concluded "It was rejected as a duplicate." In reality, the new invoice had a completely different ID, but the IMAP recovery script had crashed with `ECONNRESET` because it attempted to retrieve 3 months of emails in a single array.
+- **Diagnostic Mandate**: NEVER assume an invoice is a duplicate merely because the `amount` and `vendorName` match. Vendors frequently bill the exact same recurring monetary value every month. You MUST strictly verify that the `invoiceId` matches before declaring a clone dependency.
+- **IMAP Horizon Mandate**: Deep IMAP recovery sequences MUST strictly throttle their `SINCE` date constraint to the narrowest possible temporal window (e.g., `SINCE 24-Mar-2026`). Fetching hundreds of full email bodies concurrently guarantees a Node.js `ECONNRESET` socket collapse due to TLS saturation, silently terminating the daemon.

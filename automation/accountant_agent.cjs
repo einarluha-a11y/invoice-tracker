@@ -162,14 +162,17 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
 
     if (isPrivatePerson) {
         console.log(`[Accountant Agent] 👤 Vendor "${docAiPayload.vendorName}" appears to be a private person. VAT/Reg may not be required.`);
-        // For private persons: missing VAT/Reg is a NOTE, not a CRITICAL error
+        
+        // Scrub Supervisor's missing data panic since private persons inherently drop these
+        warnings = warnings.filter(w => !w.includes('Forced to accept missing data'));
+        docAiPayload.validationWarnings = warnings;
+
+        // For private persons: missing VAT/Reg is safely ignored
         if (!docAiPayload.supplierVat || docAiPayload.supplierVat === "Not_Found" || docAiPayload.supplierVat === "NOT_FOUND_ON_INVOICE") {
             docAiPayload.supplierVat = "Not_Found";
-            warnings.push("NOTE: Vendor appears to be a private person — VAT number may not be required.");
         }
         if (!docAiPayload.supplierRegistration || docAiPayload.supplierRegistration === "Not_Found" || docAiPayload.supplierRegistration === "NOT_FOUND_ON_INVOICE") {
             docAiPayload.supplierRegistration = "Not_Found";
-            warnings.push("NOTE: Vendor appears to be a private person — registration number may not be required.");
         }
     } else {
         const vatMissing = !docAiPayload.supplierVat || docAiPayload.supplierVat === "Not_Found" || docAiPayload.supplierVat === "NOT_FOUND_ON_INVOICE" || String(docAiPayload.supplierVat).trim() === "";
@@ -234,7 +237,11 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
             .where('companyId', '==', companyId)
             .get();
         
-        const isDuplicate = duplicateCheck.docs.some(doc => {
+        let isDuplicate = false;
+        let ghostDocIdToDestroy = null;
+
+        for (let i = 0; i < duplicateCheck.docs.length; i++) {
+            const doc = duplicateCheck.docs[i];
             const data = doc.data();
             const cleanNewId = String(docAiPayload.invoiceId || '').replace(/[^a-zA-Z0-9]/g, '');
             const cleanOldId = String(data.invoiceId || '').replace(/[^a-zA-Z0-9]/g, '');
@@ -243,17 +250,25 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
             
             const newVendor = String(docAiPayload.vendorName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
             const oldVendor = String(data.vendorName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-            // vendorName overlap check safely prevents 'Anthropic Ireland Limited' from missing 'Anthropic Ireland, Limited'
             const vendorFuzzyMatch = (newVendor.length > 3 && oldVendor.length > 3) ? (newVendor.includes(oldVendor) || oldVendor.includes(newVendor)) : false;
             
-            // If invoices sport a strong structurally rich Signature that matches
             const strongIdMatch = (cleanNewId.length > 3 && cleanOldId === cleanNewId);
-            
-            // Fallback for weak or missing IDs (e.g., generic receipts): Date + Amount + Vendor must perfectly overlap
             const genericDateMatch = (cleanNewId.length <= 3 && amtMatches && vendorFuzzyMatch && data.dateCreated === docAiPayload.dateCreated);
 
-            return (strongIdMatch && vendorFuzzyMatch && amtMatches) || genericDateMatch;
-        });
+            if ((strongIdMatch && vendorFuzzyMatch && amtMatches) || genericDateMatch) {
+                if ((!data.fileUrl || data.fileUrl === 'BODY_TEXT_NO_ATTACHMENT') && fileUrl && fileUrl !== 'BODY_TEXT_NO_ATTACHMENT') {
+                    console.log(`[Accountant Agent] ⚔️ GHOST ASSASSINATION: Destroying file-less duplicate ${doc.id} in favor of incoming high-fidelity PDF payload!`);
+                    ghostDocIdToDestroy = doc.id;
+                } else {
+                    isDuplicate = true;
+                }
+                break;
+            }
+        }
+
+        if (ghostDocIdToDestroy) {
+            await db.collection('invoices').doc(ghostDocIdToDestroy).delete();
+        }
 
         if (isDuplicate) {
             console.error(`[Accountant Agent] 🛑 REJECTED: Exact duplicate found in database.`);
@@ -264,7 +279,7 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
 
     // --- 3. COMPLIANCE AUDIT: VIES Validation ---
     let viesResult = null;
-    if (docAiPayload.supplierVat) {
+    if (docAiPayload.supplierVat && docAiPayload.supplierVat !== 'Not_Found' && !isPrivatePerson) {
         console.log(`[Accountant Agent] 🌍 Verifying VAT [${docAiPayload.supplierVat}] with EU VIES...`);
         viesResult = await validateVat(docAiPayload.supplierVat);
         console.log(`[Accountant Agent] 💶 VIES Response: Valid? ${viesResult.isValid}`);

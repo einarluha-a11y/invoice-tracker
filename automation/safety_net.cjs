@@ -1,24 +1,39 @@
 /**
  * SAFETY NET AGENT
- * Rule 31: Zero Invoice Loss Guarantee
+ * Rule 31: Every record on the dashboard MUST have the original invoice file attached.
  *
- * This module is called whenever any stage of the pipeline rejects or fails
- * to process an invoice. Instead of silently discarding it, the Safety Net
- * saves a DRAFT record to Firestore so no invoice is ever permanently lost.
+ * This module is called whenever the normal pipeline fails to process an invoice
+ * BUT a file was successfully uploaded to Firebase Storage.
  *
- * DRAFT records appear on the dashboard with a clear "NEEDS REVIEW" status
- * and a warning explaining why the normal pipeline rejected them.
+ * CRITICAL INVARIANT: safetyNetSave() NEVER saves a record without a fileUrl.
+ * If there is no file, it logs the failure and returns null — no garbage record
+ * is created on the dashboard. A record without a file is worse than no record.
  */
 
 const admin = require('firebase-admin');
 
 async function safetyNetSave(rawData, reason, companyId, fileUrl = null) {
+    // HARD RULE: never save a record without the original invoice file.
+    // A dashboard entry with no file attached is misleading and unacceptable.
+    const resolvedFileUrl = fileUrl || rawData.fileUrl || null;
+    if (!resolvedFileUrl) {
+        console.warn(`[Safety Net] ⚠️  Skipping DRAFT — no file to attach. Reason was: ${reason}`);
+        console.warn(`[Safety Net]    → Fix the Firebase Storage upload issue to recover this invoice.`);
+        return null;
+    }
+
     try {
         const db = admin.firestore();
 
-        // Build minimal record from whatever data we have
+        // Build minimal record from whatever data we have.
+        // Use 'UNKNOWN VENDOR' rather than the filename if AI couldn't extract a real name.
+        const rawVendor = rawData.vendorName || rawData.vendor || '';
+        const looksLikeFilename = /\.(pdf|jpg|jpeg|png|tiff?)$/i.test(rawVendor);
+        const vendorName = (rawVendor && !looksLikeFilename) ? rawVendor : 'UNKNOWN VENDOR';
+
         const draftRecord = {
-            vendorName: rawData.vendorName || rawData.vendor || 'UNKNOWN VENDOR',
+            vendorName,
+            invoiceId: rawData.invoiceId || `DRAFT-${Date.now()}`,
             invoiceId: rawData.invoiceId || `DRAFT-${Date.now()}`,
             amount: rawData.amount || null,
             currency: rawData.currency || 'EUR',
@@ -26,7 +41,7 @@ async function safetyNetSave(rawData, reason, companyId, fileUrl = null) {
             dueDate: rawData.dueDate || null,
             supplierVat: rawData.supplierVat || 'Not_Found',
             supplierRegistration: rawData.supplierRegistration || 'Not_Found',
-            fileUrl: fileUrl || rawData.fileUrl || null,
+            fileUrl: resolvedFileUrl,
             companyId: companyId || rawData.companyId || null,
             status: 'NEEDS_REVIEW',
             validationWarnings: [

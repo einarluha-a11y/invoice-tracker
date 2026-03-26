@@ -10,19 +10,27 @@ async function intellectualSupervisorGate(invoiceData) {
     console.log(`[Supervisor] 🦅 Scanning extracted payload for mandatory accounting variables...`);
 
     // 1. Mandatory Mathematical Fields
-    if (invoiceData.amount === 0 || invoiceData.amount === null || invoiceData.amount === undefined) {
+    const parsedAmount = parseFloat(String(invoiceData.amount).replace(/[^0-9.-]+/g, '')) || 0;
+    if (parsedAmount === 0 || invoiceData.amount === null || invoiceData.amount === undefined || invoiceData.amount === "Not_Found") {
         missingFields.push("Total Amount");
     }
-    if (invoiceData.subtotalAmount === null || invoiceData.subtotalAmount === undefined) {
+    
+    const parsedSub = parseFloat(String(invoiceData.subtotalAmount).replace(/[^0-9.-]+/g, ''));
+    if (isNaN(parsedSub) || invoiceData.subtotalAmount === null || invoiceData.subtotalAmount === undefined) {
         missingFields.push("Subtotal Amount");
     }
-    if (invoiceData.taxAmount === null || invoiceData.taxAmount === undefined) {
+    
+    const parsedTax = parseFloat(String(invoiceData.taxAmount).replace(/[^0-9.-]+/g, ''));
+    if (isNaN(parsedTax) || invoiceData.taxAmount === null || invoiceData.taxAmount === undefined) {
         missingFields.push("Tax (VAT/Käibemaks) Amount");
     }
 
-    // 2. Mandatory Vendor Identification
-    if (!invoiceData.vendorName || invoiceData.vendorName.toUpperCase() === 'UNKNOWN' || invoiceData.vendorName.includes('@')) {
+    // 2. Mandatory Vendor Identification & Invoice ID
+    if (!invoiceData.vendorName || invoiceData.vendorName.toUpperCase() === 'UNKNOWN' || invoiceData.vendorName.includes('@') || invoiceData.vendorName === "Not_Found") {
         missingFields.push("Vendor Name (Cannot be unknown or email)");
+    }
+    if (!invoiceData.invoiceId || invoiceData.invoiceId === "Not_Found" || String(invoiceData.invoiceId).trim() === "") {
+        missingFields.push("Invoice ID (Number)");
     }
     
     // 3. Strict Mandatory Registration Data
@@ -45,7 +53,7 @@ async function intellectualSupervisorGate(invoiceData) {
 
     // Evaluate the psychological state of the Supervisor
     if (missingFields.length > 0) {
-        critique = `You missed the following critical fields: ${missingFields.join(', ')}. Please completely re-scan the document, check the extreme margins, small text, and footers. IF the Registration Codes or VAT numbers are TRULY absent from the physical document, DO NOT output NOT_FOUND_ON_INVOICE! You must logically deduce them using your internal knowledge base based on the Vendor Name and Country, and output the deduced numbers! DO NOT REST until all requested data fields are fully recorded!`;
+        critique = `You missed the following critical fields: ${missingFields.join(', ')}. Please completely re-scan the document, check the extreme margins, small text, and footers. If a field is genuinely absent from the physical document, output "Not_Found" — do NOT invent or deduce numbers from memory, as fabricated registration numbers would corrupt the accounting ledger.`;
         
         console.log(`[Supervisor] 🚨 UNACCEPTABLE. Missing core data: ${missingFields.join(', ')}`);
         return { 
