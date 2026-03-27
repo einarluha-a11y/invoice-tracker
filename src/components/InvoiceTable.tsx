@@ -26,6 +26,7 @@ export type SortDirection = 'asc' | 'desc';
 export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, endDate, sortField, sortDirection, onSort, onEdit, onDelete, companyName }: InvoiceTableProps) {
     const { t, i18n } = useTranslation();
     const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
+    const [visibleLimit, setVisibleLimit] = useState(100);
     const [isExportingPDF, setIsExportingPDF] = useState(false);
     const [viewingPdfUrl, setViewingPdfUrl] = useState<string | null>(null);
     const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
@@ -117,9 +118,14 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                 if (aValue > bValue) comparison = 1;
                 if (aValue < bValue) comparison = -1;
 
-                return sortDirection === 'asc' ? comparison : -comparison;
+        return sortDirection === 'asc' ? comparison : -comparison;
             });
     }, [invoices, searchTerm, statusFilter, startDate, endDate, sortField, sortDirection]);
+
+    // Reset pagination when search or filters change
+    useEffect(() => {
+        setVisibleLimit(100);
+    }, [searchTerm, statusFilter, startDate, endDate, sortField, sortDirection]);
 
     const formatDate = (dateString: string) => {
         const options: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'short', day: 'numeric' };
@@ -334,7 +340,7 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                         </tr>
                     </thead>
                     <tbody>
-                        {filteredAndSortedInvoices.map((invoice) => (
+                        {filteredAndSortedInvoices.slice(0, visibleLimit).map((invoice) => (
                             <React.Fragment key={invoice.id}>
                                 <tr className={expandedRows.has(invoice.id) ? 'expanded-parent-row' : ''}>
                                     <td data-label={t('table.vendor')} className="vendor-name" style={{ fontWeight: 600, maxWidth: '200px', whiteSpace: 'normal', wordBreak: 'break-word' }}>
@@ -477,6 +483,20 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                     ))}
                 </tbody>
                 </table>
+                {visibleLimit < filteredAndSortedInvoices.length && (
+                    <div style={{ padding: '1.5rem', display: 'flex', justifyContent: 'center' }}>
+                        <button 
+                            onClick={() => setVisibleLimit(prev => prev + 100)} 
+                            className="btn-secondary" 
+                            style={{ padding: '0.8rem 2rem', fontWeight: 600, fontSize: '0.95rem', borderRadius: '50px', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+                        >
+                            <svg width="1.2em" height="1.2em" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '8px', verticalAlign: 'middle' }}>
+                                <polyline points="6 9 12 15 18 9"></polyline>
+                            </svg>
+                            {t('table.loadMore', 'Load More Invoices')} ({Math.min(visibleLimit, filteredAndSortedInvoices.length)} / {filteredAndSortedInvoices.length})
+                        </button>
+                    </div>
+                )}
             </div>
 
             {/* Universal Inline Viewer Modal */}
