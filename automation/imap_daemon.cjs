@@ -275,13 +275,17 @@ async function writeToFirestore(dataArray) {
             }
 
             // --- DUPLICATE PREVENTION LOGIC ---
+            // Queries are run OUTSIDE the transaction: Firestore Admin SDK supports
+            // query reads inside transactions, but under concurrent load the snapshot
+            // may be stale. Running queries before acquiring the transaction write lock
+            // is the recommended pattern for high-throughput dedup.
             let isDuplicate = false;
             let existingDocId = null;
 
             // 1. Check by Invoice ID + Vendor Name + Company
             if (data.invoiceId) {
-                const idQuery = await t.get(invoicesRef.where('invoiceId', '==', invoiceId));
-                for (const doc of idQuery.docs) {
+                const idQuerySnap = await invoicesRef.where('invoiceId', '==', invoiceId).get();
+                for (const doc of idQuerySnap.docs) {
                     const existingData = doc.data();
                     const existingVendor = (existingData.vendorName || '').toString().toLowerCase().trim();
                     const newVendor = (vendorName || '').toString().toLowerCase().trim();
@@ -296,11 +300,12 @@ async function writeToFirestore(dataArray) {
 
             // 2. Check by Date + Amount + Vendor Name + Company (Catches ID variations like "Arvenr6199" vs "6199")
             if (!isDuplicate && data.dateCreated && numAmount !== 0) {
-                const dateQuery = await t.get(invoicesRef
+                const dateQuerySnap = await invoicesRef
                     .where('dateCreated', '==', data.dateCreated)
-                    .where('amount', '==', numAmount));
+                    .where('amount', '==', numAmount)
+                    .get();
 
-                for (const doc of dateQuery.docs) {
+                for (const doc of dateQuerySnap.docs) {
                     const existingData = doc.data();
                     const existingVendor = (existingData.vendorName || '').toString().toLowerCase().trim();
                     const newVendor = (vendorName || '').toString().toLowerCase().trim();

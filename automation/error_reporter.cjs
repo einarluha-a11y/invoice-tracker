@@ -64,7 +64,6 @@ async function reportError(errorCode, context, err) {
                 createdAt: admin.firestore.FieldValue.serverTimestamp()
             });
             // Prune oldest entries when collection exceeds the cap
-            const countSnap = await logsRef.orderBy('createdAt', 'asc').limit(1).get();
             const totalSnap = await logsRef.count().get();
             if (totalSnap.data().count > MAX_SYSTEM_LOG_ENTRIES) {
                 const excess = totalSnap.data().count - MAX_SYSTEM_LOG_ENTRIES;

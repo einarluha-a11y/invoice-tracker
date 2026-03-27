@@ -59,9 +59,16 @@ async function findStorageFile(companyId, createdAtMs) {
                     const encoded = encodeURIComponent(file.name);
                     return `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encoded}?alt=media&token=${token}`;
                 }
-                // No token — generate a signed URL valid for 7 days as a fallback
-                const [signedUrl] = await file.getSignedUrl({ action: 'read', expires: Date.now() + 7 * 24 * 60 * 60 * 1000 });
-                return signedUrl;
+                // No token — generate a signed URL valid for 7 days as a fallback.
+                // Wrapped in its own try/catch so a signing failure (e.g., missing IAM permission)
+                // doesn't abort the entire Storage scan for this company.
+                try {
+                    const [signedUrl] = await file.getSignedUrl({ action: 'read', expires: Date.now() + 7 * 24 * 60 * 60 * 1000 });
+                    return signedUrl;
+                } catch (signErr) {
+                    console.warn(`[Cleanup] ⚠️  getSignedUrl failed for ${file.name}:`, signErr.message);
+                    // Continue checking other files in the prefix
+                }
             }
         }
     } catch (e) {

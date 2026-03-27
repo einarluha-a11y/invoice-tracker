@@ -169,14 +169,15 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
     }
 
     // --- 1.7. PRE-FLIGHT AUDIT: Missing Registration/VAT — with Government Fallback Lookup (Rule 29) & Private Person Protocol (Rule 30) ---
-    const companyMarkers = /\b(OÜ|AS|Ltd|LLC|GmbH|SIA|UAB|Sp\.?\s*z\s*o\.?o\.?|S\.A\.|Inc|Corp|BV|NV|SRL|SARL|GmbH)\b/i;
+    const companyMarkers = /\b(OÜ|AS|Ltd|LLC|GmbH|SIA|UAB|Sp\.?\s*z\s*o\.?o\.?|S\.A\.|Inc|Corp|BV|NV|SRL|SARL)\b/i;
     const isPrivatePerson = !companyMarkers.test(docAiPayload.vendorName || '');
 
     if (isPrivatePerson) {
         console.log(`[Accountant Agent] 👤 Vendor "${docAiPayload.vendorName}" appears to be a private person. VAT/Reg may not be required.`);
         
-        // Scrub Supervisor's missing data panic since private persons inherently drop these
-        warnings = warnings.filter(w => !w.includes('Forced to accept missing data'));
+        // Scrub only Supervisor's VAT/Reg "missing data" warnings — private persons inherently
+        // don't have these. Use a targeted pattern to avoid removing unrelated warnings.
+        warnings = warnings.filter(w => !/SUPERVISOR:.*missing data.*(VAT|registration|reg)/i.test(w));
         docAiPayload.validationWarnings = warnings;
 
         // For private persons: missing VAT/Reg is safely ignored

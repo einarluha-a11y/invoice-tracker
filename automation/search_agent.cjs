@@ -35,8 +35,10 @@ async function findAndInjectMissingInvoice(vendorName, targetAmount, companyId) 
         await connection.openBox('INBOX');
         console.log(`[Search Agent] 🕵️‍♂️ Accessing Mail Server to hunt down missing invoice for ${vendorName} (${targetAmount} EUR)...`);
         
-        // We extend the sweep back to 2025 to catch legacy Proforma substitutions (Rule 19)
-        const rawMessages = await connection.search(['ALL', ['SINCE', '01-Jan-2025']], { bodies: [''] });
+        // We extend the sweep back to catch legacy Proforma substitutions (Rule 19).
+        // Override cutoff year via SEARCH_AGENT_CUTOFF_YEAR env var (e.g. "2026").
+        const sinceYear = process.env.SEARCH_AGENT_CUTOFF_YEAR || '2025';
+        const rawMessages = await connection.search(['ALL', ['SINCE', `01-Jan-${sinceYear}`]], { bodies: [''] });
         
         for (const item of rawMessages) {
             const all = item.parts.find(a => a.which === '');
@@ -88,9 +90,8 @@ async function findAndInjectMissingInvoice(vendorName, targetAmount, companyId) 
                         }
 
                         try {
-                            if (!parsedData) { /* DocAI failed entirely — skip this attachment */ }
-                            else
-                            for (let inv of parsedData) {
+                            // parsedData is null when DocAI failed entirely — skip attachment
+                            if (parsedData) for (let inv of parsedData) {
                                 // Prevent Recursive Inception!
                                 if (inv.type === 'BANK_STATEMENT') {
                                     console.log(`[Search Agent] ⚠️ Refusing to parse an internal Bank Statement while searching for an Invoice! Skipping document...`);
@@ -115,9 +116,10 @@ async function findAndInjectMissingInvoice(vendorName, targetAmount, companyId) 
                                     inv.companyId = companyId;
                                     const finalData = await auditAndProcessInvoice(inv, fileUrl, companyId);
                                     
-                                    // Inject into database
+                                    // Inject into database — use finalData.companyId in case
+                                    // auditAndProcessInvoice re-routed to a different company.
                                     const docRef = await db.collection('invoices').add({
-                                        companyId: companyId,
+                                        companyId: finalData.companyId || companyId,
                                         invoiceId: String(finalData.invoiceId || 'N/A'),
                                         vendorName: String(finalData.vendorName || 'Unknown'),
                                         ...finalData

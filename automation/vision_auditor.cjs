@@ -52,7 +52,13 @@ JUNK
         });
 
         const VALID = new Set(['INVOICE', 'CMR', 'STATEMENT', 'JUNK']);
-        const raw = response.content[0].text.trim().toUpperCase();
+        // Defensive: API may return non-text blocks (tool_use, etc.) or an empty content array
+        const rawText = response?.content?.[0]?.text;
+        if (!rawText) {
+            console.warn(`[Vision Auditor] ⚠️  API response contained no text block. Defaulting to JUNK.`);
+            return 'JUNK';
+        }
+        const raw = rawText.trim().toUpperCase();
         // Extract first recognised keyword if Claude added extra words
         const classification = ['INVOICE', 'CMR', 'STATEMENT', 'JUNK'].find(k => raw.includes(k)) || null;
         if (!classification) {

@@ -19,8 +19,10 @@ if (!admin.apps.length && serviceAccount) {
         storageBucket: 'invoice-tracker-xyz.firebasestorage.app'
     });
 }
-const db = admin.firestore();
-const bucket = admin.storage().bucket('invoice-tracker-xyz.firebasestorage.app');
+// Guard: only call firestore()/storage() when an app was successfully initialized.
+// Without this guard, calling admin.firestore() with no initialized app throws a hard crash.
+const db = admin.apps.length ? admin.firestore() : null;
+const bucket = admin.apps.length ? admin.storage().bucket('invoice-tracker-xyz.firebasestorage.app') : null;
 
 // --- Document AI Setup ---
 const docaiClient = new DocumentProcessorServiceClient({
@@ -41,9 +43,13 @@ app.use(express.json({ limit: '50mb' }));
  * Route that Zapier hits when an email/file triggers.
  */
 app.post('/api/intake', async (req, res) => {
+    if (!db || !bucket) {
+        console.error('[Webhook] Firebase not initialized — rejecting request. Check FIREBASE_SERVICE_ACCOUNT env var.');
+        return res.status(503).json({ error: 'Database unavailable. Check server configuration.' });
+    }
     try {
         const { fileUrl, fileName, senderUrl, companyId } = req.body;
-        
+
         if (!fileUrl) return res.status(400).json({ error: "Missing fileUrl" });
 
         // Download file into memory buffer (acts as the bridge from Zapier to GCP)

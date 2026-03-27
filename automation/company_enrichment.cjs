@@ -195,7 +195,13 @@ async function enrichCompanyData(vendorName, countryHint = 'EE') {
         const cached = await db.collection(CACHE_COLLECTION).doc(cacheKey).get();
         if (cached.exists) {
             const data = cached.data();
-            const ageHours = (Date.now() - (data.cachedAt?.toMillis?.() || 0)) / 3600000;
+            // Handle Firestore Timestamp, JS Date, raw millisecond number, or missing field
+            const ca = data.cachedAt;
+            const cachedAtMs = typeof ca?.toMillis === 'function' ? ca.toMillis()
+                             : ca instanceof Date               ? ca.getTime()
+                             : typeof ca === 'number'           ? ca
+                             : 0;
+            const ageHours = (Date.now() - cachedAtMs) / 3600000;
             if (ageHours < 720) { // Cache valid for 30 days
                 console.log(`[Enrichment] Cache hit for "${vendorName}" (source: ${data.source})`);
                 return data;
