@@ -7,11 +7,16 @@ const crypto = require('crypto');
 const { reportError } = require('./error_reporter.cjs');
 
 // --- Google Cloud / Firebase Setup ---
-const serviceAccount = require('./google-credentials.json');
-if (!admin.apps.length) {
+let serviceAccount;
+if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+    try { serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT); } catch (e) { console.error('Failed to parse FIREBASE_SERVICE_ACCOUNT:', e); }
+} else {
+    try { serviceAccount = require('./google-credentials.json'); } catch (e) { console.error('google-credentials.json not found. Set FIREBASE_SERVICE_ACCOUNT env var.'); }
+}
+if (!admin.apps.length && serviceAccount) {
     admin.initializeApp({
         credential: admin.credential.cert(serviceAccount),
-        storageBucket: 'invoice-tracker-xyz.firebasestorage.app' // Using existing bucket
+        storageBucket: 'invoice-tracker-xyz.firebasestorage.app'
     });
 }
 const db = admin.firestore();
@@ -19,7 +24,7 @@ const bucket = admin.storage().bucket('invoice-tracker-xyz.firebasestorage.app')
 
 // --- Document AI Setup ---
 const docaiClient = new DocumentProcessorServiceClient({
-    keyFilename: path.join(__dirname, 'google-credentials.json'),
+    credentials: serviceAccount,
     apiEndpoint: 'eu-documentai.googleapis.com'
 });
 const PROJECT_ID = 'invoice-tracker-xyz';

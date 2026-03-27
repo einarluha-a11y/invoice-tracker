@@ -21,11 +21,14 @@ const anthropic = new Anthropic({
 });
 
 // Ensure Firebase is initialized
-const serviceAccount = require('./google-credentials.json');
 if (!admin.apps.length) {
-    admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount)
-    });
+    let sa;
+    if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+        try { sa = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT); } catch (e) { console.error('Failed to parse FIREBASE_SERVICE_ACCOUNT:', e); }
+    } else {
+        try { sa = require('./google-credentials.json'); } catch (e) { console.error('google-credentials.json not found.'); }
+    }
+    if (sa) admin.initializeApp({ credential: admin.credential.cert(sa) });
 }
 const db = admin.firestore();
 

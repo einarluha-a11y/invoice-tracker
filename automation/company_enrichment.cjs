@@ -18,8 +18,13 @@ const admin = require('firebase-admin');
 
 // Ensure Firebase is initialized
 if (!admin.apps.length) {
-    const sa = require('./google-credentials.json');
-    admin.initializeApp({ credential: admin.credential.cert(sa) });
+    let sa;
+    if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+        try { sa = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT); } catch (e) { console.error('Failed to parse FIREBASE_SERVICE_ACCOUNT:', e); }
+    } else {
+        try { sa = require('./google-credentials.json'); } catch (e) { console.error('google-credentials.json not found.'); }
+    }
+    if (sa) admin.initializeApp({ credential: admin.credential.cert(sa) });
 }
 const db = admin.firestore();
 
