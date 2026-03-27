@@ -8,7 +8,7 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "deploy": "npm run build && pm2 restart invoice-bot && git add . && git commit -m 'chore(deploy): auto-sync full stack architecture' && git push"
+    "deploy": "npm run build && pm2 restart ecosystem.config.cjs && git add . && git commit -m 'chore(deploy): auto-sync full stack architecture' && git push"
   },
   "dependencies": {
     "firebase": "^12.9.0",
