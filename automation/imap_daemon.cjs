@@ -41,6 +41,47 @@ if (!admin.apps.length && serviceAccount) {
 const db = admin.firestore();
 const bucket = admin.storage().bucket('invoice-tracker-xyz.firebasestorage.app');
 
+// --- DYNAMIC DICTIONARY ENGINE (Node.js Memory Cache) ---
+const companyAliasCache = {};
+const companyAliasCacheTime = {};
+
+async function getVendorAliases(companyId) {
+    let defaultAliases = {
+        'elron': 'eesti liinirongid as',
+        'www.elron.ee': 'eesti liinirongid as',
+        'claude': 'anthropic',
+        'chatgpt': 'openai',
+        'openai': 'openai',
+        'youtube': 'google',
+        'aws': 'amazon',
+        'bolt': 'inredz',
+        'wolt': 'wolt'
+    };
+    if (!companyId) return defaultAliases;
+
+    const now = Date.now();
+    // Cache TTL: 30 minutes
+    if (companyAliasCache[companyId] && now - companyAliasCacheTime[companyId] < 1800000) {
+        return { ...defaultAliases, ...companyAliasCache[companyId] };
+    }
+
+    try {
+        const doc = await db.collection('companies').doc(companyId).get();
+        if (doc.exists && doc.data().vendorAliases) {
+            companyAliasCache[companyId] = doc.data().vendorAliases;
+            companyAliasCacheTime[companyId] = now;
+            return { ...defaultAliases, ...doc.data().vendorAliases };
+        } else {
+            companyAliasCache[companyId] = {};
+            companyAliasCacheTime[companyId] = now;
+            return defaultAliases;
+        }
+    } catch (e) {
+        console.error(`[Dictionary Error] Failed to fetch aliases for ${companyId}: ${e.message}`);
+        return defaultAliases;
+    }
+}
+
 /**
  * Helper to upload an attachment directly to Firebase Storage and get a secure download URL.
  */
@@ -511,18 +552,9 @@ async function reconcilePayment(reference, description, paidAmount, totalBankDra
         let bankDesc = normalizeString(description);
 
         // --- VENDOR ALIASES (THE SYNONYMOUS MERCHANT PROTOCOL) ---
-        // Map commercial product names from local bank statements to official legal parent entity names in the registry
-        const vendorAliases = {
-            'elron': 'eesti liinirongid as',
-            'www.elron.ee': 'eesti liinirongid as',
-            'claude': 'anthropic',
-            'chatgpt': 'openai',
-            'openai': 'openai',
-            'youtube': 'google',
-            'aws': 'amazon',
-            'bolt': 'inredz',
-            'wolt': 'wolt'
-        };
+        // Map commercial product names to official legal entity names utilizing the new dynamic caching engine
+        const vendorAliases = await getVendorAliases(companyId);
+        
         for (const [alias, officialStr] of Object.entries(vendorAliases)) {
             if (bankDesc.includes(alias)) {
                 console.log(`[Reconciliation] Applying Vendor Alias: ${alias} -> ${officialStr}`);
