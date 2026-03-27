@@ -300,7 +300,7 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
 
     // --- 3. COMPLIANCE AUDIT: VIES Validation ---
     let viesResult = null;
-    if (docAiPayload.supplierVat && docAiPayload.supplierVat !== 'Not_Found' && !isPrivatePerson) {
+    if (docAiPayload.supplierVat && docAiPayload.supplierVat !== 'Not_Found' && !isPrivate) {
         console.log(`[Accountant Agent] 🌍 Verifying VAT [${docAiPayload.supplierVat}] with EU VIES...`);
         viesResult = await validateVat(docAiPayload.supplierVat);
         console.log(`[Accountant Agent] 💶 VIES Response: Valid? ${viesResult.isValid}`);
@@ -335,7 +335,7 @@ Do not return any markdown wrappers, just the raw JSON.`;
 
     try {
         const response = await require('./ai_retry.cjs').createWithRetry(anthropic, {
-            model: "claude-sonnet-4-6",
+            model: process.env.AI_MODEL || "claude-sonnet-4-6",
             max_tokens: 500,
             temperature: 0.1,
             system: "You are an expert strict accountant checking for tax fraud and compliance.",

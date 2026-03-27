@@ -44,6 +44,12 @@ async function getVendorAliases(companyId) {
     try {
         const doc = await db.collection('companies').doc(companyId).get();
         if (doc.exists && doc.data().vendorAliases) {
+            // Cap cache to 100 entries to prevent unbounded growth
+            if (Object.keys(companyAliasCache).length >= 100) {
+                const oldestKey = Object.keys(companyAliasCacheTime).sort((a, b) => companyAliasCacheTime[a] - companyAliasCacheTime[b])[0];
+                delete companyAliasCache[oldestKey];
+                delete companyAliasCacheTime[oldestKey];
+            }
             companyAliasCache[companyId] = doc.data().vendorAliases;
             companyAliasCacheTime[companyId] = now;
             return { ...defaultAliases, ...doc.data().vendorAliases };
@@ -133,7 +139,7 @@ ${rawText}
 `;
     try {
         const response = await require('./ai_retry.cjs').createWithRetry(anthropic, {
-            model: "claude-sonnet-4-6",
+            model: process.env.AI_MODEL || "claude-sonnet-4-6",
             max_tokens: 1500,
             temperature: 0.1,
             system: "You are an expert accountant system.",
@@ -201,6 +207,7 @@ async function writeToFirestore(dataArray) {
         const webhooksToSend = [];
 
         for (const data of dataArray) {
+          try {
             await db.runTransaction(async (t) => {
             const docRef = invoicesRef.doc(); // Auto-generate ID
 
@@ -216,30 +223,30 @@ async function writeToFirestore(dataArray) {
             const vendorName = data.vendorName || 'Unknown Vendor';
             const invoiceId = data.invoiceId || `Auto-${Date.now()}`;
 
-            // --- VENDOR SPECIFIC RULE EXECUTOR ---
+            // --- IDEACOM VENDOR-SPECIFIC DUE DATE RULE (FALLBACK) ---
+            // Pronto and Inovatus invoice Ideacom OÜ on net-30 terms.
+            // This rule is a FALLBACK: it only fires if the AI did not already calculate
+            // a distinct dueDate via customAiRules (i.e. dueDate equals dateCreated or is absent).
+            // If customAiRules is set in company Settings and handles this vendor, it takes priority.
+            const IDEACOM_ID = 'vlhvA6i8d3Hry8rtrA3Z';
             const lowerVendor = vendorName.toLowerCase();
-            if (lowerVendor.includes('pronto') || lowerVendor.includes('inovatus')) {
+            const aiAlreadySetDueDate = data.dueDate && data.dueDate !== data.dateCreated;
+            if (data.companyId === IDEACOM_ID && !aiAlreadySetDueDate &&
+                (lowerVendor.includes('pronto') || lowerVendor.includes('inovatus'))) {
                 if (data.dateCreated) {
                     const parts = data.dateCreated.includes('-') ? data.dateCreated.split('-') : data.dateCreated.split('.');
                     if (parts.length === 3) {
                         let day, month, year;
                         if (parts[0].length === 4) { // YYYY-MM-DD
-                            year = parseInt(parts[0], 10);
-                            month = parseInt(parts[1], 10) - 1;
-                            day = parseInt(parts[2], 10);
+                            year = parseInt(parts[0], 10); month = parseInt(parts[1], 10) - 1; day = parseInt(parts[2], 10);
                         } else { // DD-MM-YYYY
-                            day = parseInt(parts[0], 10);
-                            month = parseInt(parts[1], 10) - 1;
-                            year = parseInt(parts[2], 10);
+                            day = parseInt(parts[0], 10); month = parseInt(parts[1], 10) - 1; year = parseInt(parts[2], 10);
                         }
                         if (year < 2000) year += 2000;
                         const d = new Date(year, month, day);
                         d.setDate(d.getDate() + 30);
-                        const newDay = String(d.getDate()).padStart(2, '0');
-                        const newMonth = String(d.getMonth() + 1).padStart(2, '0');
-                        const newYear = d.getFullYear();
-                        data.dueDate = `${newDay}-${newMonth}-${newYear}`;
-                        console.log(`[AI Override] Hardcoded +30 days for ${vendorName}. New dueDate: ${data.dueDate}`);
+                        data.dueDate = `${String(d.getDate()).padStart(2,'0')}-${String(d.getMonth()+1).padStart(2,'0')}-${d.getFullYear()}`;
+                        console.log(`[Ideacom Rule] Fallback +30 days dueDate for ${vendorName}: ${data.dueDate}`);
                     }
                 }
             }
@@ -321,10 +328,11 @@ async function writeToFirestore(dataArray) {
                 finalStatus = 'Paid'; // Credit invoices don't need payment
                 const targetAmount = Math.abs(numAmount);
 
-                // Filter by companyId to prevent cross-company credit note matching (Rule 10)
+                // Filter by companyId to prevent cross-company credit note matching (Rule 10).
+                // Limit to 200 to avoid unbounded reads on large datasets.
                 const pendingQuery = data.companyId
-                    ? invoicesRef.where('companyId', '==', data.companyId).where('status', '!=', 'Paid')
-                    : invoicesRef.where('status', '!=', 'Paid');
+                    ? invoicesRef.where('companyId', '==', data.companyId).where('status', '!=', 'Paid').limit(200)
+                    : invoicesRef.where('status', '!=', 'Paid').limit(200);
                 const pendingSnapshot = await t.get(pendingQuery);
 
                 for (const potentialOffset of pendingSnapshot.docs) {
@@ -390,6 +398,12 @@ async function writeToFirestore(dataArray) {
                 companyId: data.companyId || null
             });
             }); // END INDIVIDUAL TRANSACTION BLOCK
+          } catch (txErr) {
+            const vendorName = data.vendorName || 'Unknown';
+            const invoiceId = data.invoiceId || 'Unknown';
+            console.error(`[Firestore] ❌ Transaction failed for invoice ${invoiceId} (${vendorName}):`, txErr.message);
+            await reportError('TRANSACTION_FAILED', `${vendorName} / ${invoiceId}`, txErr).catch(() => {});
+          }
         }
 
         console.log(`[Firestore] ${dataArray.length} invoice(s) successfully written via Transaction!`);

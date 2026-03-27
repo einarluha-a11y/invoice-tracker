@@ -133,7 +133,7 @@ IF TYPE C (JUNK), respond ONLY with an empty JSON array: []`;
         }
 
         const response = await require('./ai_retry.cjs').createWithRetry(anthropic, {
-            model: "claude-sonnet-4-6",
+            model: process.env.AI_MODEL || "claude-sonnet-4-6",
             max_tokens: 4000,
             temperature: 0.1,
             system: "You are the world's most intelligent accounting extraction AI.",
@@ -169,8 +169,9 @@ IF TYPE C (JUNK), respond ONLY with an empty JSON array: []`;
             if (extractedData.length > 0) {
                 console.log(`[Cognitive Extractor] 🚑 SALVAGE SUCCESS! Recovered ${extractedData.length} item(s).`);
             } else {
-                console.error(`[Cognitive Extractor] 🚨 Salvage failed. Raw response was:\n${rawJson.slice(0, 500)}`);
-                return [];
+                const preview = rawJson.slice(0, 500);
+                console.error(`[Cognitive Extractor] 🚨 Salvage failed. Raw response was:\n${preview}`);
+                throw new Error(`AI response unparseable — salvage recovered 0 items. Preview: ${preview}`);
             }
         }
         

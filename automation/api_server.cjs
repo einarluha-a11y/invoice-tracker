@@ -10,7 +10,8 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const app = require('./webhook_server.cjs');
 const PORT = process.env.PORT || 3000;
 
-app.post('/api/chat', async (req, res) => {
+const { rateLimit } = require('./webhook_server.cjs');
+app.post('/api/chat', rateLimit(30, 60_000), async (req, res) => {
     try {
         const { message } = req.body;
         if (!message) {
@@ -20,7 +21,7 @@ app.post('/api/chat', async (req, res) => {
         // AI Chat Filter Logic
         const today = new Date().toISOString().split('T')[0];
         const response = await require('./ai_retry.cjs').createWithRetry(anthropic, {
-            model: "claude-sonnet-4-6",
+            model: process.env.AI_MODEL || "claude-sonnet-4-6",
             max_tokens: 1000,
             temperature: 0.1,
             system: `You are an AI assistant managing an invoice tracking system.

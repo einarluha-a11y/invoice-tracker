@@ -21,11 +21,38 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
+// --- SIMPLE IN-MEMORY RATE LIMITER ---
+// Protects /api/intake and /api/chat from abuse without extra dependencies.
+const rateLimitMap = new Map(); // ip -> { count, resetAt }
+function rateLimit(maxRequests, windowMs) {
+    return (req, res, next) => {
+        const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown';
+        const now = Date.now();
+        const entry = rateLimitMap.get(ip);
+        if (!entry || now > entry.resetAt) {
+            rateLimitMap.set(ip, { count: 1, resetAt: now + windowMs });
+            return next();
+        }
+        if (entry.count >= maxRequests) {
+            return res.status(429).json({ error: 'Too many requests. Please slow down.' });
+        }
+        entry.count++;
+        next();
+    };
+}
+// Purge stale entries every 5 minutes to prevent memory growth
+setInterval(() => {
+    const now = Date.now();
+    for (const [ip, entry] of rateLimitMap) {
+        if (now > entry.resetAt) rateLimitMap.delete(ip);
+    }
+}, 5 * 60 * 1000);
+
 /**
  * Step 1: INTAKE 
  * Route that Zapier hits when an email/file triggers.
  */
-app.post('/api/intake', async (req, res) => {
+app.post('/api/intake', rateLimit(20, 60_000), async (req, res) => {
     if (!db || !bucket) {
         console.error('[Webhook] Firebase not initialized — rejecting request. Check FIREBASE_SERVICE_ACCOUNT env var.');
         return res.status(503).json({ error: 'Database unavailable. Check server configuration.' });
@@ -252,5 +279,6 @@ app.use(async (err, req, res, next) => {
     res.status(500).json({ error: 'Internal Server Error', details: err.message });
 });
 
-// Export the Express App so it can be mounted by the primary server
+// Export the Express App and rate limiter so they can be used by the primary server
 module.exports = app;
+module.exports.rateLimit = rateLimit;

@@ -27,12 +27,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const [loading, setLoading] = useState(true);
     const [authError, setAuthError] = useState<string | null>(null);
 
-    // Добавьте сюда ВАШ собственный email, чтобы не потерять доступ!
-    const ALLOWED_EMAILS = [
-        'buhus2203@gmail.com',
-        'einar.luha@gmail.com',
-        'info@accountingresources.eu',
-    ];
+    // Allowed emails are loaded from VITE_ALLOWED_EMAILS env var (comma-separated).
+    // Fallback list is kept for local dev only — override via .env.production for prod.
+    const ALLOWED_EMAILS = (import.meta.env.VITE_ALLOWED_EMAILS || 'buhus2203@gmail.com,einar.luha@gmail.com,info@accountingresources.eu')
+        .split(',')
+        .map((e: string) => e.trim().toLowerCase())
+        .filter(Boolean);
 
     useEffect(() => {
         if (!isFirebaseConfigured || !auth) {

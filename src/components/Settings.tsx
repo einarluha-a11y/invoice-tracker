@@ -79,6 +79,20 @@ export function Settings({ onBack }: SettingsProps) {
     };
 
     const [expandedInstructionsId, setExpandedInstructionsId] = useState<string | null>(null);
+    const [newRuleText, setNewRuleText] = useState<string>('');
+
+    const handleAddRule = async (companyId: string, currentRules: string) => {
+        const trimmed = newRuleText.trim();
+        if (!trimmed) return;
+        const updated = currentRules ? currentRules + '\n' + trimmed : trimmed;
+        try {
+            await updateCompany(companyId, { customAiRules: updated });
+            setNewRuleText('');
+        } catch (error) {
+            console.error("Failed to add rule", error);
+            alert(t('settingsPage.errorPrefix') + " " + error);
+        }
+    };
 
     const handleDeleteSingleRule = async (companyId: string, ruleIndex: number, currentRules: string) => {
         const rulesArray = currentRules.split('\n').filter(r => r.trim() !== '');
@@ -169,9 +183,9 @@ export function Settings({ onBack }: SettingsProps) {
                                             <div style={{ padding: '1rem', borderTop: '1px solid var(--border-color)', background: 'var(--bg-color)', borderBottomLeftRadius: 'var(--radius-md)', borderBottomRightRadius: 'var(--radius-md)' }}>
                                                 <h4 style={{ margin: '0 0 1rem 0', fontSize: '0.95rem', color: 'var(--text-secondary)' }}>{t('settingsPage.currentInstructionsTitle')} {c.name}:</h4>
                                                 {rulesList.length === 0 ? (
-                                                    <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', fontStyle: 'italic', margin: 0 }}>{t('settingsPage.noInstructions')}</p>
+                                                    <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', fontStyle: 'italic', margin: '0 0 1rem 0' }}>{t('settingsPage.noInstructions')}</p>
                                                 ) : (
-                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1rem' }}>
                                                         {rulesList.map((ruleText: string, idx: number) => (
                                                             <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', background: 'var(--surface-color)', padding: '0.8rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
                                                                 <span style={{ fontSize: '0.9rem', color: 'var(--text-primary)', lineHeight: 1.4 }}>{ruleText}</span>
@@ -192,6 +206,36 @@ export function Settings({ onBack }: SettingsProps) {
                                                         </button>
                                                     </div>
                                                 )}
+                                                {/* ADD NEW RULE */}
+                                                <div style={{ borderTop: rulesList.length > 0 ? '1px solid var(--border-color)' : 'none', paddingTop: rulesList.length > 0 ? '1rem' : 0 }}>
+                                                    <label style={{ display: 'block', marginBottom: '0.4rem', fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                                                        {t('settingsPage.addRuleLabel') || 'Добавить инструкцию:'}
+                                                    </label>
+                                                    <textarea
+                                                        rows={3}
+                                                        placeholder={t('settingsPage.addRulePlaceholder') || 'Например: Для вендоров Pronto и Inovatus срок оплаты = дата инвойса + 30 дней.'}
+                                                        value={expandedInstructionsId === c.id ? newRuleText : ''}
+                                                        onChange={e => setNewRuleText(e.target.value)}
+                                                        style={{
+                                                            width: '100%', boxSizing: 'border-box', padding: '0.6rem 0.8rem',
+                                                            borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)',
+                                                            background: 'var(--surface-color)', color: 'var(--text-primary)',
+                                                            fontSize: '0.9rem', lineHeight: 1.5, resize: 'vertical', fontFamily: 'inherit'
+                                                        }}
+                                                    />
+                                                    <button
+                                                        onClick={() => handleAddRule(c.id, c.customAiRules || '')}
+                                                        disabled={!newRuleText.trim()}
+                                                        style={{
+                                                            marginTop: '0.5rem', background: 'var(--header-accent)', color: 'white',
+                                                            border: 'none', padding: '0.5rem 1.1rem', borderRadius: 'var(--radius-sm)',
+                                                            cursor: newRuleText.trim() ? 'pointer' : 'not-allowed', fontSize: '0.9rem',
+                                                            opacity: newRuleText.trim() ? 1 : 0.5
+                                                        }}
+                                                    >
+                                                        {t('settingsPage.addRuleBtn') || 'Сохранить инструкцию'}
+                                                    </button>
+                                                </div>
                                             </div>
                                         )}
                                     </li>

@@ -76,7 +76,7 @@ STATEMENT
 JUNK
 `;
                 const response = await require('./ai_retry.cjs').createWithRetry(anthropic, {
-                    model: "claude-sonnet-4-6",
+                    model: process.env.AI_MODEL || "claude-sonnet-4-6",
                     max_tokens: 50,
                     temperature: 0,
                     system: "You are a strict document classification AI.",

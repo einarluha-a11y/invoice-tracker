@@ -99,11 +99,16 @@ async function reportError(errorCode, context, err) {
             };
             await new Promise((resolve) => {
                 const req = https.request(options, () => resolve());
-                req.on('error', () => resolve()); // Don't crash on webhook failure
+                req.on('error', (e) => {
+                    console.warn('[ErrorReporter] ⚠️  Webhook delivery failed:', e.message);
+                    resolve(); // Don't crash on webhook failure
+                });
                 req.write(body);
                 req.end();
             });
-        } catch (_) {}
+        } catch (webhookErr) {
+            console.warn('[ErrorReporter] ⚠️  Webhook send threw:', webhookErr.message);
+        }
     }
 }
 

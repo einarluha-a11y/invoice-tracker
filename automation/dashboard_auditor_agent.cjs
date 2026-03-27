@@ -100,7 +100,7 @@ ${JSON.stringify(invoices, null, 2)}
                 
                 try {
                     const response = await require('./ai_retry.cjs').createWithRetry(anthropic, {
-                        model: "claude-sonnet-4-6",
+                        model: process.env.AI_MODEL || "claude-sonnet-4-6",
                         max_tokens: 300,
                         temperature: 0,
                         system: "You are an expert database administrator AI. Return ONLY valid JSON arrays.",
