@@ -1,4 +1,4 @@
-import { collection, onSnapshot, doc, deleteDoc, updateDoc, query, orderBy, where } from 'firebase/firestore';
+import { collection, onSnapshot, doc, deleteDoc, updateDoc, query, orderBy, where, limit } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Invoice, InvoiceStatus } from './mockInvoices';
 
@@ -89,6 +89,7 @@ export const parseDate = (rawDate: string): string => {
 
 export const subscribeToInvoices = (
     companyId: string,
+    limitCount: number,
     onData: (invoices: Invoice[]) => void,
     onError: (error: Error) => void
 ) => {
@@ -98,8 +99,13 @@ export const subscribeToInvoices = (
         return () => { };
     }
 
-    // Remove orderBy from query to avoid missing composite index errors in Firebase
-    const q = query(collection(db, 'invoices'), where('companyId', '==', companyId));
+    // Apply native server-side indexing to prevent O(N) client RAM crashes!
+    const q = query(
+        collection(db, 'invoices'), 
+        where('companyId', '==', companyId),
+        orderBy('dateCreated', 'desc'),
+        limit(limitCount)
+    );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
         const fetchedData: Invoice[] = [];
@@ -128,11 +134,6 @@ export const subscribeToInvoices = (
                 paymentTerms: data.paymentTerms,
                 viesValidation: data.viesValidation,
             });
-        });
-
-        // Sort manually by dateCreated descending to avoid needing a Firestore index
-        fetchedData.sort((a, b) => {
-            return new Date(b.dateCreated).getTime() - new Date(a.dateCreated).getTime();
         });
 
         onData(fetchedData);

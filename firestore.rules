@@ -1,0 +1,18 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Hardcoded allowlist matching the frontend AuthContext
+    function isAdmin() {
+      return request.auth != null && (
+        request.auth.token.email.lower() == 'buhus2203@gmail.com' ||
+        request.auth.token.email.lower() == 'einar.luha@gmail.com' ||
+        request.auth.token.email.lower() == 'info@accountingresources.eu'
+      );
+    }
+
+    match /{document=**} {
+      allow read, write: if isAdmin();
+    }
+  }
+}

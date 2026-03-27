@@ -59,7 +59,24 @@ async function processDLQ() {
             const fileUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodedPath}?alt=media&token=${uuid}`;
             console.log(`[DLQ Watchdog] Recovery Upload Successful: ${fileUrl}`);
 
-            // 2. Transmit to Firestore Safety Net
+            // 2. Deduplication check — prevent double-insertion if DLQ is retried multiple times
+            const invoiceId = extractedMetadata.invoiceId;
+            const vendorName = extractedMetadata.vendorName;
+            if (invoiceId && vendorName) {
+                const dupCheck = await db.collection('invoices')
+                    .where('invoiceId', '==', String(invoiceId))
+                    .where('companyId', '==', companyId)
+                    .limit(1)
+                    .get();
+                if (!dupCheck.empty) {
+                    console.log(`[DLQ Watchdog] ℹ️  Skipping already-recovered invoice ${invoiceId} (${vendorName}). Purging DLQ entry.`);
+                    fs.unlinkSync(jsonPath);
+                    fs.unlinkSync(pdfPath);
+                    continue;
+                }
+            }
+
+            // 3. Transmit to Firestore Safety Net
             extractedMetadata.fileUrl = fileUrl;
             extractedMetadata.companyId = companyId;
             extractedMetadata.status = 'NEEDS_REVIEW'; // Force manual review from DLQ recovery
@@ -71,7 +88,7 @@ async function processDLQ() {
             const ref = await db.collection('invoices').add(extractedMetadata);
             console.log(`[DLQ Watchdog] ✅ Successfully reconciled payload to database (${ref.id}). Purging queue cache.`);
 
-            // 3. Purge DLQ Local Cache
+            // 4. Purge DLQ Local Cache
             fs.unlinkSync(jsonPath);
             fs.unlinkSync(pdfPath);
 

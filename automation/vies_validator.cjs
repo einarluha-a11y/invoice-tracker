@@ -60,8 +60,9 @@ function validateVat(fullVatCode) {
         });
 
         // Add timeout to prevent hanging the entire ingestion pipeline
+        // req.abort() was removed in Node.js v18 — use req.destroy() instead
         req.setTimeout(5000, () => {
-            req.abort();
+            req.destroy();
             return resolve({ isValid: false, name: null, error: 'VIES API Timeout' });
         });
 

@@ -179,11 +179,11 @@ async function writeToFirestore(dataArray) {
     if (!dataArray || !Array.isArray(dataArray) || dataArray.length === 0) return;
 
     try {
-        console.log(`[Firestore] Adding ${dataArray.length} invoice(s) to database...`);
-        const batch = db.batch();
+        console.log(`[Firestore] Adding ${dataArray.length} invoice(s) to database via Atomic Transaction...`);
         const invoicesRef = db.collection('invoices');
         const webhooksToSend = [];
 
+        await db.runTransaction(async (t) => {
         for (const data of dataArray) {
             const docRef = invoicesRef.doc(); // Auto-generate ID
 
@@ -239,7 +239,7 @@ async function writeToFirestore(dataArray) {
 
             // 1. Check by Invoice ID + Vendor Name + Company
             if (data.invoiceId) {
-                const idQuery = await invoicesRef.where('invoiceId', '==', invoiceId).get();
+                const idQuery = await t.get(invoicesRef.where('invoiceId', '==', invoiceId));
                 for (const doc of idQuery.docs) {
                     const existingData = doc.data();
                     const existingVendor = (existingData.vendorName || '').toString().toLowerCase().trim();
@@ -255,10 +255,9 @@ async function writeToFirestore(dataArray) {
 
             // 2. Check by Date + Amount + Vendor Name + Company (Catches ID variations like "Arvenr6199" vs "6199")
             if (!isDuplicate && data.dateCreated && numAmount !== 0) {
-                const dateQuery = await invoicesRef
+                const dateQuery = await t.get(invoicesRef
                     .where('dateCreated', '==', data.dateCreated)
-                    .where('amount', '==', numAmount)
-                    .get();
+                    .where('amount', '==', numAmount));
 
                 for (const doc of dateQuery.docs) {
                     const existingData = doc.data();
@@ -278,10 +277,10 @@ async function writeToFirestore(dataArray) {
                 if (data.fileUrl && existingDocId) {
                     // Prevent AI hallucinations (mistaking 39 for 41) from maliciously overwriting the real 41's PDF.
                     // Only patch the fileUrl if the existing record in the DB is completely empty (no file attached).
-                    const currDoc = await invoicesRef.doc(existingDocId).get();
+                    const currDoc = await t.get(invoicesRef.doc(existingDocId));
                     if (!currDoc.data().fileUrl) {
                         console.log(`[Firestore] Patching duplicate invoice with missing fileUrl: ${vendorName} - ${invoiceId}`);
-                        batch.update(invoicesRef.doc(existingDocId), {
+                        t.update(invoicesRef.doc(existingDocId), {
                             fileUrl: data.fileUrl
                         });
                     } else {
@@ -301,10 +300,10 @@ async function writeToFirestore(dataArray) {
                 const targetAmount = Math.abs(numAmount);
 
                 // Filter by companyId to prevent cross-company credit note matching (Rule 10)
-                const pendingSnapshotQuery = companyId
+                const pendingQuery = companyId
                     ? invoicesRef.where('companyId', '==', companyId).where('status', '!=', 'Paid')
                     : invoicesRef.where('status', '!=', 'Paid');
-                const pendingSnapshot = await pendingSnapshotQuery.get();
+                const pendingSnapshot = await t.get(pendingQuery);
 
                 for (const potentialOffset of pendingSnapshot.docs) {
                     const passData = potentialOffset.data();
@@ -313,14 +312,14 @@ async function writeToFirestore(dataArray) {
                         const v2 = String(passData.vendorName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
                         if (v1 && v2 && (v1.includes(v2) || v2.includes(v1))) {
                             console.log(`[Credit-Offset] Matched credit invoice to original invoice ${passData.invoiceId} (Amount: ${passData.amount}). Marking original as Paid.`);
-                            batch.update(potentialOffset.ref, { status: 'Paid' });
+                            t.update(potentialOffset.ref, { status: 'Paid' });
                             break; 
                         }
                     }
                 }
             }
 
-            batch.set(docRef, {
+            t.set(docRef, {
                 invoiceId: invoiceId,
                 vendorName: vendorName,
                 amount: numAmount,
@@ -369,9 +368,9 @@ async function writeToFirestore(dataArray) {
                 companyId: data.companyId || null
             });
         }
+        }); // END TRANSACTION BLOCK
 
-        await batch.commit();
-        console.log(`[Firestore] ${dataArray.length} invoice(s) successfully written!`);
+        console.log(`[Firestore] ${dataArray.length} invoice(s) successfully written via Transaction!`);
 
         // --- ZAPIER WEBHOOKS DISPATCH ---
         for (const payload of webhooksToSend) {
@@ -597,7 +596,11 @@ async function reconcilePayment(reference, description, paidAmount, totalBankDra
                     payoutData.originalForeignAmount = originalAmount;
                     payoutData.originalForeignCurrency = matchedDoc.data().currency || foreignCurrency || 'UNKNOWN';
                     
-                    matchedDoc.ref.update(payoutData);
+                    await db.runTransaction(async (t) => {
+                        const freshDoc = await t.get(matchedDoc.ref);
+                        if (!freshDoc.exists || freshDoc.data().status === 'Paid') return;
+                        t.update(matchedDoc.ref, payoutData);
+                    });
                     fxOverwriteTriggered = true;
                 } else {
                     let payoutData = { status: 'Paid' };
@@ -606,7 +609,11 @@ async function reconcilePayment(reference, description, paidAmount, totalBankDra
                         payoutData.bankFee = bankFee;
                         payoutData.totalBankDrain = totalBankDrain || paidAmount;
                     }
-                    matchedDoc.ref.update(payoutData);
+                    await db.runTransaction(async (t) => {
+                        const freshDoc = await t.get(matchedDoc.ref);
+                        if (!freshDoc.exists || freshDoc.data().status === 'Paid') return;
+                        t.update(matchedDoc.ref, payoutData);
+                    });
                 }
             }
         }
@@ -652,7 +659,11 @@ async function reconcilePayment(reference, description, paidAmount, totalBankDra
                             crossCurrencyPayload.bankFee = bankFee;
                             crossCurrencyPayload.totalBankDrain = totalBankDrain || paidAmount;
                         }
-                        await doc.ref.update(crossCurrencyPayload);
+                        await db.runTransaction(async (t) => {
+                            const freshDoc = await t.get(doc.ref);
+                            if (!freshDoc.exists || freshDoc.data().status === 'Paid') return;
+                            t.update(doc.ref, crossCurrencyPayload);
+                        });
                         data.amount = paidAmount; // Update local memory
                         break;
                     }
@@ -673,7 +684,11 @@ async function reconcilePayment(reference, description, paidAmount, totalBankDra
                     globalPayload.bankFee = bankFee;
                     globalPayload.totalBankDrain = totalBankDrain || paidAmount;
                 }
-                await docRef.update(globalPayload);
+                await db.runTransaction(async (t) => {
+                    const freshDoc = await t.get(docRef);
+                    if (!freshDoc.exists || freshDoc.data().status === 'Paid') return;
+                    t.update(docRef, globalPayload);
+                });
                 console.log(`  -> Marked as Paid!`);
 
                 // --- PRO FORMA / PREPAYMENT CASCADE DUPLICATE RESOLUTION --- //
@@ -701,7 +716,12 @@ async function reconcilePayment(reference, description, paidAmount, totalBankDra
                             // Only trigger Cascade Paid if one of them is clearly a prepayment / ettemaks
                             if (isPrepayment(matchedId) || isPrepayment(pData.invoiceId)) {
                                 console.log(`[Reconciliation-ProFormaSwap] Found corresponding mirror invoice (ProForma/Real pair): ${pData.invoiceId}. Marking as Paid automatically.`);
-                                await doc.ref.update({ status: 'Paid' });
+                                await db.runTransaction(async (t) => {
+                                    const freshDoc = await t.get(doc.ref);
+                                    if (freshDoc.exists && freshDoc.data().status !== 'Paid') {
+                                        t.update(doc.ref, { status: 'Paid' });
+                                    }
+                                });
                                 // Keep scanning in case there are multiple
                             }
                         }
@@ -712,7 +732,12 @@ async function reconcilePayment(reference, description, paidAmount, totalBankDra
                 const newAmount = data.amount - paidAmount;
                 // If it was unpaid, mark as pending to show partial payment
                 const newStatus = (data.status === 'Unpaid' || !data.status) ? 'Pending' : data.status;
-                await docRef.update({ amount: parseFloat(newAmount.toFixed(2)), status: newStatus });
+                await db.runTransaction(async (t) => {
+                    const freshDoc = await t.get(docRef);
+                    if (freshDoc.exists) {
+                        t.update(docRef, { amount: parseFloat(newAmount.toFixed(2)), status: newStatus });
+                    }
+                });
                 console.log(`  -> Partial payment. Remaining: €${newAmount.toFixed(2)}. Status: ${newStatus}`);
             }
         } else {

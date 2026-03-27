@@ -34,16 +34,23 @@ async function intellectualSupervisorGate(invoiceData) {
     }
     
     // 3. Strict Mandatory Registration Data
-    // Note: The User strictly commands that "NOT_FOUND_ON_INVOICE" is no longer an acceptable state.
-    // The AI must deduce the data if physically absent.
-    const isRegMissing = !invoiceData.supplierRegistration || invoiceData.supplierRegistration === "NOT_FOUND_ON_INVOICE" || invoiceData.supplierRegistration === "Not_Found";
-    const isVatMissing = !invoiceData.supplierVat || invoiceData.supplierVat === "NOT_FOUND_ON_INVOICE" || invoiceData.supplierVat === "Not_Found";
+    // Private persons (no company suffix) are exempt from VAT/Reg requirements.
+    // Demanding these fields for private persons causes 5 pointless re-extraction attempts.
+    const companyMarkers = /\b(OÜ|AS|Ltd|LLC|GmbH|SIA|UAB|Sp\.?\s*z\s*o\.?o\.?|S\.A\.|Inc|Corp|BV|NV|SRL|SARL)\b/i;
+    const isPrivatePerson = invoiceData.vendorName && !companyMarkers.test(invoiceData.vendorName);
 
-    if (isRegMissing) {
-        missingFields.push("Supplier Registration Number");
-    }
-    if (isVatMissing) {
-        missingFields.push("Supplier VAT Number");
+    if (!isPrivatePerson) {
+        const isRegMissing = !invoiceData.supplierRegistration || invoiceData.supplierRegistration === "NOT_FOUND_ON_INVOICE" || invoiceData.supplierRegistration === "Not_Found";
+        const isVatMissing = !invoiceData.supplierVat || invoiceData.supplierVat === "NOT_FOUND_ON_INVOICE" || invoiceData.supplierVat === "Not_Found";
+
+        if (isRegMissing) {
+            missingFields.push("Supplier Registration Number");
+        }
+        if (isVatMissing) {
+            missingFields.push("Supplier VAT Number");
+        }
+    } else {
+        console.log(`[Supervisor] 👤 Vendor "${invoiceData.vendorName}" appears to be a private person — skipping VAT/Reg requirement.`);
     }
     
     // 4. Mandatory Item Description

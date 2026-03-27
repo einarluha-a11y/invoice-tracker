@@ -18,11 +18,26 @@ const db = admin.firestore();
  */
 async function runDashboardAudit() {
     console.log(`[Dashboard Auditor] 🕵️ Starting Post-Flight System Sweep...`);
-    
+
     try {
-        const snapshot = await db.collection('invoices').get();
+        // Fetch all companies so we audit each one in isolation (prevents cross-company false duplicates)
+        const companiesSnap = await db.collection('companies').get();
+        const companyIds = companiesSnap.docs.map(d => d.id);
+
+        if (companyIds.length === 0) {
+            // Fallback: no companies configured — audit everything as before
+            companyIds.push(null);
+        }
+
+        let totalAudited = 0;
+
+        for (const cId of companyIds) {
+        const invoicesQuery = cId
+            ? db.collection('invoices').where('companyId', '==', cId)
+            : db.collection('invoices');
+        const snapshot = await invoicesQuery.get();
         const allInvoices = [];
-        
+
         snapshot.forEach(doc => {
             const data = doc.data();
             allInvoices.push({
@@ -31,12 +46,15 @@ async function runDashboardAudit() {
                 vendorName: data.vendorName || data.vendor || 'Unknown',
                 amount: data.amount,
                 dateCreated: data.dateCreated,
+                companyId: data.companyId || null,
                 description: data.description || (data.lineItems && data.lineItems.length > 0 ? data.lineItems[0].description : ''),
                 hasFile: !!data.fileUrl
             });
         });
 
-        console.log(`[Dashboard Auditor] 📦 Fetched ${allInvoices.length} invoices from the Dashboard registry.`);
+        if (allInvoices.length === 0) continue;
+        totalAudited += allInvoices.length;
+        console.log(`[Dashboard Auditor] 📦 Auditing company ${cId || 'ALL'}: ${allInvoices.length} invoice(s)`);
 
         // Group by vendor for better AI context chunks (so Claude sees the vendor history at once)
         const vendorGroups = {};
@@ -125,8 +143,11 @@ ${JSON.stringify(invoices, null, 2)}
             }
             console.log(`[Dashboard Auditor] 🧹 Successfully scrubbed ${deletedCount} records from the Dashboard!`);
         } else {
-            console.log(`\n[Dashboard Auditor] 🌟 DATABASE IS 100% CLEAN. No anomalies detected by AI.`);
+            console.log(`\n[Dashboard Auditor] 🌟 Company ${cId || 'ALL'} is CLEAN. No anomalies detected by AI.`);
         }
+
+        } // end for (const cId of companyIds)
+        console.log(`[Dashboard Auditor] ✅ Sweep complete. Total records audited: ${totalAudited}`);
 
     } catch (err) {
         console.error(`[Dashboard Auditor] Critical System Failure:`, err);

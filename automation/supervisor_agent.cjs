@@ -38,10 +38,21 @@ async function runSupervisor() {
                 console.log(`   -> Vendor: ${data.vendorName}`);
                 console.log(`   -> Internal Ref: ${data.invoiceId}`);
                 console.log(`   -> Reason: ${strikeReason}`);
-                
-                await doc.ref.delete();
-                console.log(`[Supervisor Agent] 💥 Action Taken: Record forcefully eradicated from Dashboard.\n`);
-                anomalyCount++;
+
+                // Rule 31 safety: never delete a record that has a file attached.
+                // A zero-amount record with a file attached means the PDF exists but AI
+                // failed to extract the amount — that needs manual review, not deletion.
+                if (data.fileUrl) {
+                    console.log(`[Supervisor Agent] ⚠️  STRIKE BLOCKED: Record has an attached file (Rule 31). Marking for manual review instead of deleting.`);
+                    await doc.ref.update({
+                        status: 'NEEDS_REVIEW',
+                        validationWarnings: [...(data.validationWarnings || []), `SUPERVISOR: Zero-amount anomaly flagged but file present — manual review required (${strikeReason})`]
+                    });
+                } else {
+                    await doc.ref.delete();
+                    console.log(`[Supervisor Agent] 💥 Action Taken: Record forcefully eradicated from Dashboard.\n`);
+                    anomalyCount++;
+                }
             }
         }
 

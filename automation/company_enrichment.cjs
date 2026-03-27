@@ -34,17 +34,22 @@ function normalizeVendorName(name) {
         .trim();
 }
 
-/** Simple HTTPS GET returning parsed JSON */
-function httpsGet(url) {
+/** Simple HTTPS GET returning parsed JSON (8s timeout prevents pipeline hangs on slow registries) */
+function httpsGet(url, timeoutMs = 8000) {
     return new Promise((resolve, reject) => {
-        https.get(url, { headers: { 'Accept': 'application/json', 'User-Agent': 'InvoiceTracker/1.0' } }, (res) => {
+        const req = https.get(url, { headers: { 'Accept': 'application/json', 'User-Agent': 'InvoiceTracker/1.0' } }, (res) => {
             let data = '';
             res.on('data', chunk => data += chunk);
             res.on('end', () => {
                 try { resolve(JSON.parse(data)); }
                 catch (e) { resolve(null); }
             });
-        }).on('error', reject);
+        });
+        req.on('error', reject);
+        req.setTimeout(timeoutMs, () => {
+            req.destroy();
+            reject(new Error(`httpsGet timeout after ${timeoutMs}ms`));
+        });
     });
 }
 

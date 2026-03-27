@@ -57,7 +57,11 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
                         
                         if (vName.includes(bName) || bName.includes(vName) || (invId.length > 3 && ref.includes(invId))) {
                             console.log(`[Accountant Agent] 🪙 MATCH FOUND! Reconciling Invoice ${invData.invoiceId} (${invData.vendorName}) as 'Paid' / Makstud!`);
-                            await doc.ref.update({ status: 'Paid' });
+                            await db.runTransaction(async (t) => {
+                                const freshDoc = await t.get(doc.ref);
+                                if (!freshDoc.exists || freshDoc.data().status === 'Paid') return;
+                                t.update(doc.ref, { status: 'Paid' });
+                            });
                             matched = true;
                             break;
                         }
@@ -80,7 +84,13 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
                     
                     if (recovered) {
                         console.log(`[Accountant Agent] 🕵️‍♂️ Search Agent found the missing invoice! Reconciling it as 'Paid'...`);
-                        await db.collection('invoices').doc(recovered.id).update({ status: 'Paid' });
+                        await db.runTransaction(async (t) => {
+                            const recRef = db.collection('invoices').doc(recovered.id);
+                            const recDoc = await t.get(recRef);
+                            if (recDoc.exists && recDoc.data().status !== 'Paid') {
+                                t.update(recRef, { status: 'Paid' });
+                            }
+                        });
                     } else {
                         console.log(`[Accountant Agent] 📉 Search Agent could not locate the invoice in the email archives.`);
                     }
@@ -277,14 +287,17 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
 
         if (ghostDocIdToDestroy) {
             // Safety: re-fetch before deletion — state may have changed since we found it
-            const ghostDoc = await db.collection('invoices').doc(ghostDocIdToDestroy).get();
-            if (ghostDoc.exists && !ghostDoc.data().fileUrl) {
-                console.log(`[Accountant Agent] 🗑️  Ghost verified and deleted: ${ghostDocIdToDestroy}`);
-                await db.collection('invoices').doc(ghostDocIdToDestroy).delete();
-            } else {
-                console.warn(`[Accountant Agent] ⚠️  Ghost deletion aborted: doc state changed or file now present (${ghostDocIdToDestroy})`);
-                ghostDocIdToDestroy = null; // Don't skip the incoming record
-            }
+            const ghostRef = db.collection('invoices').doc(ghostDocIdToDestroy);
+            await db.runTransaction(async (t) => {
+                const ghostDoc = await t.get(ghostRef);
+                if (ghostDoc.exists && !ghostDoc.data().fileUrl) {
+                    console.log(`[Accountant Agent] 🗑️  Ghost verified and deleted via Transaction lock: ${ghostDocIdToDestroy}`);
+                    t.delete(ghostRef);
+                } else {
+                    console.warn(`[Accountant Agent] ⚠️  Ghost deletion aborted: doc state changed or file now present (${ghostDocIdToDestroy})`);
+                    ghostDocIdToDestroy = null; // Don't skip the incoming record
+                }
+            });
         }
 
         if (isDuplicate) {
