@@ -23,9 +23,8 @@ export const InvoicePdfViewer: React.FC<InvoicePdfViewerProps> = ({ url }) => {
 
         const loadPdf = async () => {
             try {
-                // Fetch safely through our local Vercel serverless proxy endpoint to bypass Firebase CORS natively
-                const proxyUrl = `/api/proxy?url=${encodeURIComponent(url)}`;
-                const response = await fetch(proxyUrl);
+                // Fetch directly from Firebase Storage since global CORS is natively configured
+                const response = await fetch(url);
 
                 if (!response.ok) throw new Error('Failed to load document via local proxy.');
 

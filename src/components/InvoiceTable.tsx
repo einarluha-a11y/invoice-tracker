@@ -29,41 +29,6 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
     const [visibleLimit, setVisibleLimit] = useState(100);
     const [isExportingPDF, setIsExportingPDF] = useState(false);
     const [viewingPdfUrl, setViewingPdfUrl] = useState<string | null>(null);
-    const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
-    const [isLoadingPdf, setIsLoadingPdf] = useState(false);
-
-    useEffect(() => {
-        let active = true;
-        if (viewingPdfUrl && viewingPdfUrl.toLowerCase().includes('.pdf')) {
-            setIsLoadingPdf(true);
-
-            // Route through a free CORS proxy to bypass Firebase's strict bucket rules
-            const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(viewingPdfUrl)}`;
-
-            fetch(proxyUrl)
-                .then(res => res.blob())
-                .then(blob => {
-                    if (active) {
-                        const url = URL.createObjectURL(blob);
-                        setPdfBlobUrl(url);
-                        setIsLoadingPdf(false);
-                    }
-                })
-                .catch(err => {
-                    console.error('Failed to load PDF blob:', err);
-                    setIsLoadingPdf(false);
-                });
-        } else {
-            setPdfBlobUrl(null);
-        }
-
-        return () => {
-            active = false;
-            if (pdfBlobUrl) {
-                URL.revokeObjectURL(pdfBlobUrl);
-            }
-        };
-    }, [viewingPdfUrl]);
 
     const handleSort = (field: SortField) => {
         onSort(field);
