@@ -4,6 +4,7 @@ const { DocumentProcessorServiceClient } = require('@google-cloud/documentai').v
 const admin = require('firebase-admin');
 const path = require('path');
 const crypto = require('crypto');
+const { reportError } = require('./error_reporter.cjs');
 
 // --- Google Cloud / Firebase Setup ---
 const serviceAccount = require('./google-credentials.json');
@@ -168,8 +169,19 @@ app.post('/api/intake', async (req, res) => {
 
     } catch (err) {
         console.error("Pipeline Error:", err);
+        // Link pipeline crash directly to the unified UI Dashboard Error Reporter
+        await reportError('WEBHOOK_PIPELINE_ERROR', req.body?.companyId || 'UNKNOWN_ZAPIER_SOURCE', err).catch(() => {});
         res.status(500).json({ error: err.message });
     }
+});
+
+// --- GLOBAL EXPRESS ERROR BOUNDARY ---
+// Catches malicious payload parsing crashes (e.g., malformed JSON over 50MB) 
+// or async hooks that miss local try/catch blocks
+app.use(async (err, req, res, next) => {
+    console.error('[Express Global Boundary] Caught unhandled exception:', err);
+    await reportError('EXPRESS_FATAL_CRASH', req.path || 'UNKNOWN_PATH', err).catch(() => {});
+    res.status(500).json({ error: 'Internal Server Error', details: err.message });
 });
 
 // Export the Express App so it can be mounted by the primary server
