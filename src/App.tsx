@@ -5,9 +5,9 @@ import { Login } from './components/Login';
 import { useAuth } from './context/AuthContext';
 import { InvoiceStatus, Invoice, mockInvoices } from './data/mockInvoices';
 import { subscribeToInvoices, deleteInvoice, updateInvoice } from './data/api';
-import { doc, updateDoc } from 'firebase/firestore';
 import { db } from './firebase';
 import { Settings } from './components/Settings';
+import { SystemLogs } from './components/SystemLogs';
 import { useCompanies, Company } from './hooks/useCompanies';
 import { InvoiceModal } from './components/InvoiceModal';
 import { AiChat } from './components/AiChat';
@@ -19,7 +19,7 @@ function App() {
     const { companies, companiesLoading, companiesError } = useCompanies();
 
     const [selectedCompanyId, setSelectedCompanyId] = useState<string>('');
-    const [view, setView] = useState<'dashboard' | 'settings'>('dashboard');
+    const [view, setView] = useState<'dashboard' | 'settings' | 'logs'>('dashboard');
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState<InvoiceStatus | 'All' | 'Unpaid'>('All');
     const [startDate, setStartDate] = useState('');
@@ -159,6 +159,9 @@ function App() {
     if (view === 'settings') {
         return <Settings onBack={() => setView('dashboard')} />;
     }
+    if (view === 'logs') {
+        return <SystemLogs onBack={() => setView('dashboard')} />;
+    }
 
     return (
         <div className="dashboard-container">
@@ -206,6 +209,20 @@ function App() {
 
                     {user && (
                         <>
+                            <button
+                                onClick={() => setView('logs')}
+                                style={{
+                                    background: 'transparent',
+                                    border: '1px solid var(--border-color)',
+                                    color: 'var(--text-secondary)',
+                                    padding: '0.4rem 0.8rem',
+                                    borderRadius: 'var(--radius-md)',
+                                    cursor: 'pointer',
+                                    fontSize: '0.9rem'
+                                }}
+                            >
+                                Журнал
+                            </button>
                             <button
                                 onClick={() => setView('settings')}
                                 style={{

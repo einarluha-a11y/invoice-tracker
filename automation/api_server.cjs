@@ -115,7 +115,7 @@ ${customRulesSection}Raw Data:
 ${rawText}
 `;
     try {
-        const response = await anthropic.messages.create({
+        const response = await require('./ai_retry.cjs').createWithRetry(anthropic, {
             model: "claude-sonnet-4-6",
             max_tokens: 1500,
             temperature: 0.1,
@@ -788,7 +788,7 @@ ${rawText}
 `;
 
     try {
-        const response = await anthropic.messages.create({
+        const response = await require('./ai_retry.cjs').createWithRetry(anthropic, {
             model: "claude-haiku-4-5-20251001",
             max_tokens: 2000,
             temperature: 0.1,
@@ -1221,7 +1221,7 @@ app.post('/api/chat', async (req, res) => {
 
         // AI Chat Filter Logic
         const today = new Date().toISOString().split('T')[0];
-        const response = await anthropic.messages.create({
+        const response = await require('./ai_retry.cjs').createWithRetry(anthropic, {
             model: "claude-sonnet-4-6",
             max_tokens: 1000,
             temperature: 0.1,

@@ -132,7 +132,7 @@ IF TYPE C (JUNK), respond ONLY with an empty JSON array: []`;
             systemPrompt += `\n\n🟢 CRITICAL COMPANY-SPECIFIC INSTRUCTIONS:\n${customRules}\n\nTHESE INSTRUCTIONS OVERRIDE EVERYTHING. YOU MUST EXECUTE THEM FLAWLESSLY. If instructed to calculate a dueDate + X days from creation, you MUST mathematically compute the exact chronological string date (YYYY-MM-DD)!`;
         }
 
-        const response = await anthropic.messages.create({
+        const response = await require('./ai_retry.cjs').createWithRetry(anthropic, {
             model: "claude-sonnet-4-6",
             max_tokens: 4000,
             temperature: 0.1,

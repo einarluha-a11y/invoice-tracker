@@ -78,7 +78,7 @@ ${JSON.stringify(invoices, null, 2)}
 `;
                 
                 try {
-                    const response = await anthropic.messages.create({
+                    const response = await require('./ai_retry.cjs').createWithRetry(anthropic, {
                         model: "claude-sonnet-4-6",
                         max_tokens: 300,
                         temperature: 0,

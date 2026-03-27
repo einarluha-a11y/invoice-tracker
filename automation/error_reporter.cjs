@@ -9,6 +9,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const admin = require('firebase-admin');
 
 const ERROR_LOG = path.join(__dirname, '..', 'backend_errors.log');
 const MAX_LOG_SIZE_BYTES = 1 * 1024 * 1024; // 1MB — rotate when exceeded
@@ -48,6 +49,19 @@ async function reportError(errorCode, context, err) {
     } catch (logErr) {
         console.error('[ErrorReporter] Failed to write error log:', logErr.message);
     }
+
+    // Attempt to broadcast securely to the Firestore UI dashboard
+    try {
+        if (admin.apps.length > 0) {
+            await admin.firestore().collection('system_logs').add({
+                errorCode,
+                context,
+                message,
+                timestamp,
+                createdAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+        }
+    } catch (fsErr) { /* Ignore UI sync failure to prevent loop crashes */ }
 
     console.error(`[ErrorReporter] 🚨 ${errorCode}: ${context} — ${message}`);
 

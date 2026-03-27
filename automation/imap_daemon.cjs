@@ -115,7 +115,7 @@ ${customRulesSection}Raw Data:
 ${rawText}
 `;
     try {
-        const response = await anthropic.messages.create({
+        const response = await require('./ai_retry.cjs').createWithRetry(anthropic, {
             model: "claude-sonnet-4-6",
             max_tokens: 1500,
             temperature: 0.1,
@@ -300,7 +300,11 @@ async function writeToFirestore(dataArray) {
                 finalStatus = 'Paid'; // Credit invoices don't need payment
                 const targetAmount = Math.abs(numAmount);
 
-                const pendingSnapshot = await invoicesRef.where('status', '!=', 'Paid').get();
+                // Filter by companyId to prevent cross-company credit note matching (Rule 10)
+                const pendingSnapshotQuery = companyId
+                    ? invoicesRef.where('companyId', '==', companyId).where('status', '!=', 'Paid')
+                    : invoicesRef.where('status', '!=', 'Paid');
+                const pendingSnapshot = await pendingSnapshotQuery.get();
 
                 for (const potentialOffset of pendingSnapshot.docs) {
                     const passData = potentialOffset.data();
@@ -324,8 +328,14 @@ async function writeToFirestore(dataArray) {
                 taxAmount: Number(data.taxAmount) || 0,
                 currency: data.currency || 'EUR',
                 dateCreated: data.dateCreated || '',
-                invoiceYear: data.dateCreated ? data.dateCreated.split("-")[2] || data.dateCreated.split(".")[2] : new Date().getFullYear().toString(),
-                invoiceMonth: data.dateCreated ? parseInt(data.dateCreated.split("-")[1] || data.dateCreated.split(".")[1] || "1", 10).toString() : (new Date().getMonth() + 1).toString(),
+                // invoiceYear/Month: AI outputs YYYY-MM-DD → [0]=year, [1]=month
+                // Legacy fallback for DD.MM.YYYY → split(".")[2]=year, split(".")[1]=month
+                invoiceYear: data.dateCreated
+                    ? (data.dateCreated.includes('-') ? data.dateCreated.split("-")[0] : data.dateCreated.split(".")[2])
+                    : new Date().getFullYear().toString(),
+                invoiceMonth: data.dateCreated
+                    ? parseInt(data.dateCreated.includes('-') ? data.dateCreated.split("-")[1] : (data.dateCreated.split(".")[1] || "1"), 10).toString()
+                    : (new Date().getMonth() + 1).toString(),
                 dueDate: data.dueDate || '',
                 status: finalStatus,
                 supplierRegistration: data.supplierRegistration || "",
@@ -333,9 +343,13 @@ async function writeToFirestore(dataArray) {
                 validationWarnings: data.validationWarnings || [],
                 lineItems: data.lineItems || [],
                 createdAt: admin.firestore.FieldValue.serverTimestamp(),
-                companyId: data.companyId || 'bP6dc0PMdFtnmS5QTX4N',
+                companyId: data.companyId || null,
                 fileUrl: data.fileUrl || null
             });
+
+            if (!data.companyId) {
+                console.error(`[Firestore] ⚠️  companyId missing for invoice ${invoiceId} (vendor: ${vendorName}). Saved without company — manual review required.`);
+            }
 
             webhooksToSend.push({
                 invoiceId: invoiceId,
@@ -343,12 +357,16 @@ async function writeToFirestore(dataArray) {
                 amount: numAmount,
                 currency: data.currency || 'EUR',
                 dateCreated: data.dateCreated || '',
-                invoiceYear: data.dateCreated ? data.dateCreated.split("-")[2] || data.dateCreated.split(".")[2] : new Date().getFullYear().toString(),
-                invoiceMonth: data.dateCreated ? parseInt(data.dateCreated.split("-")[1] || data.dateCreated.split(".")[1] || "1", 10).toString() : (new Date().getMonth() + 1).toString(),
+                invoiceYear: data.dateCreated
+                    ? (data.dateCreated.includes('-') ? data.dateCreated.split("-")[0] : data.dateCreated.split(".")[2])
+                    : new Date().getFullYear().toString(),
+                invoiceMonth: data.dateCreated
+                    ? parseInt(data.dateCreated.includes('-') ? data.dateCreated.split("-")[1] : (data.dateCreated.split(".")[1] || "1"), 10).toString()
+                    : (new Date().getMonth() + 1).toString(),
                 dueDate: data.dueDate || '',
                 status: finalStatus,
                 fileUrl: data.fileUrl || null,
-                companyId: data.companyId || 'bP6dc0PMdFtnmS5QTX4N'
+                companyId: data.companyId || null
             });
         }
 
@@ -788,7 +806,7 @@ ${rawText}
 `;
 
     try {
-        const response = await anthropic.messages.create({
+        const response = await require('./ai_retry.cjs').createWithRetry(anthropic, {
             model: "claude-haiku-4-5-20251001",
             max_tokens: 2000,
             temperature: 0.1,
@@ -799,7 +817,22 @@ ${rawText}
         const jsonString = response.content[0].text.trim();
         const cleanJson = jsonString.replace(/^```json/g, '').replace(/^```/g, '').replace(/```$/g, '').trim();
 
-        return JSON.parse(cleanJson);
+        try {
+            return JSON.parse(cleanJson);
+        } catch (parseErr) {
+            // Salvage: extract first valid JSON array from the response
+            console.warn('[AI] Bank statement JSON parse failed — attempting array salvage...');
+            const arrMatch = cleanJson.match(/\[\s*\{[\s\S]*\}\s*\]/);
+            if (arrMatch) {
+                try {
+                    const salvaged = JSON.parse(arrMatch[0]);
+                    console.log(`[AI] Bank statement salvage success: ${salvaged.length} transaction(s) recovered.`);
+                    return salvaged;
+                } catch (_) {}
+            }
+            console.error('[AI] Bank statement salvage failed. Raw snippet:', cleanJson.slice(0, 300));
+            return null;
+        }
     } catch (error) {
         console.error('[AI Error] Failed to parse bank statement data:', error);
         return null;
@@ -809,7 +842,10 @@ ${rawText}
 /**
  * 4. Main IMAP function: Connects to email, finds UNSEEN messages with attachments
  */
-async function checkEmailForInvoices(imapConfig, companyName = "Default", companyId = "bP6dc0PMdFtnmS5QTX4N", customRules = "") {
+async function checkEmailForInvoices(imapConfig, companyName = "Default", companyId = null, customRules = "") {
+    if (!companyId) {
+        console.error(`[Email] ⚠️  checkEmailForInvoices called without companyId for ${companyName}. Invoices may not be routed correctly.`);
+    }
     const config = {
         imap: {
             user: imapConfig.user,
@@ -989,7 +1025,10 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                             } else if (mime.includes('image/') || filename.endsWith('.jpg') || filename.endsWith('.jpeg') || filename.endsWith('.png')) {
                                 console.log(`[Image] Native Image detected: ${filename}. Requesting Vision Audit...`);
                                 const visionClass = await classifyDocumentWithVision(attachment.content, mime);
-                                if (visionClass !== 'INVOICE') {
+                                if (visionClass === null) {
+                                    // Vision API failure for image — same policy as PDFs: proceed with extraction
+                                    console.warn(`[Vision Auditor] ⚠️  API failure on image ${filename} — skipping classification, proceeding with extraction.`);
+                                } else if (visionClass !== 'INVOICE') {
                                     console.log(`[Vision Auditor] 🚨 Skipping image ${attachment.filename}. Classified as: ${visionClass}`);
                                     const looksLikeInvoice = /inv|arve|faktur|rechnung|factura|facture/i.test(filename);
                                     if (looksLikeInvoice) {
@@ -1003,7 +1042,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                     }
                                     continue;
                                 }
-
+                                // visionClass === null (API failure) or visionClass === 'INVOICE' — proceed
                                 console.log('[Image] Verified. Engaging Maker-Checker AI Loop for Image...');
 
                                 const parsedData = await runMakerCheckerLoop(attachment.content, mime, { customAiRules: customRules });

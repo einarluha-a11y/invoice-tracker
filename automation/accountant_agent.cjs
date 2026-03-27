@@ -330,7 +330,7 @@ Respond ONLY with a valid JSON strictly following this schema:
 Do not return any markdown wrappers, just the raw JSON.`;
 
     try {
-        const response = await anthropic.messages.create({
+        const response = await require('./ai_retry.cjs').createWithRetry(anthropic, {
             model: "claude-sonnet-4-6",
             max_tokens: 500,
             temperature: 0.1,
@@ -379,4 +379,4 @@ Do not return any markdown wrappers, just the raw JSON.`;
     };
 }
 
-module.exports = { auditAndProcessInvoice };
+module.exports = { auditAndProcessInvoice, parseAmount };

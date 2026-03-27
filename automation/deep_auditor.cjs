@@ -75,7 +75,7 @@ CMR
 STATEMENT
 JUNK
 `;
-                const response = await anthropic.messages.create({
+                const response = await require('./ai_retry.cjs').createWithRetry(anthropic, {
                     model: "claude-sonnet-4-6",
                     max_tokens: 50,
                     temperature: 0,
