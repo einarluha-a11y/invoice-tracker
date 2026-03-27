@@ -183,8 +183,8 @@ async function writeToFirestore(dataArray) {
         const invoicesRef = db.collection('invoices');
         const webhooksToSend = [];
 
-        await db.runTransaction(async (t) => {
         for (const data of dataArray) {
+            await db.runTransaction(async (t) => {
             const docRef = invoicesRef.doc(); // Auto-generate ID
 
             // Format amount as number
@@ -230,7 +230,7 @@ async function writeToFirestore(dataArray) {
             // --- FILE INTEGRITY CHECK ---
             if (!data.fileUrl) {
                 console.warn(`[Firestore] 🛑 CRITICAL REJECTION: Refusing to write invoice without a file attachment (Vendor: ${vendorName}, Invoice: ${invoiceId}). Audit block active.`);
-                continue; // Completely bypass Firebase write
+                return; // Completely bypass Firebase write
             }
 
             // --- DUPLICATE PREVENTION LOGIC ---
@@ -289,7 +289,7 @@ async function writeToFirestore(dataArray) {
                 } else {
                     console.log(`[Firestore] Skipping duplicate invoice: ${vendorName} - ${invoiceId}`);
                 }
-                continue; // CRITICAL: This bypasses both Firestore creation AND Webhook scheduling below 
+                return; // CRITICAL: This bypasses both Firestore creation AND Webhook scheduling below 
             }
 
             let finalStatus = data.status && data.status !== 'Pending' ? data.status : (data.isPaid ? 'Paid' : 'Unpaid');
@@ -367,8 +367,8 @@ async function writeToFirestore(dataArray) {
                 fileUrl: data.fileUrl || null,
                 companyId: data.companyId || null
             });
+            }); // END INDIVIDUAL TRANSACTION BLOCK
         }
-        }); // END TRANSACTION BLOCK
 
         console.log(`[Firestore] ${dataArray.length} invoice(s) successfully written via Transaction!`);
 
