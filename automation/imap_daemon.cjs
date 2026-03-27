@@ -300,8 +300,8 @@ async function writeToFirestore(dataArray) {
                 const targetAmount = Math.abs(numAmount);
 
                 // Filter by companyId to prevent cross-company credit note matching (Rule 10)
-                const pendingQuery = companyId
-                    ? invoicesRef.where('companyId', '==', companyId).where('status', '!=', 'Paid')
+                const pendingQuery = data.companyId
+                    ? invoicesRef.where('companyId', '==', data.companyId).where('status', '!=', 'Paid')
                     : invoicesRef.where('status', '!=', 'Paid');
                 const pendingSnapshot = await t.get(pendingQuery);
 
@@ -877,7 +877,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
             password: imapConfig.password,
             host: imapConfig.host,
             port: imapConfig.port,
-            tls: process.env.IMAP_TLS === 'true',
+            tls: process.env.IMAP_TLS !== 'false', // Defaults to true; set IMAP_TLS=false only for non-TLS servers
             authTimeout: 30000, // Increased timeout 
             connTimeout: 30000, // Added connection timeout
             tlsOptions: { rejectUnauthorized: false } // Helps bypass strict SSL cert issues

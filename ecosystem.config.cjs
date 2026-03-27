@@ -11,13 +11,8 @@ module.exports = {
       script: './automation/imap_daemon.cjs',
       watch: true,
       ignore_watch: ['node_modules', 'automation/logs', 'automation/dlq', '*.json', '*.flag']
-    },
-    {
-      name: 'invoice-dlq-cron',
-      script: './automation/dlq_retry.cjs',
-      cron_restart: '0 0,6,12,18 * * *', // Run every 6 hours
-      autorestart: false,
-      exec_mode: 'fork'
     }
+    // NOTE: invoice-dlq-cron removed — imap_daemon.cjs now calls processDLQ() after every
+    // poll cycle (every 5 min), making a separate PM2 cron process redundant.
   ]
 };

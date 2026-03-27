@@ -150,7 +150,7 @@ app.post('/api/intake', async (req, res) => {
             dateCreated: parsedData.dateCreated || new Date().toISOString().split('T')[0],
             dueDate: parsedData.dueDate || new Date().toISOString().split('T')[0],
             status: systemStatus,
-            companyId: companyId || 'bP6dc0PMdFtnmS5QTX4N',
+            companyId: companyId || null,
             fileUrl: parsedData.originalFileUrl,
             lineItems: parsedData.lineItems,  // NEW: Saving arrays into Firestore directly
             validationWarnings: validationWarnings,
