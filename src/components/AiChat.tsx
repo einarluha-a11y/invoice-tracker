@@ -29,6 +29,7 @@ export function AiChat({ onApplyFilters }: AiChatProps) {
     ]);
     const [inputValue, setInputValue] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    const [isExpanded, setIsExpanded] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
     // Update the welcome message text dynamically if the user changes the language in the header
@@ -119,30 +120,44 @@ export function AiChat({ onApplyFilters }: AiChatProps) {
             borderRadius: 'var(--radius-lg)',
             display: 'flex',
             flexDirection: 'column',
-            height: '300px', // Fixed height for the chat widget (reduced by 25%)
+            height: isExpanded ? '350px' : 'auto',
             marginBottom: '2rem',
             overflow: 'hidden',
-            boxShadow: 'var(--shadow-md)'
+            boxShadow: 'var(--shadow-md)',
+            transition: 'height 0.3s ease'
         }}>
-            <div style={{
+            <div 
+                onClick={() => setIsExpanded(!isExpanded)}
+                style={{
                 padding: '1rem',
-                borderBottom: '1px solid var(--border-color)',
+                borderBottom: isExpanded ? '1px solid var(--border-color)' : 'none',
                 background: 'rgba(22, 27, 34, 0.5)',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '0.75rem'
+                gap: '0.75rem',
+                cursor: 'pointer',
+                userSelect: 'none'
             }}>
                 <div style={{
                     width: '10px', height: '10px', borderRadius: '50%',
                     background: 'var(--status-paid-text)',
                     boxShadow: '0 0 8px var(--status-paid-text)'
                 }} />
-                <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#fff' }}>{t('chat.title')}</h3>
+                <h3 style={{ margin: 0, fontSize: '1.1rem', color: '#fff', flex: 1 }}>{t('chat.title')}</h3>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ 
+                    color: 'var(--text-secondary)',
+                    transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)', 
+                    transition: 'transform 0.3s ease' 
+                }}>
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
             </div>
 
-            <div style={{
-                flex: 1,
-                overflowY: 'auto',
+            {isExpanded && (
+                <>
+                    <div style={{
+                        flex: 1,
+                        overflowY: 'auto',
                 padding: '1.5rem',
                 display: 'flex',
                 flexDirection: 'column',
@@ -234,6 +249,8 @@ export function AiChat({ onApplyFilters }: AiChatProps) {
                     </button>
                 </form>
             </div>
+            </>
+            )}
         </div>
     );
 }
