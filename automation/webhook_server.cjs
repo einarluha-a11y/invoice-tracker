@@ -169,6 +169,30 @@ app.post('/api/intake', async (req, res) => {
     }
 });
 
+// --- PDF PROXY (bypasses Firebase Storage CORS for the browser) ---
+// Fetches the PDF server-side and streams it to the browser — no CORS preflight.
+app.get('/api/pdf-proxy', async (req, res) => {
+    const { url } = req.query;
+    if (!url || !String(url).startsWith('https://firebasestorage.googleapis.com/')) {
+        return res.status(400).json({ error: 'Missing or invalid url parameter.' });
+    }
+    try {
+        const upstream = await fetch(String(url));
+        if (!upstream.ok) {
+            return res.status(upstream.status).json({ error: `Storage fetch failed: ${upstream.statusText}` });
+        }
+        const contentType = upstream.headers.get('content-type') || 'application/pdf';
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Cache-Control', 'private, max-age=300');
+        // Stream the body to the browser
+        const { Readable } = require('stream');
+        Readable.fromWeb(upstream.body).pipe(res);
+    } catch (err) {
+        console.error('[PDF Proxy] Error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // --- VITAL TELEMETRY API (DASHBOARD) ---
 app.get('/api/agent-stats', async (req, res) => {
     if (!db) return res.status(503).json({ error: 'Database unavailable.' });

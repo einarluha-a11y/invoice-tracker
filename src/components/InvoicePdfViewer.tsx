@@ -23,12 +23,13 @@ export const InvoicePdfViewer: React.FC<InvoicePdfViewerProps> = ({ url }) => {
 
         const loadPdf = async () => {
             try {
-                // Fetch directly from Firebase Storage since global CORS is natively configured
-                // We strongly enforce 'no-store' cache bypass because Safari/Chrome may aggressively 
-                // cache the Storage URL without CORS headers if it was previously loaded via an <img> tag.
-                const response = await fetch(url, { cache: 'no-store' });
+                // Route the download through our backend PDF proxy to avoid Firebase Storage CORS issues.
+                // The proxy fetches the file server-side and streams it back to the browser.
+                const apiBase = import.meta.env.VITE_API_URL || '';
+                const proxyUrl = `${apiBase}/api/pdf-proxy?url=${encodeURIComponent(url)}`;
+                const response = await fetch(proxyUrl);
 
-                if (!response.ok) throw new Error(`HTTP ${response.status} ${response.statusText} - The storage bucket might be blocking the request.`);
+                if (!response.ok) throw new Error(`Failed to download PDF data.`);
 
                 const blob = await response.blob();
                 if (active) {
