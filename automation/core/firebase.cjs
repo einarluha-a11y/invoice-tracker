@@ -17,10 +17,17 @@ if (process.env.FIREBASE_SERVICE_ACCOUNT) {
 }
 
 if (!admin.apps.length && sa) {
-    admin.initializeApp({
-        credential: admin.credential.cert(sa),
-        storageBucket: 'invoice-tracker-xyz.firebasestorage.app'
-    });
+    try {
+        admin.initializeApp({
+            credential: admin.credential.cert(sa),
+            storageBucket: 'invoice-tracker-xyz.firebasestorage.app'
+        });
+        console.log('[Firebase Core] ✅ Initialized successfully.');
+    } catch (e) {
+        // Credential object is invalid (e.g. malformed private_key) — log and continue.
+        // All callers guard against admin.apps.length === 0, so the app won't crash.
+        console.error('[Firebase Core] ❌ initializeApp failed:', e.message);
+    }
 }
 
 // Guard abstractions: prevent uninitialized firestore calls from crashing Express/PM2 loops

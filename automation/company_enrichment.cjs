@@ -26,7 +26,8 @@ if (!admin.apps.length) {
     }
     if (sa) admin.initializeApp({ credential: admin.credential.cert(sa) });
 }
-const db = admin.firestore();
+// Guard: only call firestore() when Firebase was successfully initialized.
+const db = admin.apps.length ? admin.firestore() : null;
 
 const CACHE_COLLECTION = 'companies_cache';
 
@@ -190,8 +191,9 @@ async function enrichCompanyData(vendorName, countryHint = 'EE') {
 
     const cacheKey = normalizeVendorName(vendorName);
 
-    // 1. Check Firestore cache first
+    // 1. Check Firestore cache first (skip if Firebase not initialized)
     try {
+        if (!db) throw new Error('db_unavailable');
         const cached = await db.collection(CACHE_COLLECTION).doc(cacheKey).get();
         if (cached.exists) {
             const data = cached.data();
@@ -250,8 +252,9 @@ async function enrichCompanyData(vendorName, countryHint = 'EE') {
         return null;
     }
 
-    // 3. Cache the result
+    // 3. Cache the result (skip if Firebase not initialized)
     try {
+        if (!db) throw new Error('db_unavailable');
         await db.collection(CACHE_COLLECTION).doc(cacheKey).set({
             ...result,
             vendorName,
