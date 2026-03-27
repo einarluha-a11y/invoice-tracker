@@ -36,11 +36,10 @@ async function intellectualSupervisorGate(invoiceData) {
     // 3. Strict Mandatory Registration Data
     // Private persons (no company suffix) are exempt from VAT/Reg requirements.
     // Demanding these fields for private persons causes 5 pointless re-extraction attempts.
-    // Must stay in sync with the same constant in accountant_agent.cjs
-    const companyMarkers = /\b(OÜ|AS|Ltd|LLC|GmbH|SIA|UAB|Sp\.?\s*z\s*o\.?o\.?|S\.A\.|Inc|Corp|BV|NV|SRL|SARL)\b/i;
-    const isPrivatePerson = !companyMarkers.test(invoiceData.vendorName || '');
+    const { isPrivatePerson } = require('./core/business_rules.cjs');
+    const isPrivate = isPrivatePerson(invoiceData.vendorName);
 
-    if (!isPrivatePerson) {
+    if (!isPrivate) {
         const isRegMissing = !invoiceData.supplierRegistration || invoiceData.supplierRegistration === "NOT_FOUND_ON_INVOICE" || invoiceData.supplierRegistration === "Not_Found";
         const isVatMissing = !invoiceData.supplierVat || invoiceData.supplierVat === "NOT_FOUND_ON_INVOICE" || invoiceData.supplierVat === "Not_Found";
 

@@ -9,7 +9,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const admin = require('firebase-admin');
+const { admin, db } = require('./core/firebase.cjs');
 
 const ERROR_LOG = path.join(__dirname, '..', 'backend_errors.log');
 const MAX_LOG_SIZE_BYTES = 1 * 1024 * 1024; // 1MB — rotate when exceeded
@@ -54,8 +54,8 @@ async function reportError(errorCode, context, err) {
     // TTL: keep only the most recent MAX_SYSTEM_LOG_ENTRIES entries (oldest deleted on write)
     const MAX_SYSTEM_LOG_ENTRIES = 500;
     try {
-        if (admin.apps.length > 0) {
-            const logsRef = admin.firestore().collection('system_logs');
+        if (db) {
+            const logsRef = db.collection('system_logs');
             await logsRef.add({
                 errorCode,
                 context,
@@ -68,12 +68,16 @@ async function reportError(errorCode, context, err) {
             if (totalSnap.data().count > MAX_SYSTEM_LOG_ENTRIES) {
                 const excess = totalSnap.data().count - MAX_SYSTEM_LOG_ENTRIES;
                 const oldSnap = await logsRef.orderBy('createdAt', 'asc').limit(excess).get();
-                const batch = admin.firestore().batch();
+                const batch = db.batch();
                 oldSnap.docs.forEach(doc => batch.delete(doc.ref));
                 await batch.commit();
             }
+        } else {
+             console.error('[Dead-Man Switch] Firestore connection is totally offline. UI logging bypassed.');
         }
-    } catch (fsErr) { /* Ignore UI sync failure to prevent loop crashes */ }
+    } catch (fsErr) { 
+        console.error('[Dead-Man Switch] Firestore write crashed. Escalating to external webhook...', fsErr.message); 
+    }
 
     console.error(`[ErrorReporter] 🚨 ${errorCode}: ${context} — ${message}`);
 

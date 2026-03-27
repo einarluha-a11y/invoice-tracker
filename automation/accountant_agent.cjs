@@ -1,6 +1,6 @@
 const { Anthropic } = require('@anthropic-ai/sdk');
 const { validateVat } = require('./vies_validator.cjs');
-const admin = require('firebase-admin');
+const { admin, db } = require('./core/firebase.cjs');
 const { enrichCompanyData } = require('./company_enrichment.cjs');
 
 /**
@@ -19,18 +19,6 @@ const parseAmount = (val) => {
 const anthropic = new Anthropic({
     apiKey: process.env.ANTHROPIC_API_KEY
 });
-
-// Ensure Firebase is initialized
-if (!admin.apps.length) {
-    let sa;
-    if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-        try { sa = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT); } catch (e) { console.error('Failed to parse FIREBASE_SERVICE_ACCOUNT:', e); }
-    } else {
-        try { sa = require('./google-credentials.json'); } catch (e) { console.error('google-credentials.json not found.'); }
-    }
-    if (sa) admin.initializeApp({ credential: admin.credential.cert(sa) });
-}
-const db = admin.firestore();
 
 /**
  * Acts as the Chief Accountant Orchestrator.
@@ -168,11 +156,10 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
         return { ...docAiPayload, fileUrl, status: 'Error', validationWarnings: warnings };
     }
 
-    // --- 1.7. PRE-FLIGHT AUDIT: Missing Registration/VAT — with Government Fallback Lookup (Rule 29) & Private Person Protocol (Rule 30) ---
-    const companyMarkers = /\b(OÜ|AS|Ltd|LLC|GmbH|SIA|UAB|Sp\.?\s*z\s*o\.?o\.?|S\.A\.|Inc|Corp|BV|NV|SRL|SARL)\b/i;
-    const isPrivatePerson = !companyMarkers.test(docAiPayload.vendorName || '');
+    const { isPrivatePerson } = require('./core/business_rules.cjs');
+    const isPrivate = isPrivatePerson(docAiPayload.vendorName);
 
-    if (isPrivatePerson) {
+    if (isPrivate) {
         console.log(`[Accountant Agent] 👤 Vendor "${docAiPayload.vendorName}" appears to be a private person. VAT/Reg may not be required.`);
         
         // Scrub only Supervisor's VAT/Reg "missing data" warnings — private persons inherently

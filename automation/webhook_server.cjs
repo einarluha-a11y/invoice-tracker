@@ -1,28 +1,11 @@
 const express = require('express');
 const cors = require('cors');
 const { DocumentProcessorServiceClient } = require('@google-cloud/documentai').v1;
-const admin = require('firebase-admin');
 const path = require('path');
 const crypto = require('crypto');
 const { reportError } = require('./error_reporter.cjs');
 
-// --- Google Cloud / Firebase Setup ---
-let serviceAccount;
-if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-    try { serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT); } catch (e) { console.error('Failed to parse FIREBASE_SERVICE_ACCOUNT:', e); }
-} else {
-    try { serviceAccount = require('./google-credentials.json'); } catch (e) { console.error('google-credentials.json not found. Set FIREBASE_SERVICE_ACCOUNT env var.'); }
-}
-if (!admin.apps.length && serviceAccount) {
-    admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount),
-        storageBucket: 'invoice-tracker-xyz.firebasestorage.app'
-    });
-}
-// Guard: only call firestore()/storage() when an app was successfully initialized.
-// Without this guard, calling admin.firestore() with no initialized app throws a hard crash.
-const db = admin.apps.length ? admin.firestore() : null;
-const bucket = admin.apps.length ? admin.storage().bucket('invoice-tracker-xyz.firebasestorage.app') : null;
+const { admin, db, bucket, serviceAccount } = require('./core/firebase.cjs');
 
 // --- Document AI Setup ---
 const docaiClient = new DocumentProcessorServiceClient({

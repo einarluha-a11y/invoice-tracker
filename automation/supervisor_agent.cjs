@@ -1,16 +1,5 @@
 require('dotenv').config();
-const admin = require('firebase-admin');
-
-if (!admin.apps.length) {
-    let sa;
-    if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-        try { sa = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT); } catch (e) { console.error('Failed to parse FIREBASE_SERVICE_ACCOUNT:', e); }
-    } else {
-        try { sa = require('./google-credentials.json'); } catch (e) { console.error('google-credentials.json not found.'); }
-    }
-    if (sa) admin.initializeApp({ credential: admin.credential.cert(sa) });
-}
-const db = admin.firestore();
+const { db } = require('./core/firebase.cjs');
 
 async function runSupervisor() {
     console.log(`[Supervisor Agent] 🦅 Launching Supreme Oversight Sweep...`);

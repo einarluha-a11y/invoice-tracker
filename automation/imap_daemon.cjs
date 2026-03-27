@@ -14,32 +14,8 @@ const { parse } = require('csv-parse/sync');
 
 // Initialize Anthropic API
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-// Firebase Admin Initialization
-const admin = require('firebase-admin');
-
-let serviceAccount;
-if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-    try {
-        serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-    } catch (e) {
-        console.error("Failed to parse FIREBASE_SERVICE_ACCOUNT env var:", e);
-    }
-} else {
-    try {
-        serviceAccount = require('./google-credentials.json');
-    } catch (e) {
-        console.error("google-credentials.json not found locally.");
-    }
-}
-
-if (!admin.apps.length && serviceAccount) {
-    admin.initializeApp({
-        credential: admin.credential.cert(serviceAccount),
-        storageBucket: 'invoice-tracker-xyz.firebasestorage.app'
-    });
-}
-const db = admin.firestore();
-const bucket = admin.storage().bucket('invoice-tracker-xyz.firebasestorage.app');
+// Firebase Admin Initialization (Shared Core)
+const { admin, db, bucket } = require('./core/firebase.cjs');
 
 // --- DYNAMIC DICTIONARY ENGINE (Node.js Memory Cache) ---
 const companyAliasCache = {};
