@@ -192,3 +192,33 @@ description: The absolute manifesto and source of truth for the AI Accountant Ag
 - **The Error**: An agent saw an invoice for 4500€ failing to appear on the frontend, checked the database, saw a *historical* 4500€ record from the same vendor, and mistakenly concluded "It was rejected as a duplicate." In reality, the new invoice had a completely different ID, but the IMAP recovery script had crashed with `ECONNRESET` because it attempted to retrieve 3 months of emails in a single array.
 - **Diagnostic Mandate**: NEVER assume an invoice is a duplicate merely because the `amount` and `vendorName` match. Vendors frequently bill the exact same recurring monetary value every month. You MUST strictly verify that the `invoiceId` matches before declaring a clone dependency.
 - **IMAP Horizon Mandate**: Deep IMAP recovery sequences MUST strictly throttle their `SINCE` date constraint to the narrowest possible temporal window (e.g., `SINCE 24-Mar-2026`). Fetching hundreds of full email bodies concurrently guarantees a Node.js `ECONNRESET` socket collapse due to TLS saturation, silently terminating the daemon.
+
+
+## 33. FULL REFACTOR MANIFEST — March 2026
+
+The following systemic fixes were applied across all pipeline modules during the March 2026 refactor. Any agent regenerating or modifying these files MUST preserve these fixes:
+
+### accountant_agent.cjs
+- **parseAmount**: Single module-level function replacing two independent `parseNum`/`parseNumGlobal` copies. Any change to number parsing must happen here only.
+- **fileUrl preservation in Error returns**: When the pipeline rejects an invoice (SPAM filter, zero amount), the returned object now carries `fileUrl` from the caller — not `null`. This ensures Safety Net can attach the file to any DRAFT record it creates.
+- **Cross-company routing regex**: `\\s+` (double backslash — was a no-op) fixed to `\s+`. Company name comparison now correctly strips whitespace.
+- **Country hint expansion**: 12 additional legal form markers added (GmbH→DE, SARL→FR, BV→NL, Ltd→GB, AB→SE, ТОВ→UA, etc.) so enrichment queries the right national registry.
+- **Ghost deletion safety check**: Before deleting a suspected ghost (file-less duplicate), the system now re-fetches the document to confirm it still exists and still has no file. Prevents deletion of a record that was patched between the check and the delete.
+- **AI compliance audit JSON parse**: Wrapped in try/catch with safe defaults. If Claude returns malformed JSON, the invoice is flagged for review instead of crashing the pipeline.
+
+### document_ai_service.cjs
+- **Balanced-brace JSON extractor** (`salvageJsonObjects`): Replaces the regex-based salvage (`[\s\S]*?`) which stopped at the first `}` and lost nested objects (e.g., `lineItems`). The new extractor correctly tracks string boundaries and brace depth, recovering complete invoice objects even from truncated AI responses.
+
+### vision_auditor.cjs
+- **Output validation**: Response is matched against `['INVOICE', 'CMR', 'STATEMENT', 'JUNK']`. Unknown strings default to `'JUNK'` rather than propagating garbage.
+- **Fail-safe changed**: API failure now returns `null` (not `'INVOICE'`). In `index.js`, `null` result means "proceed with extraction" — do not silently assume all PDFs are invoices if the Vision API is down.
+
+### company_enrichment.cjs
+- **OpenCorporates jurisdiction map expanded** from 6 to 27 countries. German, French, Dutch, British, Swedish, Ukrainian companies now query their correct national registry via OpenCorporates instead of defaulting to Estonia.
+
+### error_reporter.cjs
+- **Log rotation**: Now keeps last 5 rotated files (`.old.1` through `.old.5`) instead of overwriting one `.old` file. Storage upload failures are now also reported via `reportError()`, making them visible in `backend_errors.log`.
+- **Webhook body** includes stack trace (first 4 lines) for easier remote debugging.
+
+### dashboard_auditor_agent.cjs
+- **Log label fixed**: Was `[Accountant Agent]`, now correctly `[Dashboard Auditor]`.

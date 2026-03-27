@@ -5,6 +5,45 @@ const anthropic = new Anthropic({
 });
 
 /**
+ * Balanced-brace JSON object extractor.
+ * Handles nested objects and arrays correctly — unlike regex which stops at the first `}`.
+ * Scans the raw string for any JSON object with a known `type` field.
+ */
+function salvageJsonObjects(str) {
+    const results = [];
+    const KNOWN_TYPES = new Set(['INVOICE', 'BANK_STATEMENT']);
+    let i = 0;
+    while (i < str.length) {
+        if (str[i] !== '{') { i++; continue; }
+        // Walk forward tracking depth, respecting strings and escape sequences
+        let depth = 0, j = i, inStr = false, escape = false;
+        while (j < str.length) {
+            const ch = str[j];
+            if (escape)          { escape = false; }
+            else if (ch === '\\' && inStr) { escape = true; }
+            else if (ch === '"') { inStr = !inStr; }
+            else if (!inStr && ch === '{') { depth++; }
+            else if (!inStr && ch === '}') {
+                depth--;
+                if (depth === 0) {
+                    const candidate = str.slice(i, j + 1);
+                    try {
+                        const parsed = JSON.parse(candidate);
+                        if (parsed && typeof parsed === 'object' && KNOWN_TYPES.has(parsed.type)) {
+                            results.push(parsed);
+                        }
+                    } catch (_) { /* malformed fragment — skip */ }
+                    break;
+                }
+            }
+            j++;
+        }
+        i = j + 1;
+    }
+    return results;
+}
+
+/**
  * PURE CLAUDE EXTRACTION ENGINE 
  * Now supports Supervisor Reflection Loops (criticism parameter).
  */
@@ -125,24 +164,12 @@ IF TYPE C (JUNK), respond ONLY with an empty JSON array: []`;
         try {
             extractedData = JSON.parse(rawJson);
         } catch (e) {
-            console.log(`[Cognitive Extractor] ⚠️ JSON parse failed (likely truncated response). Attempting regex salvage for all known types...`);
-            // FIX Bug 5: salvage both BANK_STATEMENT and INVOICE objects, not just bank statements
-            const bankRegex = /\{\s*"type"\s*:\s*"BANK_STATEMENT"[\s\S]*?\}/g;
-            const invoiceRegex = /\{\s*"type"\s*:\s*"INVOICE"[\s\S]*?\}/g;
-            const bankMatches = rawJson.match(bankRegex) || [];
-            const invoiceMatches = rawJson.match(invoiceRegex) || [];
-            const allMatches = [...bankMatches, ...invoiceMatches];
-
-            if (allMatches.length > 0) {
-                const salvagedJson = "[" + allMatches.join(",") + "]";
-                try {
-                    extractedData = JSON.parse(salvagedJson);
-                    console.log(`[Cognitive Extractor] 🚑 SALVAGE SUCCESS! Recovered ${extractedData.length} item(s) from truncated stream!`);
-                } catch(e2) {
-                    console.error(`[Cognitive Extractor] 🚨 Absolute Salvage Failure. Junking document.`);
-                    return [];
-                }
+            console.log(`[Cognitive Extractor] ⚠️ JSON parse failed (likely truncated response). Attempting balanced-brace salvage...`);
+            extractedData = salvageJsonObjects(rawJson);
+            if (extractedData.length > 0) {
+                console.log(`[Cognitive Extractor] 🚑 SALVAGE SUCCESS! Recovered ${extractedData.length} item(s).`);
             } else {
+                console.error(`[Cognitive Extractor] 🚨 Salvage failed. Raw response was:\n${rawJson.slice(0, 500)}`);
                 return [];
             }
         }

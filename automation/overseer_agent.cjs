@@ -1,3 +1,21 @@
+/**
+ * DEPRECATED — DO NOT USE IN PRODUCTION
+ *
+ * This module was an experimental "watchdog" that force-stopped the invoice-bot process
+ * if a code file was changed without a subsequent PM2 restart within 3.5 seconds.
+ *
+ * Problems identified:
+ *  1. NOT imported by index.js — only runs if started independently, causing undefined behaviour.
+ *  2. Race condition: 3.5s grace period may be too short on slow systems or under load.
+ *  3. Dangerous side-effect: forcibly stops invoice processing mid-transaction.
+ *  4. PM2 watch mode already handles restarts — this layer is redundant.
+ *
+ * This file is kept for reference only. Do not require() or run it.
+ * A proper solution is to use `pm2 restart invoice-bot` via PM2's own watch config.
+ */
+
+// ── DEPRECATED CODE BELOW ───────────────────────────────────────────────────
+
 const fs = require('fs');
 const { execSync, exec } = require('child_process');
 const path = require('path');

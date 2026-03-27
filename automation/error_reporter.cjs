@@ -12,6 +12,7 @@ const path = require('path');
 
 const ERROR_LOG = path.join(__dirname, '..', 'backend_errors.log');
 const MAX_LOG_SIZE_BYTES = 1 * 1024 * 1024; // 1MB — rotate when exceeded
+const MAX_ROTATED_FILES = 5;                 // Keep last 5 rotated files
 
 // Optional: set ALERT_WEBHOOK_URL in .env to receive POST notifications
 // e.g. a Slack webhook, Discord webhook, or custom endpoint
@@ -28,11 +29,20 @@ async function reportError(errorCode, context, err) {
     const message = err instanceof Error ? err.message : String(err);
     const entry = `[${timestamp}] ${errorCode} | ${context} | ${message}\n`;
 
-    // Rotate log if too large
+    // Rotate log if too large — keeps last MAX_ROTATED_FILES backups
     try {
         const stat = fs.existsSync(ERROR_LOG) ? fs.statSync(ERROR_LOG) : null;
         if (stat && stat.size > MAX_LOG_SIZE_BYTES) {
-            fs.renameSync(ERROR_LOG, ERROR_LOG + '.old');
+            // Shift existing rotated files: .old.4 → deleted, .old.3 → .old.4, etc.
+            for (let n = MAX_ROTATED_FILES - 1; n >= 1; n--) {
+                const older = `${ERROR_LOG}.old.${n}`;
+                const newer = `${ERROR_LOG}.old.${n + 1}`;
+                if (fs.existsSync(older)) {
+                    if (n === MAX_ROTATED_FILES - 1 && fs.existsSync(newer)) fs.unlinkSync(newer);
+                    fs.renameSync(older, newer);
+                }
+            }
+            fs.renameSync(ERROR_LOG, `${ERROR_LOG}.old.1`);
         }
         fs.appendFileSync(ERROR_LOG, entry);
     } catch (logErr) {
@@ -46,8 +56,9 @@ async function reportError(errorCode, context, err) {
         try {
             const https = require('https');
             const url = require('url');
+            const stack = (err instanceof Error && err.stack) ? `\nStack: ${err.stack.split('\n').slice(0, 4).join(' | ')}` : '';
             const body = JSON.stringify({
-                text: `🚨 Invoice Tracker Error\n*${errorCode}*\nContext: ${context}\nMessage: ${message}\nTime: ${timestamp}`
+                text: `🚨 Invoice Tracker Error\n*${errorCode}*\nContext: ${context}\nMessage: ${message}${stack}\nTime: ${timestamp}`
             });
             const parsed = new url.URL(WEBHOOK_URL);
             const options = {

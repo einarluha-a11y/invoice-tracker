@@ -33,14 +33,25 @@ async function safetyNetSave(rawData, reason, companyId, fileUrl = null) {
 
         const draftRecord = {
             vendorName,
-            invoiceId: rawData.invoiceId || `DRAFT-${Date.now()}`,
-            invoiceId: rawData.invoiceId || `DRAFT-${Date.now()}`,
-            amount: rawData.amount || null,
+            invoiceId: rawData.invoiceId || `DRAFT-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            // Core financials — preserve everything available for manual review
+            amount: rawData.amount ?? null,
+            subtotalAmount: rawData.subtotalAmount ?? rawData.subtotal ?? null,
+            taxAmount: rawData.taxAmount ?? rawData.tax ?? null,
             currency: rawData.currency || 'EUR',
             dateCreated: rawData.dateCreated || rawData.issueDate || new Date().toISOString().split('T')[0],
             dueDate: rawData.dueDate || null,
+            // Supplier identity
             supplierVat: rawData.supplierVat || 'Not_Found',
             supplierRegistration: rawData.supplierRegistration || 'Not_Found',
+            enrichmentSource: rawData.enrichmentSource || null,
+            // Receiver (useful for cross-company routing review)
+            receiverName: rawData.receiverName || null,
+            receiverVat: rawData.receiverVat || null,
+            // Line items — preserve for manual review
+            lineItems: Array.isArray(rawData.lineItems) ? rawData.lineItems : [],
+            // VIES validation result if available
+            viesValidation: rawData.viesValidation || null,
             fileUrl: resolvedFileUrl,
             companyId: companyId || rawData.companyId || null,
             status: 'NEEDS_REVIEW',

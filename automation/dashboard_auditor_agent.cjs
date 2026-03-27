@@ -92,7 +92,7 @@ ${JSON.stringify(invoices, null, 2)}
                     try {
                         purgeList = JSON.parse(rawAnalysis);
                     } catch(e) {
-                         console.error(`[Accountant Agent] ⚠️ Brain returned invalid JSON: ${rawAnalysis}`);
+                         console.error(`[Dashboard Auditor] ⚠️ Brain returned invalid JSON: ${rawAnalysis}`);
                     }
 
                     if (Array.isArray(purgeList) && purgeList.length > 0) {

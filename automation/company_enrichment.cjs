@@ -214,8 +214,19 @@ async function enrichCompanyData(vendorName, countryHint = 'EE') {
 
     // Stage 3: OpenCorporates (universal fallback)
     if (!result) {
-        const jCode = { 'EE': 'ee', 'LV': 'lv', 'LT': 'lt', 'FI': 'fi', 'SE': 'se', 'PL': 'pl' }[cc] || 'ee';
-        result = await lookupViaOpenCorporates(vendorName, jCode);
+        const jCode = {
+            'EE': 'ee', 'LV': 'lv', 'LT': 'lt', 'FI': 'fi', 'SE': 'se', 'PL': 'pl',
+            'DE': 'de', 'FR': 'fr', 'NL': 'nl', 'BE': 'be', 'AT': 'at', 'IT': 'it',
+            'ES': 'es', 'PT': 'pt', 'HU': 'hu', 'CZ': 'cz', 'SK': 'sk', 'RO': 'ro',
+            'BG': 'bg', 'HR': 'hr', 'SI': 'si', 'DK': 'dk', 'NO': 'no', 'GB': 'gb',
+            'IE': 'ie', 'UA': 'ua', 'BY': 'by', 'RU': 'ru'
+        }[cc] || null;
+        // Only query OpenCorporates if we have a plausible jurisdiction code
+        if (jCode) {
+            result = await lookupViaOpenCorporates(vendorName, jCode);
+        } else {
+            console.log(`[Enrichment] No OpenCorporates jurisdiction mapping for country "${cc}" — skipping.`);
+        }
     }
 
     if (!result) {

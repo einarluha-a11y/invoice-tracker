@@ -111,7 +111,7 @@ Required fields for EACH invoice object:
 - description: (String, max 3-4 words. Guess based on vendor if not explicit)
 - isPaid: (Boolean. Set to true ONLY IF the invoice explicitly states it is already paid, e.g., "Amount Due 0.00", "Amount Due EUR 0.00", "Makstud", "Paid", "Оплачен". Otherwise, false.)
 
-Raw Data:
+${customRulesSection}Raw Data:
 ${rawText}
 `;
     try {
@@ -171,100 +171,6 @@ ${rawText}
         return null; // Return null if parsing fails
     }
 }
-
-/**
- * 1.5. AI Parsing (Vision): Sends image (Base64) to Claude for OCR and extraction
- */
-async function parseInvoiceImageWithAI(base64Image, companyName = "GLOBAL TECHNICS OÜ", customRules = "", mimeType = "image/jpeg") {
-    console.log(`[AI Vision] Parsing image data with Claude for company: ${companyName}...`);
-
-    let customRulesSection = "";
-    if (customRules && customRules.trim().length > 0) {
-        customRulesSection = `
-CRITICAL USER-DEFINED AI RULES (MUST OBEY):
-${customRules}
-`;
-    }
-
-    const promptText = `
-You are an expert accountant system. 
-Extract ALL invoices from the provided image (receipt, scanned document).
-Return EXACTLY a JSON array of invoice objects with NO markdown wrapping, NO extra text.
-Even if there is only one invoice, return it as an ARRAY containing that single object.
-
-CRITICAL RULE FOR VENDOR NAME:
-The company "${companyName}" (and any variations) AND "GLOBAL TECHNICS OÜ" are ALWAYS the BUYER/CUSTOMER. 
-You must find the ACTUAL company that issued the invoice to ${companyName}.
-CRITICAL ENGLISH INVOICE RULE: If you see "Bill To", the company listed under it is the BUYER. If you see "Recipient" alongside bank details (IBAN/Account), that company is the VENDOR receiving the money.
-If the invoice is clearly addressed to a COMPLETELY DIFFERENT BUYER (e.g., "Chempack OÜ" or someone else) and NOT to "${companyName}" or "GLOBAL TECHNICS OÜ", YOU MUST REJECT IT and return an empty array [].
-
-CRITICAL RULE FOR REJECTING NON-INVOICE DOCUMENTS:
-You MUST ONLY extract true Invoices (Arve, Invoice, Rechnung, Lasku).
-If the document is primarily a Receipt (Kviitung, Tšekk, Kvito), a Waybill/CMR (Saateleht, Veoseleht, CMR), a Quote/Proforma (Pakkumine, Proforma, Ettemaksuarve), an Order (Tellimus), Insurance Policy (Poliis), Contract (Leping), or has NO clear amount to pay, YOU MUST REJECT IT and return an empty array []. Do NOT extract a "Kviitung" as an invoice. Do not falsely reject valid invoices just because the text is messy.
-
-CRITICAL RULE FOR AMOUNT:
-DO NOT include past debt. Extract only the amount for the CURRENT billing period.
-If it is a credit note, amount MUST be negative.
-Estonian Translation Guide: "Tasuda", "Tasuda EUR", "Kulumishüvitis", or "Kokku" typically indicate the final Amount to pay.
-
-CRITICAL RULE FOR DATES:
-Convert ALL alphabetical month names into their exact 2-digit numerical equivalent.
-Examples: "Jan" or "January" -> 01, "Feb" -> 02, "Mar" -> 03, "Apr" -> 04, "May" -> 05, etc.
-Estonian Translation Guide: "Tähtaeg", "Maksetähtaeg", or "Maksetähtpäev" ALWAYS unequivocally mean DUE DATE.
-If the Date is "Mar 6, 2026", dateCreated MUST be "06-03-2026".
-If the Due Date is "Mar 8, 2026", dueDate MUST be "08-03-2026".
-If there is NO explicit Due Date (maksetähtaeg) on the invoice, you MUST set the dueDate to be exactly the same as the dateCreated.
-Do NOT hallucinate or add months or hardcode 30 days unless explicitly told to.
-
-${customRulesSection}
-Required fields:
-- invoiceId: (specific numeric/alphanumeric invoice number)
-- vendorName: (The EXACT company issuing the invoice)
-- amount: (Number only, decimal separated by dot)
-- currency: (3 letter code, usually EUR)
-- dateCreated: (DD-MM-YYYY format, issue date)
-- dueDate: (DD-MM-YYYY format)
-- description: (String, max 3-4 words)
-- isPaid: (Boolean. Set to true ONLY IF the invoice explicitly states it is already paid, e.g., "Amount Due 0.00", "Amount Due EUR 0.00", "Makstud", "Paid", "Оплачен". Otherwise, false.)
-`;
-
-    // Ensure we don't double-prefix if base64Image somehow already contains 'data:image'
-    const cleanBase64 = base64Image.startsWith('data:') ? base64Image.split(',')[1] : base64Image;
-
-    try {
-        const response = await anthropic.messages.create({
-            model: "claude-sonnet-4-6",
-            max_tokens: 1500,
-            temperature: 0.1,
-            system: "You are an expert accountant system.",
-            messages: [
-                {
-                    role: "user",
-                    content: [
-                        { type: "text", text: promptText },
-                        {
-                            type: "image",
-                            source: {
-                                type: "base64",
-                                media_type: mimeType,
-                                data: cleanBase64
-                            }
-                        }
-                    ]
-                }
-            ]
-        });
-
-        const jsonString = response.content[0].text.trim();
-        const match = jsonString.match(/\[[\s\S]*\]/);
-        const cleanJson = match ? match[0] : '[]';
-        return JSON.parse(cleanJson);
-    } catch (error) {
-        console.error('[AI Vision Error] Failed to parse image data:', error);
-        return null;
-    }
-}
-
 
 /**
  * 2. Writes the parsed JSON data array to Firebase Firestore
@@ -924,7 +830,12 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
         console.log('[Email] Connection successful! Opening INBOX.');
         await connection.openBox('INBOX');
 
-        const searchCriteria = ['UNSEEN'];
+        const horizonDate = new Date();
+        horizonDate.setDate(horizonDate.getDate() - 30);
+        const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+        const sinceStr = `${String(horizonDate.getDate()).padStart(2, '0')}-${months[horizonDate.getMonth()]}-${horizonDate.getFullYear()}`;
+        
+        const searchCriteria = ['UNSEEN', ['SINCE', sinceStr]];
         // FIX Reliability: do NOT mark as seen on fetch — mark manually after successful Firestore write
         // This prevents losing invoices if PM2 crashes mid-processing
         const fetchOptions = { bodies: [''], markSeen: false };
@@ -1037,21 +948,26 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                 } else {
                                     console.log('[Email] Detected Invoice PDF. Requesting Pre-Flight Vision Audit to check for CMRs...');
                                     const visionClass = await classifyDocumentWithVision(attachment.content, mime || 'application/pdf');
-                                    if (visionClass !== 'INVOICE') {
+                                    if (visionClass === null) {
+                                        // Vision API failed — don't discard, proceed with extraction
+                                        console.warn(`[Vision Auditor] ⚠️  API failure on ${filename} — skipping classification, proceeding with extraction.`);
+                                    } else if (visionClass !== 'INVOICE') {
                                         console.log(`[Vision Auditor] 🚨 Skipping attachment ${attachment.filename}. Classified as: ${visionClass}`);
                                         // Safety Net: if filename suggests invoice but Vision rejected it, save as DRAFT for review
                                         const looksLikeInvoice = /inv|arve|faktur|rechnung|factura|facture/i.test(filename);
                                         if (looksLikeInvoice) {
-                                            await safetyNetSave(
+                                            // File was already uploaded — pass fileUrl so Safety Net can attach it
+                                            const saved = await safetyNetSave(
                                                 { vendorName: 'UNKNOWN (Vision rejected)', invoiceId: `VISION-${filename}` },
                                                 `Vision Auditor classified as ${visionClass} but filename suggests invoice`,
                                                 companyId,
-                                                null
-                                            ).catch(() => {});
+                                                fileUrl
+                                            ).catch(() => null);
+                                            if (!saved) console.warn(`[Safety Net] Could not save DRAFT for Vision-rejected ${filename} (no file uploaded)`);
                                         }
                                         continue;
                                     }
-                                    
+                                    // visionClass === null (API failure) or visionClass === 'INVOICE' — proceed
                                     console.log('[Email] Verified as INVOICE. Engaging Maker-Checker AI Loop...');
 
                                     const parsedData = await runMakerCheckerLoop(attachment.content, mime || 'application/pdf', { customAiRules: customRules });
@@ -1068,16 +984,17 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                     console.log(`[Vision Auditor] 🚨 Skipping image ${attachment.filename}. Classified as: ${visionClass}`);
                                     const looksLikeInvoice = /inv|arve|faktur|rechnung|factura|facture/i.test(filename);
                                     if (looksLikeInvoice) {
-                                        await safetyNetSave(
+                                        const saved = await safetyNetSave(
                                             { vendorName: 'UNKNOWN (Vision rejected)', invoiceId: `VISION-${filename}` },
                                             `Vision Auditor classified as ${visionClass} but filename suggests invoice`,
                                             companyId,
-                                            null
-                                        ).catch(() => {});
+                                            fileUrl
+                                        ).catch(() => null);
+                                        if (!saved) console.warn(`[Safety Net] Could not save DRAFT for Vision-rejected image ${filename} (no file uploaded)`);
                                     }
                                     continue;
                                 }
-                                
+
                                 console.log('[Image] Verified. Engaging Maker-Checker AI Loop for Image...');
 
                                 const parsedData = await runMakerCheckerLoop(attachment.content, mime, { customAiRules: customRules });
@@ -1111,13 +1028,14 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                             }
                         } catch (err) {
                             console.error(`[Error] Failed to process attachment ${filename}:`, err);
-                            // Safety Net: save a DRAFT so the invoice is never silently lost
-                            await safetyNetSave(
-                                { vendorName: filename, invoiceId: `ATTACHMENT-${filename}` },
+                            // Safety Net: save a DRAFT if we have a file (fileUrl may be null if upload also failed)
+                            const saved = await safetyNetSave(
+                                { vendorName: 'UNKNOWN (pipeline exception)', invoiceId: `ATTACHMENT-${Date.now()}` },
                                 `Pipeline exception: ${err.message}`,
                                 companyId,
-                                null
-                            ).catch(() => {});
+                                fileUrl  // may be null — Safety Net will reject without file and log warning
+                            ).catch(() => null);
+                            if (!saved) console.warn(`[Safety Net] Invoice lost for ${filename}: pipeline exception AND no file. Original error: ${err.message}`);
                         }
                     }
                 }
@@ -1250,16 +1168,39 @@ async function checkAndRunFlagTasks() {
     }
 }
 
-// Start the process immediately
-checkAndRunFlagTasks().then(() => pollAllCompanyInboxes());
+// Start the process immediately with overlap-proof async loops
+checkAndRunFlagTasks().then(() => {
+    pollLoop();
+    auditLoop();
+});
 
-// Keep script alive to run every 1 minute
+// Overlap-safe IMAP polling daemon
 console.log('Automated Invoice Processor Started. Checking every 5 minutes...');
-setInterval(pollAllCompanyInboxes, 5 * 60 * 1000);
+async function pollLoop() {
+    while (true) {
+        try {
+            await pollAllCompanyInboxes();
+        } catch (err) {
+            console.error('[Poll Loop Error] Critical failure in IMAP daemon:', err.message);
+        }
+        await new Promise(resolve => setTimeout(resolve, 5 * 60 * 1000));
+    }
+}
 
-// Schedule the Post-Flight Auditor to run every 2 hours (7200000 ms) to clean fuzzy duplicates
+// Overlap-safe Post-Flight Auditor daemon
 console.log('Dashboard Auditor Scheduled. Sweeping database every 2 hours...');
-setInterval(runDashboardAudit, 7200000);
+async function auditLoop() {
+    // Initial delay so it doesn't run concurrently with the first IMAP poll
+    await new Promise(resolve => setTimeout(resolve, 60000)); 
+    while (true) {
+        try {
+            await runDashboardAudit();
+        } catch (err) {
+            console.error('[Audit Loop Error] Critical failure in Auditor daemon:', err.message);
+        }
+        await new Promise(resolve => setTimeout(resolve, 7200000));
+    }
+}
 
 // --- CLOUD HOSTING & API SUPPORT ---
 // Render.com and Railway require a web server to bind to a single PORT.

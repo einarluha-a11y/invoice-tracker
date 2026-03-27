@@ -1,6 +1,6 @@
 import { FirebaseApp, initializeApp } from "firebase/app";
 import { Auth, getAuth, GoogleAuthProvider, setPersistence, browserLocalPersistence } from "firebase/auth";
-import { Firestore, getFirestore } from "firebase/firestore";
+import { Firestore, getFirestore, initializeFirestore, persistentLocalCache } from "firebase/firestore";
 
 // Your web app's Firebase configuration
 // These should be populated with process.env or import.meta.env
@@ -26,7 +26,10 @@ if (isFirebaseConfigured) {
     try {
         app = initializeApp(firebaseConfig);
         auth = getAuth(app);
-        db = getFirestore(app);
+        // Initialize Firestore with IndexedDB persistent offline cache (fixes O(N) network fetches)
+        db = initializeFirestore(app, {
+            localCache: persistentLocalCache()
+        });
 
         // Set persistence to Local, so the user stays logged in across reloads
         setPersistence(auth, browserLocalPersistence)

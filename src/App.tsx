@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { InvoiceTable, SortField, SortDirection } from './components/InvoiceTable';
 import { Login } from './components/Login';
@@ -109,33 +109,37 @@ function App() {
         }
     };
 
-    // Stats computed from loaded data based on selected status filter
-    const statsInvoices = invoices.filter(invoice => {
-        // Status filter
-        let matchesStatus = true;
-        if (statusFilter === 'Unpaid') {
-            matchesStatus = invoice.status === 'Pending' || invoice.status === 'Overdue';
-        } else if (statusFilter !== 'All') {
-            matchesStatus = invoice.status === statusFilter;
-        }
+    // Stats computed from loaded data using useMemo to prevent main-thread freezing sequentially
+    const { totalInvoices, overdueCount, totalAmount } = useMemo(() => {
+        const filtered = invoices.filter(invoice => {
+            // Status filter
+            let matchesStatus = true;
+            if (statusFilter === 'Unpaid') {
+                matchesStatus = invoice.status === 'Pending' || invoice.status === 'Overdue';
+            } else if (statusFilter !== 'All') {
+                matchesStatus = invoice.status === statusFilter;
+            }
 
-        // Date filter
-        let matchesDate = true;
-        const compareDate = dateFilterType === 'due' ? invoice.dueDate : invoice.dateCreated;
+            // Date filter
+            let matchesDate = true;
+            const compareDate = dateFilterType === 'due' ? invoice.dueDate : invoice.dateCreated;
 
-        if (startDate) {
-            matchesDate = compareDate >= startDate;
-        }
-        if (endDate) {
-            matchesDate = matchesDate && compareDate <= endDate;
-        }
+            if (startDate) {
+                matchesDate = compareDate >= startDate;
+            }
+            if (endDate) {
+                matchesDate = matchesDate && compareDate <= endDate;
+            }
 
-        return matchesStatus && matchesDate;
-    });
+            return matchesStatus && matchesDate;
+        });
 
-    const totalInvoices = statsInvoices.length;
-    const overdueCount = statsInvoices.filter(i => i.status === 'Overdue').length;
-    const totalAmount = statsInvoices.reduce((sum, inv) => sum + inv.amount, 0);
+        return {
+            totalInvoices: filtered.length,
+            overdueCount: filtered.filter(i => i.status === 'Overdue').length,
+            totalAmount: filtered.reduce((sum, inv) => sum + inv.amount, 0)
+        };
+    }, [invoices, statusFilter, dateFilterType, startDate, endDate]);
 
     // Block render until auth state is known
     if (authLoading) {

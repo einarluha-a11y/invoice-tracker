@@ -51,13 +51,21 @@ JUNK
             ]
         });
 
-        const classification = response.content[0].text.trim().toUpperCase();
+        const VALID = new Set(['INVOICE', 'CMR', 'STATEMENT', 'JUNK']);
+        const raw = response.content[0].text.trim().toUpperCase();
+        // Extract first recognised keyword if Claude added extra words
+        const classification = ['INVOICE', 'CMR', 'STATEMENT', 'JUNK'].find(k => raw.includes(k)) || null;
+        if (!classification) {
+            console.warn(`[Vision Auditor] ⚠️  Unexpected classification response: "${raw}". Defaulting to JUNK.`);
+            return 'JUNK';
+        }
         return classification;
 
     } catch (err) {
         console.error(`[Vision Auditor] Error classifying document:`, err.message);
-        // Fail-safe: if the API fails, assume JUNK if it's an image, INVOICE if it's a PDF
-        return (mimeType.includes('pdf')) ? 'INVOICE' : 'JUNK'; 
+        // Fail-safe: unknown means UNKNOWN — let the caller decide, not assume INVOICE.
+        // Returning null causes the caller (index.js) to log and skip rather than misprocess.
+        return null;
     }
 }
 

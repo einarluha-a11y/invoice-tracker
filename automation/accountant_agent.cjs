@@ -3,6 +3,19 @@ const { validateVat } = require('./vies_validator.cjs');
 const admin = require('firebase-admin');
 const { enrichCompanyData } = require('./company_enrichment.cjs');
 
+/**
+ * Shared amount parser — handles European (1.234,56) and US (1,234.56) formats.
+ * Single source of truth. Replaces both local parseNum and parseNumGlobal.
+ */
+const parseAmount = (val) => {
+    let s = String(val || '').trim().replace(/[€$£\s]/g, '');
+    if (s.includes(',') && s.includes('.')) {
+        if (s.lastIndexOf(',') > s.lastIndexOf('.')) s = s.replace(/\./g, '').replace(',', '.');
+        else s = s.replace(/,/g, '');
+    } else if (s.includes(',')) s = s.replace(',', '.');
+    return parseFloat(s) || 0;
+};
+
 const anthropic = new Anthropic({
     apiKey: process.env.ANTHROPIC_API_KEY
 });
@@ -33,16 +46,8 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
             if (!snap.empty) {
                 for (const doc of snap.docs) {
                     const invData = doc.data(); // FIX Bug 1: invData was never declared
-                    const parseNum = (val) => {
-                        let s = String(val || '').trim();
-                        if (s.includes(',') && s.includes('.')) {
-                            if (s.lastIndexOf(',') > s.lastIndexOf('.')) s = s.replace(/\./g, '').replace(',', '.');
-                            else s = s.replace(/,/g, '');
-                        } else if (s.includes(',')) s = s.replace(',', '.');
-                        return parseFloat(s) || 0;
-                    };
-                    const invAmt = Math.abs(parseNum(invData.amount));
-                    const payAmt = Math.abs(parseNum(docAiPayload.amount));
+                    const invAmt = Math.abs(parseAmount(invData.amount));
+                    const payAmt = Math.abs(parseAmount(docAiPayload.amount));
                     
                     if (Math.abs(invAmt - payAmt) < 0.05) {
                         const vName = String(invData.vendorName || '').toLowerCase();
@@ -62,12 +67,14 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
             if (!matched) {
                 console.log(`[Accountant Agent] ⚠️ No unsettled invoice found for payment: ${docAiPayload.amount} to ${docAiPayload.vendorName}.`);
                 
-                // Enforce the strict 2026 boundary rule
+                // Search Agent is triggered for payments in the current year or later.
+                // Override via SEARCH_AGENT_CUTOFF_YEAR env variable if needed (e.g. "2027").
                 const paymentDate = new Date(docAiPayload.dateCreated || '2020-01-01');
-                const cutoffDate = new Date('2026-01-01');
-                
-                if (paymentDate >= cutoffDate || String(docAiPayload.dateCreated).includes('2026')) {
-                    console.log(`[Accountant Agent] 🚨 Payment falls within 2026 imperative window! Escalating to Search Agent...`);
+                const cutoffYear = parseInt(process.env.SEARCH_AGENT_CUTOFF_YEAR || new Date().getFullYear(), 10);
+                const cutoffDate = new Date(`${cutoffYear}-01-01`);
+
+                if (paymentDate >= cutoffDate || String(docAiPayload.dateCreated).includes(String(cutoffYear))) {
+                    console.log(`[Accountant Agent] 🚨 Payment falls within ${cutoffYear}+ window! Escalating to Search Agent...`);
                     const { findAndInjectMissingInvoice } = require('./search_agent.cjs');
                     const recovered = await findAndInjectMissingInvoice(docAiPayload.vendorName, docAiPayload.amount, companyId);
                     
@@ -116,8 +123,8 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
         let matchedSomething = false;
         
         companiesSnap.forEach(doc => {
-            const cleanCompName = String(doc.data().name || '').toLowerCase().replace(/oü|as|llc|inc|ltd/gi, '').replace(/\\s+/g, '').trim();
-            const cleanRxName = rxName.replace(/oü|as|llc|inc|ltd/gi, '').replace(/\\s+/g, '').trim();
+            const cleanCompName = String(doc.data().name || '').toLowerCase().replace(/oü|as|llc|inc|ltd/gi, '').replace(/\s+/g, '').trim();
+            const cleanRxName = rxName.replace(/oü|as|llc|inc|ltd/gi, '').replace(/\s+/g, '').trim();
             
             if (cleanCompName.length > 3 && cleanRxName.includes(cleanCompName)) {
                 bestMatchedCompanyId = doc.id;
@@ -128,7 +135,7 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
         if (!matchedSomething) {
             console.error(`[Accountant Agent] 🛑 CRITICAL REJECTION: Receiver name '${docAiPayload.receiverName}' does not map to any registered corporate entity in the local matrix. Rejected as SPAM. (Rule 10)`);
             warnings.push("CRITICAL SPAM FILTER: Target Receiver name bears no relation to internal registered companies. Document rejected.");
-            return { ...docAiPayload, fileUrl: null, status: 'Error', validationWarnings: warnings };
+            return { ...docAiPayload, fileUrl, status: 'Error', validationWarnings: warnings };
         } else if (bestMatchedCompanyId && bestMatchedCompanyId !== companyId) {
             console.log(`[Accountant Agent] 🔄 CROSS-COMPANY REROUTING: Document mathematically designated for target ${bestMatchedCompanyId}, overriding incorrect inbound SMTP matrix payload ${companyId}!`);
             companyId = bestMatchedCompanyId; 
@@ -140,20 +147,12 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
     }
 
     // --- 1.5. PRE-FLIGHT AUDIT: Zero-Value Enforcement ---
-    const parseNumGlobal = (val) => {
-        let s = String(val || '').trim();
-        if (s.includes(',') && s.includes('.')) {
-            if (s.lastIndexOf(',') > s.lastIndexOf('.')) s = s.replace(/\./g, '').replace(',', '.');
-            else s = s.replace(/,/g, '');
-        } else if (s.includes(',')) s = s.replace(',', '.');
-        return parseFloat(s) || 0;
-    };
-    const numericAmount = parseNumGlobal(docAiPayload.amount);
+    const numericAmount = parseAmount(docAiPayload.amount);
     
     if (isNaN(numericAmount) || numericAmount === 0 || !docAiPayload.vendorName || docAiPayload.vendorName === 'Unknown') {
         console.error(`[Accountant Agent] 🛑 CRITICAL REJECTION: Non-compliant payload (Amount: ${numericAmount}, Vendor: ${docAiPayload.vendorName}). System blocks junk interpretations.`);
         warnings.push("CRITICAL: Extracted amount is zero or Vendor missing. Interpreted as Junk image.");
-        return { ...docAiPayload, fileUrl: null, status: 'Error', validationWarnings: warnings };
+        return { ...docAiPayload, fileUrl, status: 'Error', validationWarnings: warnings };
     }
 
     // --- 1.7. PRE-FLIGHT AUDIT: Missing Registration/VAT — with Government Fallback Lookup (Rule 29) & Private Person Protocol (Rule 30) ---
@@ -183,11 +182,17 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
             try {
                 // Detect country hint from vendor name or existing VAT prefix
                 const countryHint = docAiPayload.supplierVat?.match(/^([A-Z]{2})/)?.[1]
-                    || (docAiPayload.vendorName?.match(/\bOÜ\b|\bAS\b/i) ? 'EE' : null)
-                    || (docAiPayload.vendorName?.match(/\bUAB\b/i) ? 'LT' : null)
-                    || (docAiPayload.vendorName?.match(/\bSIA\b/i) ? 'LV' : null)
-                    || (docAiPayload.vendorName?.match(/Sp\.?\s*z\s*o\.?o\.?|S\.A\./i) ? 'PL' : null)
-                    || 'EE';
+                    || (docAiPayload.vendorName?.match(/\bOÜ\b|\bAS\b/i)                  ? 'EE' : null)
+                    || (docAiPayload.vendorName?.match(/\bUAB\b/i)                         ? 'LT' : null)
+                    || (docAiPayload.vendorName?.match(/\bSIA\b/i)                         ? 'LV' : null)
+                    || (docAiPayload.vendorName?.match(/Sp\.?\s*z\s*o\.?o\.?|S\.A\./i)    ? 'PL' : null)
+                    || (docAiPayload.vendorName?.match(/\bGmbH\b|\bAG\b|\be\.K\.\b/i)     ? 'DE' : null)
+                    || (docAiPayload.vendorName?.match(/\bSARL\b|\bSAS\b|\bSA\b/i)        ? 'FR' : null)
+                    || (docAiPayload.vendorName?.match(/\bBV\b|\bNV\b/i)                  ? 'NL' : null)
+                    || (docAiPayload.vendorName?.match(/\bLtd\b|\bPLC\b|\bLLP\b/i)        ? 'GB' : null)
+                    || (docAiPayload.vendorName?.match(/\bAB\b/i)                          ? 'SE' : null)
+                    || (docAiPayload.vendorName?.match(/\bОЮ\b|\bТОВ\b|\bФОП\b/i)        ? 'UA' : null)
+                    || 'EE'; // Default to Estonia if no hint found
 
                 const enriched = await enrichCompanyData(docAiPayload.vendorName, countryHint);
 
@@ -232,9 +237,13 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
 
     // --- 2. PRE-FLIGHT AUDIT: Deduplication ---
     if (docAiPayload.invoiceId && docAiPayload.vendorName && docAiPayload.amount) {
-        console.log(`[Accountant Agent] 🔍 Checking Firestore for Duplicates natively using Deep Fuzzy Logic...`);
+        const sixMonthsAgo = new Date();
+        sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+
+        console.log(`[Accountant Agent] 🔍 Checking Firestore for Duplicates (Last 6 Months) natively using Deep Fuzzy Logic...`);
         const duplicateCheck = await db.collection('invoices')
             .where('companyId', '==', companyId)
+            .where('createdAt', '>=', sixMonthsAgo)
             .get();
         
         let isDuplicate = false;
@@ -267,7 +276,15 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
         }
 
         if (ghostDocIdToDestroy) {
-            await db.collection('invoices').doc(ghostDocIdToDestroy).delete();
+            // Safety: re-fetch before deletion — state may have changed since we found it
+            const ghostDoc = await db.collection('invoices').doc(ghostDocIdToDestroy).get();
+            if (ghostDoc.exists && !ghostDoc.data().fileUrl) {
+                console.log(`[Accountant Agent] 🗑️  Ghost verified and deleted: ${ghostDocIdToDestroy}`);
+                await db.collection('invoices').doc(ghostDocIdToDestroy).delete();
+            } else {
+                console.warn(`[Accountant Agent] ⚠️  Ghost deletion aborted: doc state changed or file now present (${ghostDocIdToDestroy})`);
+                ghostDocIdToDestroy = null; // Don't skip the incoming record
+            }
         }
 
         if (isDuplicate) {
@@ -321,8 +338,16 @@ Do not return any markdown wrappers, just the raw JSON.`;
             messages: [{ role: "user", content: prompt }]
         });
 
-        const rawJson = response.content[0].text.trim().replace(/^```json\n|\n```$/g, '');
-        const aiAnalysis = JSON.parse(rawJson);
+        let rawJson = response.content[0].text.trim().replace(/^```json\n?|\n?```$/g, '').trim();
+        const jsonStart = rawJson.indexOf('{');
+        if (jsonStart > 0) rawJson = rawJson.slice(jsonStart);
+        let aiAnalysis;
+        try {
+            aiAnalysis = JSON.parse(rawJson);
+        } catch (parseErr) {
+            console.warn(`[Accountant Agent] ⚠️  AI audit response was not valid JSON. Using safe defaults.`);
+            aiAnalysis = { recommendedStatus: 'Needs Action', generatedWarnings: ['NOTE: AI compliance audit parse failed — manual review recommended.'] };
+        }
 
         console.log(`[Accountant Agent] 📝 Audit Complete. Status: ${aiAnalysis.recommendedStatus}`);
         

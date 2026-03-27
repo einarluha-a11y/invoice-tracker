@@ -67,8 +67,28 @@ async function findAndInjectMissingInvoice(vendorName, targetAmount, companyId) 
                         
                         console.log(`[Search Agent] 🔎 Plausible physical document located: ${fname}. Engaging deep scan...`);
                         
+                        // Retry up to 3 times on rate-limit (429) with exponential backoff
+                        let parsedData = null;
+                        for (let attempt = 1; attempt <= 3; attempt++) {
+                            try {
+                                parsedData = await processInvoiceWithDocAI(att.content, 'application/pdf');
+                                break; // success
+                            } catch (apiErr) {
+                                const is429 = apiErr.message && (apiErr.message.includes('429') || apiErr.message.includes('rate_limit'));
+                                if (is429 && attempt < 3) {
+                                    const waitMs = attempt * 15000; // 15s, 30s
+                                    console.warn(`[Search Agent] ⏳ Rate limit hit (attempt ${attempt}/3). Waiting ${waitMs / 1000}s before retry...`);
+                                    await new Promise(r => setTimeout(r, waitMs));
+                                } else {
+                                    console.error(`[Search Agent] ❌ DocAI failed for ${fname} after ${attempt} attempt(s):`, apiErr.message);
+                                    break;
+                                }
+                            }
+                        }
+
                         try {
-                            const parsedData = await processInvoiceWithDocAI(att.content, 'application/pdf');
+                            if (!parsedData) { /* DocAI failed entirely — skip this attachment */ }
+                            else
                             for (let inv of parsedData) {
                                 // Prevent Recursive Inception!
                                 if (inv.type === 'BANK_STATEMENT') {
@@ -115,10 +135,8 @@ async function findAndInjectMissingInvoice(vendorName, targetAmount, companyId) 
                                     return docRef; // Gracefully return the reference for Accountant Agent to mark Paid!
                                 }
                             }
-                        } catch(apiErr) {
-                            if (apiErr.message && apiErr.message.includes('429')) {
-                                await new Promise(r => setTimeout(r, 10000));
-                            }
+                        } catch(innerErr) {
+                            console.error(`[Search Agent] ❌ Error processing recovered invoice from ${fname}:`, innerErr.message);
                         }
                     }
                 }
