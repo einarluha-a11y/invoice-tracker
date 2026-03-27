@@ -169,6 +169,56 @@ app.post('/api/intake', async (req, res) => {
     }
 });
 
+// --- VITAL TELEMETRY API (DASHBOARD) ---
+app.get('/api/agent-stats', async (req, res) => {
+    if (!db) return res.status(503).json({ error: 'Database unavailable.' });
+    try {
+        const now = new Date();
+        const oneDayAgo = new Date(now.getTime() - (24 * 60 * 60 * 1000));
+        
+        // 1. Total invoices explicitly processed in the last 24 hours
+        const recentInvoicesQuery = db.collection('invoices').where('createdAt', '>=', oneDayAgo);
+        const invSnap = await recentInvoicesQuery.get();
+        
+        let processed24h = invSnap.docs.length;
+        let anomaliesCaught = 0;
+        let totalConf = 0;
+        let confCount = 0;
+
+        invSnap.docs.forEach(doc => {
+            const data = doc.data();
+            if (data.status === 'Needs Action' || data.status === 'Error' || data.status === 'ANOMALY_DETECTED' || data.status === 'Duplicate') {
+                anomaliesCaught++;
+            }
+            if (data.confidenceScores && data.confidenceScores.total) {
+                totalConf += data.confidenceScores.total;
+                confCount++;
+            }
+        });
+
+        // 2. Count of system telemetry events in system_logs
+        const recentLogsQuery = db.collection('system_logs').where('createdAt', '>=', oneDayAgo);
+        const logsSnap = await recentLogsQuery.get();
+        let errors24h = logsSnap.docs.length;
+        
+        let aiConfidenceAvg = confCount > 0 ? (totalConf / confCount) : 0.95;
+
+        res.status(200).json({
+            status: "success",
+            timestamp: now.toISOString(),
+            metrics: {
+                invoicesProcessed24h: processed24h,
+                anomaliesCaught24h: anomaliesCaught,
+                systemErrors24h: errors24h,
+                averageAiConfidence: parseFloat((aiConfidenceAvg * 100).toFixed(1)) // Returned as percentage (e.g. 95.5)
+            }
+        });
+    } catch (err) {
+        console.error('[API] /api/agent-stats failed:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // --- GLOBAL EXPRESS ERROR BOUNDARY ---
 // Catches malicious payload parsing crashes (e.g., malformed JSON over 50MB) 
 // or async hooks that miss local try/catch blocks
