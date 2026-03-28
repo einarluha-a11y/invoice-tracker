@@ -35,7 +35,7 @@ const resources = {
                 editBtn: "Редактировать",
                 deleteBtn: "Удалить",
                 confirmDelete: "Вы уверены, что хотите удалить эту компанию?",
-                failedDelete: "Failed to delete company.",
+                failedDelete: "Не удалось удалить компанию.",
                 newCompany: "Новая компания",
                 editCompany: "Редактировать компанию",
                 nameLabel: "Название фирмы *",
@@ -75,6 +75,7 @@ const resources = {
                 emptyDesc: "Попробуйте изменить параметры фильтрации.",
                 exportCsv: "Скачать CSV",
                 exportPdf: "Скачать PDF",
+                pdfExportError: "Ошибка экспорта PDF. Попробуйте еще раз.",
             },
 
             modal: {
@@ -90,6 +91,7 @@ const resources = {
                 cancelBtn: "Отмена",
                 saveBtn: "Сохранить изменения",
                 savingBtn: "Сохранение...",
+                saveError: "Ошибка при сохранении",
                 deleteTitle: "Удаление инвойса",
                 deleteDesc: "Вы уверены, что хотите навсегда удалить этот инвойс? Это действие нельзя отменить.",
                 deleteConfirm: "Да, удалить"
@@ -100,7 +102,9 @@ const resources = {
                 welcome: "Привет! Я ваш AI-ассистент. Задайте мне вопрос о ваших счетах (например: \"Покажи просроченные счета от Tele2\" или \"Что нужно оплатить до конца месяца?\").",
                 placeholder: "Какой счет ищем?",
                 typing: "Печатает...",
-                error: "Извините, произошла ошибка при связи с сервером."
+                error: "Извините, произошла ошибка при связи с сервером.",
+                done: "Выполнено.",
+                send: "Отправить"
             },
 
             errors: {
@@ -110,6 +114,10 @@ const resources = {
             },
 
             loadingData: "Загрузка данных...",
+            loadingCompanies: "Загрузка...",
+            noCompanies: "Нет Компаний ⚙️",
+            journal: "Журнал",
+            showMore: "Показать еще...",
         }
     },
     en: {
@@ -185,6 +193,7 @@ const resources = {
                 emptyDesc: "Try adjusting your filter settings.",
                 exportCsv: "Export CSV",
                 exportPdf: "Export PDF",
+                pdfExportError: "PDF export failed. Please try again.",
             },
 
             modal: {
@@ -200,6 +209,7 @@ const resources = {
                 cancelBtn: "Cancel",
                 saveBtn: "Save Changes",
                 savingBtn: "Saving...",
+                saveError: "Error saving invoice",
                 deleteTitle: "Delete Invoice",
                 deleteDesc: "Are you sure you want to permanently delete this invoice? This action cannot be undone.",
                 deleteConfirm: "Yes, delete"
@@ -210,7 +220,9 @@ const resources = {
                 welcome: "Hello! I am your AI assistant. Ask me a question about your invoices (e.g. \"Show overdue Tele2 invoices\" or \"What is due this month?\").",
                 placeholder: "What are we looking for?",
                 typing: "Typing...",
-                error: "Sorry, there was an error communicating with the server."
+                error: "Sorry, there was an error communicating with the server.",
+                done: "Done.",
+                send: "Send"
             },
 
             errors: {
@@ -220,6 +232,10 @@ const resources = {
             },
 
             loadingData: "Loading data...",
+            loadingCompanies: "Loading...",
+            noCompanies: "No Companies ⚙️",
+            journal: "Logs",
+            showMore: "Load more...",
         }
     },
     et: {
@@ -255,7 +271,7 @@ const resources = {
                 editBtn: "Muuda",
                 deleteBtn: "Kustuta",
                 confirmDelete: "Kas olete kindel, et soovite selle ettevõtte kustutada?",
-                failedDelete: "Failed to delete company.",
+                failedDelete: "Ettevõtte kustutamine ebaõnnestus.",
                 newCompany: "Uus Ettevõte",
                 editCompany: "Muuda Ettevõtet",
                 nameLabel: "Ettevõtte Nimi *",
@@ -295,6 +311,7 @@ const resources = {
                 emptyDesc: "Proovige muuta filtri seadeid.",
                 exportCsv: "Laadi alla CSV",
                 exportPdf: "Laadi alla PDF",
+                pdfExportError: "PDF eksport ebaõnnestus. Proovige uuesti.",
             },
 
             modal: {
@@ -310,6 +327,7 @@ const resources = {
                 cancelBtn: "Tühista",
                 saveBtn: "Salvesta Muudatused",
                 savingBtn: "Salvestan...",
+                saveError: "Viga salvestamisel",
                 deleteTitle: "Kustuta Arve",
                 deleteDesc: "Kas olete kindel, et soovite selle arve jäädavalt kustutada? Seda tegevust ei saa tagasi võtta.",
                 deleteConfirm: "Jah, kustuta"
@@ -320,7 +338,9 @@ const resources = {
                 welcome: "Tere! Olen teie AI assistent. Küsige minult küsimus oma arvete kohta (nt: \"Näita Tele2 maksmata arveid\" või \"Mida on vaja tasuda kuu lõpuks?\").",
                 placeholder: "Millist arvet otsime?",
                 typing: "Kirjutab...",
-                error: "Vabandust, serveriga ühenduse loomisel ilmnes viga."
+                error: "Vabandust, serveriga ühenduse loomisel ilmnes viga.",
+                done: "Tehtud.",
+                send: "Saada"
             },
 
             errors: {
@@ -330,6 +350,10 @@ const resources = {
             },
 
             loadingData: "Andmete laadimine...",
+            loadingCompanies: "Laadimine...",
+            noCompanies: "Ettevõtteid pole ⚙️",
+            journal: "Logid",
+            showMore: "Lae rohkem...",
         }
     }
 };

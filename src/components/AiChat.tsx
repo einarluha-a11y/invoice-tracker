@@ -87,7 +87,7 @@ export function AiChat({ onApplyFilters }: AiChatProps) {
             // Generate AI response message
             const newAiMsg: Message = {
                 id: (Date.now() + 1).toString(),
-                text: data.reply || 'Выполнено.',
+                text: data.reply || t('chat.done'),
                 sender: 'ai',
                 timestamp: new Date()
             };
@@ -240,7 +240,7 @@ export function AiChat({ onApplyFilters }: AiChatProps) {
                             cursor: inputValue.trim() && !isLoading ? 'pointer' : 'not-allowed',
                             transition: 'background 0.2s'
                         }}
-                        title="Отправить"
+                        title={t('chat.send')}
                     >
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                             <line x1="22" y1="2" x2="11" y2="13"></line>

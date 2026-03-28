@@ -98,12 +98,13 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
         return new Date(dateString).toLocaleDateString(langCode, options);
     };
 
-    const formatCurrency = (amount: number, currency: string) => {
+    const formatCurrency = (amount: number | undefined | null, currency: string) => {
+        if (amount == null || isNaN(amount as number)) return '—';
         const langCode = i18n.language === 'en' ? 'en-US' : i18n.language === 'et' ? 'et-EE' : 'ru-RU';
         try {
             return new Intl.NumberFormat(langCode, { style: 'currency', currency }).format(amount);
         } catch (e) {
-            return `${amount.toFixed(2)} ${currency}`;
+            return `${(amount as number).toFixed(2)} ${currency}`;
         }
     };
 
@@ -167,6 +168,7 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
+        URL.revokeObjectURL(url); // Release memory immediately after download triggered
     };
 
     const handleExportPDF = async () => {
@@ -241,6 +243,7 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
             doc.save(`invoices_export_${new Date().toISOString().split('T')[0]}.pdf`);
         } catch (error) {
             console.error("PDF Export failed:", error);
+            alert(t('table.pdfExportError', 'PDF export failed. Please try again.'));
         } finally {
             setIsExportingPDF(false);
         }

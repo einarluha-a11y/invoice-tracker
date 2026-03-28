@@ -44,15 +44,19 @@ function App() {
 
     const activeCompany = companies.find(c => c.id === selectedCompanyId);
 
+    const isValidDateString = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d) && !isNaN(new Date(d).getTime());
+
     const handleApplyAiFilters = (filters: { searchTerm?: string, status?: string, dateFrom?: string, dateTo?: string, dateFilterType?: 'created' | 'due' }) => {
         if (filters.searchTerm !== undefined) setSearchTerm(filters.searchTerm);
         if (filters.status !== undefined) {
             const validStatus = ['All', 'Unpaid', 'Pending', 'Paid', 'Overdue', 'NEEDS_REVIEW'].includes(filters.status) ? filters.status : 'All';
             setStatusFilter(validStatus as InvoiceStatus | 'All' | 'Unpaid');
         }
-        if (filters.dateFilterType !== undefined) setDateFilterType(filters.dateFilterType);
-        if (filters.dateFrom !== undefined) setStartDate(filters.dateFrom);
-        if (filters.dateTo !== undefined) setEndDate(filters.dateTo);
+        if (filters.dateFilterType !== undefined && ['created', 'due'].includes(filters.dateFilterType)) {
+            setDateFilterType(filters.dateFilterType);
+        }
+        if (filters.dateFrom !== undefined && isValidDateString(filters.dateFrom)) setStartDate(filters.dateFrom);
+        if (filters.dateTo !== undefined && isValidDateString(filters.dateTo)) setEndDate(filters.dateTo);
     };
 
     useEffect(() => {
@@ -186,9 +190,9 @@ function App() {
                         disabled={companiesLoading || companies.length === 0}
                     >
                         {companiesLoading ? (
-                            <option value="">Загрузка...</option>
+                            <option value="">{t('loadingCompanies')}</option>
                         ) : companies.length === 0 ? (
-                            <option value="">Нет Компаний ⚙️</option>
+                            <option value="">{t('noCompanies')}</option>
                         ) : (
                             companies.map(c => (
                                 <option key={c.id} value={c.id}>{c.name}</option>
@@ -223,7 +227,7 @@ function App() {
                                     fontSize: '0.9rem'
                                 }}
                             >
-                                Журнал
+                                {t('journal')}
                             </button>
                             <button
                                 onClick={() => setView('settings')}
@@ -276,7 +280,7 @@ function App() {
                 <div className="stat-card">
                     <span className="stat-title">{t('totalAmount')}</span>
                     <span className="stat-value">
-                        {isLoading ? '...' : new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(totalAmount)}
+                        {isLoading ? '...' : new Intl.NumberFormat(i18n.language === 'en' ? 'en-US' : i18n.language === 'et' ? 'et-EE' : 'ru-RU', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(totalAmount)}
                     </span>
                 </div>
             </div>
@@ -378,7 +382,7 @@ function App() {
                                     transition: 'all 0.2s ease'
                                 }}
                             >
-                                Показать еще...
+                                {t('showMore')}
                             </button>
                         </div>
                     )}

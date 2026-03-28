@@ -39,7 +39,7 @@ export function InvoiceModal({ invoice, onClose, onSave }: InvoiceModalProps) {
             onClose();
         } catch (error) {
             console.error(error);
-            alert('Ошибка при сохранении');
+            alert(t('modal.saveError'));
         } finally {
             setIsSaving(false);
         }
