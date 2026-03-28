@@ -46,8 +46,9 @@ async function start() {
 
     try {
         // Find all records that are NEEDS_REVIEW or might have been called KARANTIIN
+        // Also includes 'Needs Action' — the status set by accountant_agent.cjs when it quarantines a record
         const snap = await db.collection('invoices')
-            .where('status', 'in', ['NEEDS_REVIEW', 'KARANTIIN', 'Карантин', 'Karantiin', 'ANOMALY_DETECTED'])
+            .where('status', 'in', ['NEEDS_REVIEW', 'Needs Action', 'KARANTIIN', 'Карантин', 'Karantiin', 'ANOMALY_DETECTED'])
             .get();
 
         if (snap.empty) {
