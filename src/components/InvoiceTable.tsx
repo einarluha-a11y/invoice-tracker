@@ -56,7 +56,7 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                 if (statusFilter === 'All') {
                     matchesStatus = true;
                 } else if (statusFilter === 'Unpaid') {
-                    matchesStatus = invoice.status === 'Pending' || invoice.status === 'Overdue';
+                    matchesStatus = invoice.status === 'Pending' || invoice.status === 'Overdue' || invoice.status === 'NEEDS_REVIEW';
                 } else {
                     matchesStatus = invoice.status === statusFilter;
                 }
@@ -112,6 +112,7 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
             case 'Paid': return 'status-paid';
             case 'Pending': return 'status-pending';
             case 'Overdue': return 'status-overdue';
+            case 'NEEDS_REVIEW': return 'status-needs-review';
             default: return '';
         }
     };
@@ -145,7 +146,7 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
             inv.dateCreated,
             inv.dueDate,
             inv.amount,
-            inv.status === 'Paid' ? t('filters.paid') : inv.status === 'Pending' ? t('filters.pending') : t('filters.overdue')
+            inv.status === 'Paid' ? t('filters.paid') : inv.status === 'Pending' ? t('filters.pending') : inv.status === 'NEEDS_REVIEW' ? 'NEEDS REVIEW' : t('filters.overdue')
         ]);
 
         const csvContent = [
@@ -224,7 +225,7 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                     inv.dateCreated,
                     inv.dueDate,
                     `${inv.amount} ${inv.currency}`,
-                    inv.status === 'Paid' ? t('filters.paid') : inv.status === 'Pending' ? t('filters.pending') : t('filters.overdue')
+                    inv.status === 'Paid' ? t('filters.paid') : inv.status === 'Pending' ? t('filters.pending') : inv.status === 'NEEDS_REVIEW' ? 'NEEDS REVIEW' : t('filters.overdue')
                 ];
                 tableRows.push(rowData);
             });
@@ -323,6 +324,9 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', fontSize: '0.75rem', fontWeight: 400, color: 'var(--text-secondary)', marginTop: '4px' }}>
                                                         {invoice.supplierVat && <span style={{ whiteSpace: 'nowrap' }}>VAT: {invoice.supplierVat}</span>}
                                                         {invoice.supplierRegistration && <span style={{ wordBreak: 'break-word', lineHeight: '1.2' }}>Reg No: {invoice.supplierRegistration}</span>}
+                                                        {invoice.enrichmentSource && (
+                                                            <span style={{ color: '#28a745', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px', marginTop: '2px' }} title={`Verified via: ${invoice.enrichmentSource}`}>🛡️ <span style={{fontSize: '0.7rem'}}>Gov. Verified</span></span>
+                                                        )}
                                                     </div>
                                                 )}
                                             </div>
@@ -354,7 +358,7 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                                 <td data-label={t('table.status')} style={{ minWidth: '150px' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                         <span style={{ whiteSpace: 'nowrap' }} className={`status-badge ${getStatusClass(invoice.status)}`}>
-                                            {invoice.status === 'Paid' ? t('filters.paid') : invoice.status === 'Pending' ? t('filters.pending') : t('filters.overdue')}
+                                            {invoice.status === 'Paid' ? t('filters.paid') : invoice.status === 'Pending' ? t('filters.pending') : invoice.status === 'NEEDS_REVIEW' ? t('filters.needsReview', 'Карантин') : t('filters.overdue')}
                                         </span>
                                         {invoice.validationWarnings && invoice.validationWarnings.length > 0 && (
                                             <span className="warning-icon" title={invoice.validationWarnings.join('\n')}>⚠️</span>
@@ -428,6 +432,11 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                                                                 {invoice.viesValidation && (
                                                                     <span style={{ marginLeft: '10px', padding: '2px 6px', borderRadius: '4px', fontSize: '0.8rem', background: invoice.viesValidation.isValid ? 'rgba(40,167,69,0.1)' : 'rgba(220,53,69,0.1)', color: invoice.viesValidation.isValid ? '#28a745' : '#dc3545', fontWeight: 600 }}>
                                                                         {invoice.viesValidation.isValid ? 'VIES VERIFIED ✅' : 'VIES INVALID ❌'}
+                                                                    </span>
+                                                                )}
+                                                                {invoice.enrichmentSource && (
+                                                                    <span style={{ marginLeft: '10px', padding: '2px 6px', borderRadius: '4px', fontSize: '0.8rem', background: 'rgba(40,167,69,0.1)', color: '#28a745', fontWeight: 600 }}>
+                                                                        Gov Verified 🛡️ ({invoice.enrichmentSource})
                                                                     </span>
                                                                 )}
                                                             </div>

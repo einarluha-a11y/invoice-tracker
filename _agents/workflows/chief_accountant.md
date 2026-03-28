@@ -222,3 +222,7 @@ The following systemic fixes were applied across all pipeline modules during the
 
 ### dashboard_auditor_agent.cjs
 - **Log label fixed**: Was `[Accountant Agent]`, now correctly `[Dashboard Auditor]`.
+
+## 34. THE UNIVERSAL GOVERNMENT SOURCE PROTOCOL (GLOBAL "GOV VERIFIED")
+- **The Core Mandate**: The "Gov Verified" enrichment (used for checking corporate registration and VAT numbers) MUST NOT be strictly hardcoded or limited to only Estonian (äriregister) and Polish (KRS) national registries. 
+- **Action**: When identifying the origin country of the vendor issuing the invoice, the system MUST dynamically query the specific, official corporate registry corresponding to that exact country (e.g., Finnish YTJ for Finland, UK Companies House for the UK, etc., via OpenCorporates or direct API). The geographic boundary of the "Gov Verified" shield is universal, adapting to the country natively extracted from the vendor's physical location or legal suffix.

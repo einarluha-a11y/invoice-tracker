@@ -1,4 +1,4 @@
-export type InvoiceStatus = 'Pending' | 'Paid' | 'Overdue';
+export type InvoiceStatus = 'Pending' | 'Paid' | 'Overdue' | 'NEEDS_REVIEW';
 
 export interface Invoice {
     id: string;
@@ -21,6 +21,7 @@ export interface Invoice {
     receiverVat?: string;
     paymentTerms?: string;
     viesValidation?: { isValid: boolean; name: string | null; address: string | null; error: string | null; };
+    enrichmentSource?: string;
 }
 
 export const mockInvoices: Invoice[] = [

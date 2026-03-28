@@ -1,4 +1,4 @@
-import { collection, onSnapshot, doc, deleteDoc, updateDoc, query, orderBy, where, limit } from 'firebase/firestore';
+import { collection, onSnapshot, doc, getDoc, deleteDoc, updateDoc, query, orderBy, where, limit } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Invoice, InvoiceStatus } from './mockInvoices';
 
@@ -17,6 +17,7 @@ export interface RawInvoiceRow {
 
 export const parseStatus = (rawStatus: string, parsedDueDate?: string): InvoiceStatus => {
     const normalized = rawStatus.toLowerCase().trim();
+    if (normalized === 'needs_review' || normalized === 'ootel' || rawStatus === 'NEEDS_REVIEW') return 'NEEDS_REVIEW';
     if (normalized === 'paid' || normalized === 'оплачен') return 'Paid';
     if (normalized === 'overdue' || normalized === 'просрочен') return 'Overdue';
 
@@ -133,6 +134,7 @@ export const subscribeToInvoices = (
                 receiverVat: data.receiverVat,
                 paymentTerms: data.paymentTerms,
                 viesValidation: data.viesValidation,
+                enrichmentSource: data.enrichmentSource || data.recoverySource || undefined,
             });
         });
 
@@ -153,6 +155,19 @@ export const deleteInvoice = async (invoiceId: string): Promise<void> => {
 export const updateInvoice = async (invoiceId: string, data: Partial<Invoice>): Promise<void> => {
     if (!db) throw new Error("Database not initialized");
 
+    const invoiceRef = doc(db, 'invoices', invoiceId);
+    let originalVendorName = '';
+    let companyId = '';
+
+    // Fetch original invoice to compare vendor name for AI Auto-Learning
+    if (data.vendor !== undefined) {
+        const snap = await getDoc(invoiceRef);
+        if (snap.exists()) {
+            originalVendorName = snap.data().vendorName || snap.data().vendor || '';
+            companyId = snap.data().companyId || '';
+        }
+    }
+
     // Map frontend Invoice fields back to DB fields
     const updateData: any = {};
     if (data.vendor !== undefined) updateData.vendorName = data.vendor;
@@ -162,5 +177,29 @@ export const updateInvoice = async (invoiceId: string, data: Partial<Invoice>): 
     if (data.dueDate !== undefined) updateData.dueDate = data.dueDate;
     if (data.status !== undefined) updateData.status = data.status;
 
-    await updateDoc(doc(db, 'invoices', invoiceId), updateData);
+    await updateDoc(invoiceRef, updateData);
+
+    // AI Self-Healing Loop: Log the manual correction as a rule
+    if (companyId && data.vendor && originalVendorName && data.vendor !== originalVendorName) {
+        const cleanOld = originalVendorName.trim();
+        const cleanNew = data.vendor.trim();
+        
+        // Ensure changes are meaningful (not just uppercase/lowercase toggles that are 1 character)
+        if (cleanOld.length > 2 && cleanNew.length > 2 && cleanOld.toLowerCase() !== cleanNew.toLowerCase()) {
+            const companyRef = doc(db, 'companies', companyId);
+            const compSnap = await getDoc(companyRef);
+            if (compSnap.exists()) {
+                const currentRules = compSnap.data().customAiRules || '';
+                const newRule = `If you see "${cleanOld}", the correct official name is "${cleanNew}".`;
+                
+                // Check if rule already exists to prevent duplication
+                if (!currentRules.includes(newRule)) {
+                    await updateDoc(companyRef, {
+                        customAiRules: currentRules ? `${currentRules}\n${newRule}` : newRule
+                    });
+                    console.log(`[AI-Self-Healing] Taught AI: ${newRule}`);
+                }
+            }
+        }
+    }
 };

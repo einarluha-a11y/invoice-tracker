@@ -47,7 +47,7 @@ function App() {
     const handleApplyAiFilters = (filters: { searchTerm?: string, status?: string, dateFrom?: string, dateTo?: string, dateFilterType?: 'created' | 'due' }) => {
         if (filters.searchTerm !== undefined) setSearchTerm(filters.searchTerm);
         if (filters.status !== undefined) {
-            const validStatus = ['All', 'Unpaid', 'Pending', 'Paid', 'Overdue'].includes(filters.status) ? filters.status : 'All';
+            const validStatus = ['All', 'Unpaid', 'Pending', 'Paid', 'Overdue', 'NEEDS_REVIEW'].includes(filters.status) ? filters.status : 'All';
             setStatusFilter(validStatus as InvoiceStatus | 'All' | 'Unpaid');
         }
         if (filters.dateFilterType !== undefined) setDateFilterType(filters.dateFilterType);
@@ -323,6 +323,7 @@ function App() {
                 >
                     <option value="All">{t('filters.all')}</option>
                     <option value="Unpaid">{t('filters.unpaid')}</option>
+                    <option value="NEEDS_REVIEW">⚠️ {t('filters.needsReview', 'Требует внимания')}</option>
                     <option value="Pending">{t('filters.pending')}</option>
                     <option value="Paid">{t('filters.paid')}</option>
                     <option value="Overdue">{t('filters.overdue')}</option>
