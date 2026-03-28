@@ -123,7 +123,7 @@ export const subscribeToInvoices = (
                 dateCreated: parseDate(data.dateCreated),
                 dueDate: parsedDueDate,
                 status: parseStatus(data.status || '', parsedDueDate),
-                fileUrl: data.fileUrl,
+                fileUrl: data.fileUrl || data.originalFileUrl || undefined,
                 subtotalAmount: data.subtotalAmount,
                 taxAmount: data.taxAmount,
                 lineItems: data.lineItems,
