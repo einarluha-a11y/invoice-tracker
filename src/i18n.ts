@@ -56,7 +56,10 @@ const resources = {
                 deleteRuleTooltip: "Удалить правило",
                 deleteAllBtn: "Удалить все",
                 confirmClearRules: "Точно удалить все инструкции агента для этой компании?",
-                deleteRuleError: "Ошибка при удалении правила"
+                deleteRuleError: "Ошибка при удалении правила",
+                addRuleLabel: "Добавить инструкцию:",
+                addRulePlaceholder: "Например: Для вендоров Pronto и Inovatus срок оплаты = дата инвойса + 30 дней.",
+                addRuleBtn: "Сохранить инструкцию"
             },
 
             table: {
@@ -163,7 +166,10 @@ const resources = {
                 deleteRuleTooltip: "Delete rule",
                 deleteAllBtn: "Delete all",
                 confirmClearRules: "Are you sure you want to delete all agent instructions for this company?",
-                deleteRuleError: "Error deleting rule"
+                deleteRuleError: "Error deleting rule",
+                addRuleLabel: "Add instruction:",
+                addRulePlaceholder: "E.g. For vendors Pronto and Inovatus set due date = invoice date + 30 days.",
+                addRuleBtn: "Save instruction"
             },
 
             table: {
@@ -270,7 +276,10 @@ const resources = {
                 deleteRuleTooltip: "Kustuta reegel",
                 deleteAllBtn: "Kustuta kõik",
                 confirmClearRules: "Kas olete kindel, et soovite kustutada kõik agendi juhised selle ettevõtte jaoks?",
-                deleteRuleError: "Viga reegli kustutamisel"
+                deleteRuleError: "Viga reegli kustutamisel",
+                addRuleLabel: "Lisa juhis:",
+                addRulePlaceholder: "Nt: Pronto ja Inovatuse jaoks maksetähtaeg = arve kuupäev + 30 päeva.",
+                addRuleBtn: "Salvesta juhis"
             },
 
             table: {
