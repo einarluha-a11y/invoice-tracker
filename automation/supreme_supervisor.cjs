@@ -46,8 +46,10 @@ async function intellectualSupervisorGate(invoiceData) {
         if (isRegMissing) {
             missingFields.push("Supplier Registration Number");
         }
-        if (isVatMissing) {
-            missingFields.push("Supplier VAT Number");
+        
+        // Critical Fix: Missing VAT is only an error requiring re-extraction if the vendor actually charged Tax.
+        if (isVatMissing && parsedTax > 0) {
+            missingFields.push("Supplier VAT Number (Required because Tax > 0)");
         }
     } else {
         console.log(`[Supervisor] 👤 Vendor "${invoiceData.vendorName}" appears to be a private person — skipping VAT/Reg requirement.`);
