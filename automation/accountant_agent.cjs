@@ -222,10 +222,21 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
             warnings.push("CRITICAL: Supplier Registration Number is missing from the physical document and could not be found in official sources.");
             systemStatus = 'Needs Action';
         }
+
+        // Missing VAT is only a CRITICAL issue if the invoice actually charges VAT (taxAmount > 0).
+        // VAT-exempt suppliers (leasing, financial services, small businesses below threshold)
+        // legitimately have no VAT number — do not quarantine them for this.
+        const invoiceChargesVat = docAiPayload.taxAmount && parseFloat(docAiPayload.taxAmount) > 0;
         if (!docAiPayload.supplierVat || docAiPayload.supplierVat === "Not_Found" || docAiPayload.supplierVat === "NOT_FOUND_ON_INVOICE" || String(docAiPayload.supplierVat).trim() === "") {
             docAiPayload.supplierVat = "Not_Found";
-            warnings.push("CRITICAL: Supplier VAT Number is missing from the physical document and could not be found in official sources.");
-            systemStatus = 'Needs Action';
+            if (invoiceChargesVat) {
+                // Charging VAT but no VAT registration number → genuine compliance issue
+                warnings.push("CRITICAL: Supplier VAT Number is missing but invoice charges VAT. Could not be found in official sources.");
+                systemStatus = 'Needs Action';
+            } else {
+                // No VAT on invoice — supplier may be VAT-exempt. Log as INFO only.
+                warnings.push("INFO: Supplier VAT not found (invoice appears to be VAT-exempt — no tax amount charged).");
+            }
         }
     }
 
@@ -349,8 +360,10 @@ Do not return any markdown wrappers, just the raw JSON.`;
         try {
             aiAnalysis = JSON.parse(rawJson);
         } catch (parseErr) {
-            console.warn(`[Accountant Agent] ⚠️  AI audit response was not valid JSON. Using safe defaults.`);
-            aiAnalysis = { recommendedStatus: 'Needs Action', generatedWarnings: ['NOTE: AI compliance audit parse failed — manual review recommended.'] };
+            // Use Pending as default — a parse failure is a system error, not evidence of a bad invoice.
+            // The invoice already passed all hard validation rules above to reach this point.
+            console.warn(`[Accountant Agent] ⚠️  AI audit response was not valid JSON. Using safe defaults (Pending).`);
+            aiAnalysis = { recommendedStatus: 'Pending', generatedWarnings: ['NOTE: AI compliance audit parse failed — proceeding with rule-based validation only.'] };
         }
 
         console.log(`[Accountant Agent] 📝 Audit Complete. Status: ${aiAnalysis.recommendedStatus}`);
@@ -362,8 +375,10 @@ Do not return any markdown wrappers, just the raw JSON.`;
         
         // Ensure Pre-Paid and Krediitarve locks are impenetrable
         if (systemStatus !== 'Paid' && systemStatus !== 'Duplicate') {
-            // Only escalate to Needs Action if it isn't strictly locked by higher rules
-            if (aiAnalysis.recommendedStatus === 'Needs Action' || warnings.length > 0) {
+            // Only escalate to Needs Action for genuine CRITICAL issues.
+            // INFO: and NOTE: messages are metadata only — they never trigger quarantine.
+            const hasCriticalWarning = warnings.some(w => w.startsWith('CRITICAL:'));
+            if (aiAnalysis.recommendedStatus === 'Needs Action' || hasCriticalWarning) {
                 systemStatus = 'Needs Action';
             }
         } else {

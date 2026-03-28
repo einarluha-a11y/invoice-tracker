@@ -114,6 +114,15 @@ function App() {
         }
     };
 
+    const handleApproveInvoice = async (id: string) => {
+        try {
+            await updateInvoice(id, { status: 'Pending' });
+        } catch (err) {
+            console.error("Failed to approve invoice", err);
+            alert(t('errors.deleteInvoice')); // reuse generic error key
+        }
+    };
+
     // Stats computed from loaded data using useMemo to prevent main-thread freezing sequentially
     const { totalInvoices, overdueCount, totalAmount } = useMemo(() => {
         const filtered = invoices.filter(invoice => {
@@ -345,6 +354,7 @@ function App() {
                         }}
                         onEdit={handleEdit}
                         onDelete={handleDeleteClick}
+                        onApprove={handleApproveInvoice}
                         companyName={activeCompany?.name}
                     />
                     

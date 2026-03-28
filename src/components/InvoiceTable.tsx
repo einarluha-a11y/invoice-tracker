@@ -17,13 +17,14 @@ interface InvoiceTableProps {
     onSort: (field: SortField) => void;
     onEdit: (invoice: Invoice) => void;
     onDelete: (id: string) => void;
+    onApprove: (id: string) => void;
     companyName?: string;
 }
 
 export type SortField = keyof Invoice;
 export type SortDirection = 'asc' | 'desc';
 
-export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, endDate, sortField, sortDirection, onSort, onEdit, onDelete, companyName }: InvoiceTableProps) {
+export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, endDate, sortField, sortDirection, onSort, onEdit, onDelete, onApprove, companyName }: InvoiceTableProps) {
     const { t, i18n } = useTranslation();
     const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
     const [visibleLimit, setVisibleLimit] = useState(100);
@@ -370,6 +371,13 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                                 </td>
                                 <td data-label={t('table.actions')}>
                                     <div className="action-buttons">
+                                        {invoice.status === 'NEEDS_REVIEW' && (
+                                            <button
+                                                onClick={() => onApprove(invoice.id)}
+                                                style={{ background: 'transparent', border: 'none', color: '#28a745', cursor: 'pointer', padding: '4px', fontSize: '1.2rem', opacity: 0.9, display: 'flex' }}
+                                                title={t('table.approveBtn', 'Approve — set to Pending')}
+                                            >✓</button>
+                                        )}
                                         <button
                                             onClick={() => onEdit(invoice)}
                                             style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', padding: '4px', fontSize: '1.2rem', opacity: 0.9, display: 'flex' }}

@@ -77,6 +77,7 @@ const resources = {
                 exportCsv: "Скачать CSV",
                 exportPdf: "Скачать PDF",
                 pdfExportError: "Ошибка экспорта PDF. Попробуйте еще раз.",
+                approveBtn: "Утвердить — снять карантин",
             },
 
             modal: {
@@ -196,6 +197,7 @@ const resources = {
                 exportCsv: "Export CSV",
                 exportPdf: "Export PDF",
                 pdfExportError: "PDF export failed. Please try again.",
+                approveBtn: "Approve — remove from quarantine",
             },
 
             modal: {
@@ -315,6 +317,7 @@ const resources = {
                 exportCsv: "Laadi alla CSV",
                 exportPdf: "Laadi alla PDF",
                 pdfExportError: "PDF eksport ebaõnnestus. Proovige uuesti.",
+                approveBtn: "Kinnita — eemalda karantiinist",
             },
 
             modal: {
