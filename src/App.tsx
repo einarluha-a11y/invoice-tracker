@@ -129,7 +129,7 @@ function App() {
             // Status filter
             let matchesStatus = true;
             if (statusFilter === 'Unpaid') {
-                matchesStatus = invoice.status === 'Pending' || invoice.status === 'Overdue';
+                matchesStatus = invoice.status === 'Pending' || invoice.status === 'Overdue' || invoice.status === 'NEEDS_REVIEW';
             } else if (statusFilter !== 'All') {
                 matchesStatus = invoice.status === statusFilter;
             }

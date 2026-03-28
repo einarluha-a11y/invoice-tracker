@@ -200,20 +200,51 @@ app.post('/api/intake', rateLimit(20, 60_000), async (req, res) => {
 // Fetches the PDF server-side and streams it to the browser — no CORS preflight.
 app.get('/api/pdf-proxy', async (req, res) => {
     const { url } = req.query;
-    if (!url || !String(url).startsWith('https://firebasestorage.googleapis.com/')) {
-        return res.status(400).json({ error: 'Missing or invalid url parameter.' });
+    const urlStr = String(url || '');
+
+    // Accept both Firebase Storage HTTPS URLs and gs:// bucket URLs
+    const isFirebaseHttps = urlStr.startsWith('https://firebasestorage.googleapis.com/');
+    const isGsUrl = urlStr.startsWith('gs://');
+
+    if (!urlStr || (!isFirebaseHttps && !isGsUrl)) {
+        return res.status(400).json({ error: 'Missing or invalid url — must be a Firebase Storage URL.' });
     }
+
     try {
-        const upstream = await fetch(String(url));
-        if (!upstream.ok) {
-            return res.status(upstream.status).json({ error: `Storage fetch failed: ${upstream.statusText}` });
+        // Strategy 1: try a direct fetch (works for non-expired download tokens)
+        if (isFirebaseHttps) {
+            const upstream = await fetch(urlStr);
+            if (upstream.ok) {
+                const contentType = upstream.headers.get('content-type') || 'application/pdf';
+                res.setHeader('Content-Type', contentType);
+                res.setHeader('Cache-Control', 'private, max-age=300');
+                const { Readable } = require('stream');
+                Readable.fromWeb(upstream.body).pipe(res);
+                return;
+            }
+            // Fall through to Admin SDK if token is expired/revoked (403/401)
+            console.warn(`[PDF Proxy] Direct fetch failed (${upstream.status}), falling back to Admin SDK.`);
         }
-        const contentType = upstream.headers.get('content-type') || 'application/pdf';
-        res.setHeader('Content-Type', contentType);
+
+        // Strategy 2: Admin SDK download — works for gs:// URLs and expired download tokens
+        const storageBucket = admin.storage().bucket();
+        let filePath;
+        if (isGsUrl) {
+            // gs://bucket-name/path/to/file.pdf
+            filePath = urlStr.replace(/^gs:\/\/[^/]+\//, '');
+        } else {
+            // https://firebasestorage.googleapis.com/v0/b/{bucket}/o/{encoded-path}?...
+            const urlObj = new URL(urlStr);
+            filePath = decodeURIComponent(urlObj.pathname.split('/o/')[1]);
+        }
+
+        const fileRef = storageBucket.file(filePath);
+        const [fileBuffer] = await fileRef.download();
+
+        res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Cache-Control', 'private, max-age=300');
-        // Stream the body to the browser
-        const { Readable } = require('stream');
-        Readable.fromWeb(upstream.body).pipe(res);
+        res.send(fileBuffer);
+
     } catch (err) {
         console.error('[PDF Proxy] Error:', err.message);
         res.status(500).json({ error: err.message });
