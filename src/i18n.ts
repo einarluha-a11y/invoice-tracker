@@ -4,7 +4,7 @@ import { initReactI18next } from 'react-i18next';
 const resources = {
     ru: {
         translation: {
-            appName: "Kontrol Invoice",
+            appName: "Invoice-Tracker",
             totalInvoices: "Всего инвойсов",
             overdue: "Просрочено",
             totalAmount: "Общая Сумма",
@@ -124,7 +124,7 @@ const resources = {
     },
     en: {
         translation: {
-            appName: "Kontrol Invoice",
+            appName: "Invoice-Tracker",
             totalInvoices: "Total Invoices",
             overdue: "Overdue",
             totalAmount: "Total Amount",
@@ -244,7 +244,7 @@ const resources = {
     },
     et: {
         translation: {
-            appName: "Kontrol Invoice",
+            appName: "Invoice-Tracker",
             totalInvoices: "Arveid Kokku",
             overdue: "Maksetähtaja Ületanud",
             totalAmount: "Kogusumma",
