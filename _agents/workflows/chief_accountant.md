@@ -226,3 +226,8 @@ The following systemic fixes were applied across all pipeline modules during the
 ## 34. THE UNIVERSAL GOVERNMENT SOURCE PROTOCOL (GLOBAL "GOV VERIFIED")
 - **The Core Mandate**: The "Gov Verified" enrichment (used for checking corporate registration and VAT numbers) MUST NOT be strictly hardcoded or limited to only Estonian (äriregister) and Polish (KRS) national registries. 
 - **Action**: When identifying the origin country of the vendor issuing the invoice, the system MUST dynamically query the specific, official corporate registry corresponding to that exact country (e.g., Finnish YTJ for Finland, UK Companies House for the UK, etc., via OpenCorporates or direct API). The geographic boundary of the "Gov Verified" shield is universal, adapting to the country natively extracted from the vendor's physical location or legal suffix.
+
+## 35. THE IMAP RATE LIMIT PROTOCOL (THROTTLING)
+- **The Error**: Running historical recovery or audit scripts (e.g. `nunner_recover.cjs`) using parallel or rapid sequential IMAP fetches triggered `RateLimitedError` from the active email provider. This blocked the main `invoice-imap` 5-minute polling daemon from authenticating, causing a production blackout on the frontend.
+- **Mandate**: The 5-minute production polling loop MUST NEVER be jeopardized by administrative or historical scanning actions.
+- **Action**: All standalone scripts that connect to and scan IMAP inboxes MUST implement explicit artificial delays (throttling/debouncing) within their core processing loops. For example, insert `await new Promise(r => setTimeout(r, 500))` between parsing standard emails, and larger delays prior to AI payload requests, keeping connection cadence safely below any SMTP/IMAP provider's blocking threshold.

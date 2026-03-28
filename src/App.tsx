@@ -7,7 +7,6 @@ import { InvoiceStatus, Invoice, mockInvoices } from './data/mockInvoices';
 import { subscribeToInvoices, deleteInvoice, updateInvoice } from './data/api';
 import { db } from './firebase';
 import { Settings } from './components/Settings';
-import { SystemLogs } from './components/SystemLogs';
 import { useCompanies, Company } from './hooks/useCompanies';
 import { InvoiceModal } from './components/InvoiceModal';
 import { AiChat } from './components/AiChat';
@@ -19,7 +18,7 @@ function App() {
     const { companies, companiesLoading, companiesError } = useCompanies();
 
     const [selectedCompanyId, setSelectedCompanyId] = useState<string>('');
-    const [view, setView] = useState<'dashboard' | 'settings' | 'logs'>('dashboard');
+    const [view, setView] = useState<'dashboard' | 'settings'>('dashboard');
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState<InvoiceStatus | 'All' | 'Unpaid'>('All');
     const [startDate, setStartDate] = useState('');
@@ -165,9 +164,6 @@ function App() {
     if (view === 'settings') {
         return <Settings onBack={() => setView('dashboard')} />;
     }
-    if (view === 'logs') {
-        return <SystemLogs onBack={() => setView('dashboard')} />;
-    }
 
     return (
         <div className="dashboard-container">
@@ -215,20 +211,6 @@ function App() {
 
                     {user && (
                         <>
-                            <button
-                                onClick={() => setView('logs')}
-                                style={{
-                                    background: 'transparent',
-                                    border: '1px solid var(--border-color)',
-                                    color: 'var(--text-secondary)',
-                                    padding: '0.4rem 0.8rem',
-                                    borderRadius: 'var(--radius-md)',
-                                    cursor: 'pointer',
-                                    fontSize: '0.9rem'
-                                }}
-                            >
-                                {t('journal')}
-                            </button>
                             <button
                                 onClick={() => setView('settings')}
                                 style={{
@@ -327,7 +309,7 @@ function App() {
                 >
                     <option value="All">{t('filters.all')}</option>
                     <option value="Unpaid">{t('filters.unpaid')}</option>
-                    <option value="NEEDS_REVIEW">⚠️ {t('filters.needsReview', 'Требует внимания')}</option>
+                    <option value="NEEDS_REVIEW">⚠️ {t('filters.needsReview')}</option>
                     <option value="Pending">{t('filters.pending')}</option>
                     <option value="Paid">{t('filters.paid')}</option>
                     <option value="Overdue">{t('filters.overdue')}</option>

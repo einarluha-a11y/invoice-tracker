@@ -361,7 +361,7 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                                 <td data-label={t('table.status')} style={{ minWidth: '150px' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                         <span style={{ whiteSpace: 'nowrap' }} className={`status-badge ${getStatusClass(invoice.status)}`}>
-                                            {invoice.status === 'Paid' ? t('filters.paid') : invoice.status === 'Pending' ? t('filters.pending') : invoice.status === 'NEEDS_REVIEW' ? t('filters.needsReview', 'Карантин') : t('filters.overdue')}
+                                            {invoice.status === 'Paid' ? t('filters.paid') : invoice.status === 'Pending' ? t('filters.pending') : invoice.status === 'NEEDS_REVIEW' ? t('filters.needsReview') : t('filters.overdue')}
                                         </span>
                                         {invoice.validationWarnings && invoice.validationWarnings.length > 0 && (
                                             <span className="warning-icon" title={invoice.validationWarnings.join('\n')}>⚠️</span>

@@ -136,6 +136,9 @@ async function scanInboxForNunner(imapConfig, companyId, companyName) {
     let nunnerCount = 0;
 
     for (const item of messages) {
+        // IMAP Throttling: 500ms delay per email scan to protect the main production polling daemon from RateLimitedError
+        await new Promise(r => setTimeout(r, 500));
+
         let parsed;
         try {
             const all = item.parts.find(a => a.which === '');
@@ -172,6 +175,9 @@ async function scanInboxForNunner(imapConfig, companyId, companyName) {
             flog(`\n  🎯 Found Nunner PDF: "${att.filename}" | email: "${parsed.subject || '(no subject)'}"`);
             flog(`     Text match: ${isNunnerByText}, Filename match: ${isNunnerByFilename}`);
             flog(`     PDF size: ${att.content.length} bytes`);
+
+            // AI Throttling: 2-second pause before heavy AI extraction to prevent API & network bursts
+            await new Promise(r => setTimeout(r, 2000));
 
             // --- Run full AI extraction pipeline ---
             let parsedData = null;
