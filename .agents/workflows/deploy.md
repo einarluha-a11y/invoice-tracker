@@ -4,7 +4,7 @@ description: How to correctly deploy any code or UI changes across the local and
 
 # Unified Omnichannel Deployment Protocol
 
-The "Invoice Tracker" ecosystem operates on a highly decentralized architecture consisting of three distinct layers:
+The "Invoice-Tracker" ecosystem operates on a highly decentralized architecture consisting of three distinct layers:
 1. **The Core PM2 Daemon (`invoice-bot`)**: Handles IMAP scraping, AI ingestion, and Firebase synchronization locally.
 2. **The Local Vite Desktop PWA (`http://localhost:5173/`)**: A Service Worker-cached UI running locally on the user's desktop engine.
 3. **The Vercel Cloud Repository (`https://github.com/einarluha-a11y/invoice-tracker`)**: The ultimate source of truth serving the live Desktop wrapper GUI via the Edge.

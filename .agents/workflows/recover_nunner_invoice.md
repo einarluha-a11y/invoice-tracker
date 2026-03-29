@@ -42,7 +42,7 @@ Look for:
 
 ### Step 3 — Verify on dashboard
 
-Open the Invoice Tracker app in the browser and check that NUNNER Logistics UAB now
+Open the Invoice-Tracker app in the browser and check that NUNNER Logistics UAB now
 shows the correct amount, attached PDF, VAT number, and registration number.
 
 ## Troubleshooting
@@ -63,4 +63,4 @@ and verify the dashboard.
 The PDF may be a scanned image requiring OCR improvements. Check the log for
 `Extracted: amount=0` and note what other fields were extracted.
 The record will be saved with status NEEDS_REVIEW — manually correct the amount
-in the Invoice Tracker dashboard.
+in the Invoice-Tracker dashboard.

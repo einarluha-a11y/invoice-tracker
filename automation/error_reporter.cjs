@@ -1,5 +1,5 @@
 /**
- * ERROR REPORTER — Invoice Tracker Backend
+ * ERROR REPORTER — Invoice-Tracker Backend
  * Logs critical errors to a file and optionally sends webhook alerts.
  *
  * Usage:
@@ -88,7 +88,7 @@ async function reportError(errorCode, context, err) {
             const url = require('url');
             const stack = (err instanceof Error && err.stack) ? `\nStack: ${err.stack.split('\n').slice(0, 4).join(' | ')}` : '';
             const body = JSON.stringify({
-                text: `🚨 Invoice Tracker Error\n*${errorCode}*\nContext: ${context}\nMessage: ${message}${stack}\nTime: ${timestamp}`
+                text: `🚨 Invoice-Tracker Error\n*${errorCode}*\nContext: ${context}\nMessage: ${message}${stack}\nTime: ${timestamp}`
             });
             const parsed = new url.URL(WEBHOOK_URL);
             const options = {

@@ -160,7 +160,7 @@ app.post('/api/intake', rateLimit(20, 60_000), async (req, res) => {
         // --- Step 6: ROUTING ---
         console.log(`[Step 6: Routing] Status determined as: ${systemStatus}. Writing to DB...`);
         
-        // Write exactly to Invoice Tracker's required DB model
+        // Write exactly to Invoice-Tracker's required DB model
         const docRef = db.collection('invoices').doc();
         await docRef.set({
             invoiceId: parsedData.invoiceId,

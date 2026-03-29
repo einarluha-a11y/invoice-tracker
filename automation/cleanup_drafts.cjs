@@ -1,5 +1,5 @@
 /**
- * SMART CLEANUP — Invoice Tracker
+ * SMART CLEANUP — Invoice-Tracker
  *
  * For each NEEDS_REVIEW record without a fileUrl this script:
  *   1. Searches Firebase Storage for files uploaded within ±5 minutes of the record's createdAt

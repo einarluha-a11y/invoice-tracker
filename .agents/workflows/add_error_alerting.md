@@ -24,7 +24,7 @@ Create a new file `automation/error_reporter.cjs` with this content:
 
 ```js
 /**
- * ERROR REPORTER — Invoice Tracker Backend
+ * ERROR REPORTER — Invoice-Tracker Backend
  * Logs critical errors to a file and optionally sends webhook alerts.
  *
  * Usage:
@@ -72,7 +72,7 @@ async function reportError(errorCode, context, err) {
             const https = require('https');
             const url = require('url');
             const body = JSON.stringify({
-                text: `🚨 Invoice Tracker Error\n*${errorCode}*\nContext: ${context}\nMessage: ${message}\nTime: ${timestamp}`
+                text: `🚨 Invoice-Tracker Error\n*${errorCode}*\nContext: ${context}\nMessage: ${message}\nTime: ${timestamp}`
             });
             const parsed = new url.URL(WEBHOOK_URL);
             const options = {
