@@ -185,7 +185,7 @@ function App() {
                         <line x1="16" y1="17" x2="8" y2="17"></line>
                         <polyline points="10 9 9 9 8 9"></polyline>
                     </svg>
-                    Invoice-<span className="header-accent">Tracker</span>
+                    <span>Invoice-<span className="header-accent">Tracker</span></span>
                 </h1>
                 <div className="header-controls" style={{ display: 'flex', gap: '1rem' }}>
                     <select
