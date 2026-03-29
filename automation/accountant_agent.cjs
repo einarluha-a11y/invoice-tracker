@@ -31,16 +31,18 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
         try {
             const invoicesRef = db.collection('invoices');
             const snap = await invoicesRef.where('companyId', '==', companyId)
-                                          .where('status', 'in', ['Unpaid', 'Pending', 'OOTEL', 'Needs Action', 'Duplicate'])
+                                          .where('status', 'in', ['Unpaid', 'Pending', 'OOTEL', 'NEEDS_REVIEW', 'Needs Action', 'Overdue', 'Duplicate'])
                                           .get();
             let matched = false;
             if (!snap.empty) {
                 for (const doc of snap.docs) {
-                    const invData = doc.data(); // FIX Bug 1: invData was never declared
+                    const invData = doc.data();
                     const invAmt = Math.abs(parseAmount(invData.amount));
                     const payAmt = Math.abs(parseAmount(docAiPayload.amount));
-                    
-                    if (Math.abs(invAmt - payAmt) < 0.05) {
+
+                    // Tolerance of €0.50 covers Revolut's €0.20 bank transfer commission
+                    // and minor rounding differences between invoice and actual payment
+                    if (Math.abs(invAmt - payAmt) < 0.50) {
                         const vName = String(invData.vendorName || '').toLowerCase();
                         const bName = String(docAiPayload.vendorName || '').toLowerCase();
                         const ref = String(docAiPayload.paymentReference || '').toLowerCase();
