@@ -1,152 +1,336 @@
-/**
- * reconcile_bank_statement.cjs
- * 
- * Manually reconciles a parsed bank statement against Firestore invoices.
- * Matches by: amount (±€0.50 tolerance) + vendor name similarity OR invoice reference.
- * 
- * Usage:
- *   node reconcile_bank_statement.cjs              — dry-run, shows matches
- *   node reconcile_bank_statement.cjs --fix        — mark matched invoices as Paid
- *   node reconcile_bank_statement.cjs --company <id> --fix
- */
-require('dotenv').config({ path: '../.env' });
-const { admin, db } = require('./core/firebase.cjs');
+const readline = require('readline');
+const imaps = require('imap-simple');
+const pdfParse = require('pdf-parse');
+const { Anthropic } = require('@anthropic-ai/sdk');
+require('dotenv').config({ path: __dirname + '/.env' }); 
 
-const DRY_RUN = !process.argv.includes('--fix');
-const TARGET_COMPANY = (() => {
-    const idx = process.argv.indexOf('--company');
-    return idx !== -1 ? process.argv[idx + 1] : null;
-})();
+const { db } = require('./core/firebase.cjs');
+const { createWithRetry } = require('./ai_retry.cjs');
 
-// ─── PASTE BANK STATEMENT TRANSACTIONS HERE ──────────────────────────────────
-// Format: { vendor, amount, reference }
-// Parsed from: Revolut Business statement 26-29 Mar 2026, Global Technics OÜ
-const BANK_TRANSACTIONS = [
-    { vendor: 'Etra Balti AS',                      amount: 49.30,     reference: '4104312' },
-    { vendor: 'ATRIGON B.V.',                        amount: 1000.00,   reference: '169' },
-    { vendor: 'Stén & Co OÜ',                        amount: 382.41,    reference: '1033270' },
-    { vendor: 'Tele2 Eesti Aktsiaselts',             amount: 88.50,     reference: '15124857692 855028033' },
-    { vendor: 'ZONE MEDIA OÜ',                       amount: 44.65,     reference: '1010134359 1270088' },
-    { vendor: 'Allstore Assets OÜ',                  amount: 110.56,    reference: 'B04091' },
-    { vendor: 'UAB Konica Minolta Baltia Eesti filiaal', amount: 25.01, reference: 'EES048338' },
-    { vendor: 'Accounting Resources OÜ',             amount: 477.60,    reference: '6426' },
-    { vendor: 'SMC AUTOMATION OÜ',                   amount: 131.79,    reference: '2502196' },
-    { vendor: 'Allstore Assets OÜ',                  amount: 605.32,    reference: 'B03962' },
-    { vendor: 'Allstore Assets OÜ',                  amount: 605.32,    reference: 'B03033 09276' },
-    { vendor: 'Täisteenusliisingu AS',               amount: 127.81,    reference: '5102974000220260318 51029740002' },
-    { vendor: 'Täisteenusliisingu AS',               amount: 91.81,     reference: '5103460000120260318 51034600001' },
-    { vendor: 'SMC AUTOMATION OÜ',                   amount: 233.39,    reference: '2501851' },
-    { vendor: 'Web Design Agency OÜ',                amount: 434.00,    reference: '253362 2533627' },
-    { vendor: 'SMC AUTOMATION OÜ',                   amount: 1102.75,   reference: '2501599' },
-    { vendor: 'NUIA PMT AS',                         amount: 5614.53,   reference: '19733' },
-    { vendor: 'DMYTRO SUPRUN',                       amount: 3000.00,   reference: '20/03/2026' },
-    { vendor: 'Terma sp. z o. o.',                   amount: 28457.00,  reference: 'FE/25/09873' },
-    // Anthropic Ireland (€10.88) is a service charge — not an invoice payment, skip
-];
-// ─────────────────────────────────────────────────────────────────────────────
+const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+});
 
-function normalize(s) {
-    return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-}
+const isFix = process.argv.includes('--fix');
 
-function vendorMatch(invVendor, txVendor) {
-    const a = normalize(invVendor);
-    const b = normalize(txVendor);
-    return a.includes(b) || b.includes(a) || 
-           (a.length > 4 && b.length > 4 && (a.includes(b.slice(0,8)) || b.includes(a.slice(0,8))));
-}
-
-function referenceMatch(invId, txRef) {
-    const ref = normalize(txRef);
-    const id  = normalize(invId);
-    return id.length > 3 && (ref.includes(id) || id.includes(ref));
-}
-
-async function run() {
-    console.log(`\n💳 reconcile_bank_statement.cjs — ${DRY_RUN ? 'DRY RUN' : '⚠️  WRITE MODE'}`);
-    console.log(`   Revolut Business · Global Technics OÜ · 26-29 Mar 2026\n`);
-
-    // Load all unpaid invoices for the company
-    let q = db.collection('invoices')
-        .where('status', 'in', ['Pending', 'Unpaid', 'OOTEL', 'NEEDS_REVIEW',
-                                  'Needs Action', 'Overdue', 'Duplicate']);
-    if (TARGET_COMPANY) {
-        // client-side filter — Firestore doesn't support two inequality fields
-        console.log(`   Company filter: ${TARGET_COMPANY}\n`);
-    }
-    const snap = await q.get();
-    const invoices = [];
-    snap.forEach(doc => {
-        const d = doc.data();
-        if (!TARGET_COMPANY || d.companyId === TARGET_COMPANY) {
-            invoices.push({ id: doc.id, ref: doc.ref, ...d });
+const configs = {
+    '1': {
+        name: 'GLOBAL TECHNICS OÜ',
+        companyId: 'bP6dc0PMdFtnmS5QTX4N',
+        imap: {
+            user: process.env.IMAP_USER,
+            password: process.env.IMAP_PASSWORD,
+            host: process.env.IMAP_HOST || 'mail.zone.ee',
+            port: parseInt(process.env.IMAP_PORT || '993', 10),
+            tls: true,
+            authTimeout: 20000
         }
+    },
+    '2': {
+        name: 'IDEACOM OÜ',
+        companyId: 'vlhvA6i8d3Hry8rtrA3Z',
+        imap: {
+            user: process.env.IMAP_USER_2,
+            password: process.env.IMAP_PASSWORD_2,
+            host: process.env.IMAP_HOST_2 || 'mail.zone.ee',
+            port: parseInt(process.env.IMAP_PORT_2 || '993', 10),
+            tls: true,
+            authTimeout: 20000
+        }
+    }
+};
+
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+async function askQuestion(query) {
+    return new Promise(resolve => rl.question(query, resolve));
+}
+
+// -----------------------------------------------------
+// 1. RECONCILIATION PRIORITY QUEUE LOGIC
+// -----------------------------------------------------
+async function getVendorAliases(companyId) {
+    let defaultAliases = {
+        'elron': 'eesti liinirongid as',
+        'www.elron.ee': 'eesti liinirongid as',
+        'claude': 'anthropic',
+        'chatgpt': 'openai',
+        'openai': 'openai',
+        'youtube': 'google',
+        'aws': 'amazon',
+        'bolt': 'inredz',
+        'wolt': 'wolt'
+    };
+    try {
+        const doc = await db.collection('companies').doc(companyId).get();
+        if (doc.exists && doc.data().vendorAliases) {
+            return { ...defaultAliases, ...doc.data().vendorAliases };
+        }
+    } catch (e) {
+        // ignore
+    }
+    return defaultAliases;
+}
+
+async function reconcileDryRunOrFix(reference, vendorName, paidAmount, paymentDateStr, companyId, isFix) {
+    console.log(`\n🔍 Analyzing Target: €${paidAmount} paid to [${vendorName}] on ${paymentDateStr || 'Unknown date'}`);
+    
+    paidAmount = Math.abs(parseFloat(paidAmount)) || 0;
+    if (paidAmount === 0) {
+        console.log(`   🔸 SKIPPED: Amount is 0 or invalid.`);
+        return;
+    }
+    
+    const invoicesRef = db.collection('invoices');
+    const snapshot = await invoicesRef.where('companyId', '==', companyId).get();
+    
+    const pendingDocs = [];
+    const paidDocs = [];
+    snapshot.forEach(doc => {
+        if (doc.data().status === 'Paid') paidDocs.push(doc);
+        else pendingDocs.push(doc);
     });
 
-    console.log(`Loaded ${invoices.length} unpaid invoices from Firestore.\n`);
+    const normalizeString = (str) => String(str || '').toLowerCase().trim();
+    const normalizeAlphaNum = (str) => String(str || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
-    const matched   = [];
-    const unmatched = [];
+    const bankRefClean = normalizeAlphaNum(reference);
+    let bankDesc = normalizeString(vendorName);
 
-    for (const tx of BANK_TRANSACTIONS) {
-        let best = null;
+    const vendorAliases = await getVendorAliases(companyId);
+    for (const [alias, officialStr] of Object.entries(vendorAliases)) {
+        if (bankDesc.includes(alias)) {
+            console.log(`   [Alias Match] ${alias} -> ${officialStr}`);
+            bankDesc = officialStr;
+            break;
+        }
+    }
 
-        for (const inv of invoices) {
-            const invAmt = Math.abs(parseFloat(inv.amount) || 0);
-            const diff   = Math.abs(invAmt - tx.amount);
+    const extractDigits = (str) => String(str || '').replace(/[^0-9]/g, '');
+    const refDigits = extractDigits(reference);
 
-            if (diff > 0.50) continue;   // amount tolerance ±€0.50
+    let candidates = [];
+    
+    const assessCandidate = (doc, isPaid) => {
+        const data = doc.data();
+        const invoiceAmount = parseFloat(data.amount) || 0;
+        
+        const isAmountMatch = Math.abs(invoiceAmount - paidAmount) <= 0.05;
 
-            const nameOk = vendorMatch(inv.vendorName, tx.vendor);
-            const refOk  = referenceMatch(inv.invoiceId, tx.reference);
+        const dbId = normalizeAlphaNum(data.invoiceId);
+        const dbDigits = extractDigits(data.invoiceId);
+        
+        const vendorWords = (data.vendorName || '').toLowerCase().split(/[^a-z0-9]/).filter(w => w.length >= 3);
+        const vNameMatch = vendorWords.some(word => bankDesc.includes(word)) || bankDesc.includes((data.vendorName || '').toLowerCase());
+        
+        let refMatchScore = 0;
+        if (dbId) {
+            if (dbId === bankRefClean) refMatchScore = 150; 
+            else if (dbDigits.length >= 4 && refDigits.length >= 4 && (dbDigits === refDigits)) refMatchScore = 100;
+            else if (dbId.length >= 5 && bankRefClean.includes(dbId)) refMatchScore = 50; 
+        }
 
-            if (nameOk || refOk) {
-                best = { inv, diff, nameOk, refOk };
-                break;
+        if (isAmountMatch) {
+            if (refMatchScore > 0 || vNameMatch) {
+                let totalScore = refMatchScore;
+                if (vNameMatch) totalScore += 25;
+                if (!isPaid) totalScore += 500;   
+                
+                candidates.push({ doc, isPaid, totalScore });
             }
         }
+    };
 
-        if (best) {
-            matched.push({ tx, inv: best.inv, diff: best.diff,
-                           nameOk: best.nameOk, refOk: best.refOk });
+    paidDocs.forEach(d => assessCandidate(d, true));
+    pendingDocs.forEach(d => assessCandidate(d, false));
+
+    if (candidates.length > 0) {
+        candidates.sort((a,b) => b.totalScore - a.totalScore);
+        const winner = candidates[0];
+        
+        if (winner.isPaid) {
+            console.log(`   🔸 SKIPPED: Highest priority match is ALREADY PAID -> Invoice ${winner.doc.data().invoiceId} (${winner.doc.data().vendorName})`);
+            return;
         } else {
-            unmatched.push(tx);
-        }
-    }
-
-    // ── Report ──
-    console.log(`━━━ MATCHED (${matched.length}) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
-    matched.forEach(({ tx, inv, diff, nameOk, refOk }) => {
-        const how = [nameOk && 'vendor', refOk && 'ref'].filter(Boolean).join('+');
-        console.log(`  ✅  [${how}] ${tx.vendor.padEnd(38)} €${tx.amount}`);
-        console.log(`       → Invoice: "${inv.invoiceId}" €${inv.amount} (diff €${diff.toFixed(2)}) status=${inv.status} company=${inv.companyId}`);
-    });
-
-    console.log(`\n━━━ NO MATCH (${unmatched.length}) ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
-    unmatched.forEach(tx => {
-        console.log(`  ❌  ${tx.vendor.padEnd(38)} €${tx.amount}  ref=${tx.reference}`);
-    });
-
-    if (!DRY_RUN && matched.length > 0) {
-        console.log(`\n⏳ Marking ${matched.length} invoices as Paid...`);
-        for (const { tx, inv } of matched) {
-            await db.runTransaction(async t => {
-                const fresh = await t.get(inv.ref);
-                if (!fresh.exists || fresh.data().status === 'Paid') return;
-                t.update(inv.ref, {
-                    status: 'Paid',
-                    paidAt: admin.firestore.FieldValue.serverTimestamp(),
-                    paidByStatement: `Revolut 26-29 Mar 2026 · ${tx.vendor} · €${tx.amount}`
+            console.log(`   🟢 MATCH FOUND: Invoice ${winner.doc.data().invoiceId} (${winner.doc.data().vendorName})`);
+            if (isFix) {
+                await db.runTransaction(async (t) => {
+                    const freshDoc = await t.get(winner.doc.ref);
+                    if (!freshDoc.exists || freshDoc.data().status === 'Paid') return;
+                    t.update(winner.doc.ref, { status: 'Paid' });
                 });
-            });
-            console.log(`   ✅  Paid: ${inv.vendorName} — ${inv.invoiceId}`);
+                console.log(`   ✅ (--fix) Document updated to Paid in Firestore.`);
+            } else {
+                console.log(`   ℹ️  (dry-run) Would update document to Paid in Firestore.`);
+            }
         }
-        console.log('\n✅  Done! Refresh the dashboard to see the updates.');
-    } else if (DRY_RUN) {
-        console.log(`\n👆 Run with --fix to mark ${matched.length} invoices as Paid.`);
+    } else {
+        console.log(`   ❌ NO MATCH: Could not find any pending invoice for €${paidAmount} from ${vendorName}`);
     }
-
-    process.exit(0);
 }
 
-run().catch(e => { console.error('Fatal:', e.message); process.exit(1); });
+// -----------------------------------------------------
+// 2. MAIN CLI RUNNER
+// -----------------------------------------------------
+async function run() {
+    console.log(`\n======================================================`);
+    console.log(`🏦 BANK STATEMENT PDF AUTO-RECONCILIATION SCRIPT`);
+    console.log(`Mode: ${isFix ? '🔥 --fix ENABLED (Writes to DB)' : '👁️ DRY RUN (No writes)'}`);
+    console.log(`======================================================\n`);
+
+    console.log(`Select target company:\n1. GLOBAL TECHNICS OÜ\n2. IDEACOM OÜ`);
+    const choice = await askQuestion(`> `);
+    const config = configs[choice.trim()];
+
+    if (!config) {
+        console.error('Invalid choice. Exiting.');
+        process.exit(1);
+    }
+
+    console.log(`\n📡 Connecting to ${config.name} IMAP...`);
+    let connection;
+    try {
+        connection = await imaps.connect({ imap: config.imap });
+        await connection.openBox('INBOX');
+    } catch (e) {
+        console.error(`🚨 Fatal IMAP connection error: ${e.message}`);
+        console.log(`\n💡 Tip: Your IP might be rate limited by zone.ee. Try running from outside PM2 or wait 5 minutes.`);
+        process.exit(1);
+    }
+
+    console.log('✅ Connected. Searching for emails from the last 14 days...');
+    const d = new Date();
+    d.setDate(d.getDate() - 14); // 2 weeks back
+    const searchCriteria = ['ALL', ['SINCE', d]];
+    const fetchOptions = { bodies: ['HEADER'], struct: true, markSeen: false };
+
+    const messages = await connection.search(searchCriteria, fetchOptions);
+    
+    if (messages.length === 0) {
+        console.log('No recent emails found.');
+        process.exit(0);
+    }
+
+    const pdfAttachments = [];
+
+    // Extract attachments
+    for (const msg of messages) {
+        if (!msg.attributes || !msg.attributes.struct) continue;
+        
+        const parts = imaps.getParts(msg.attributes.struct);
+        const attachments = parts.filter(part => part.disposition && part.disposition.type.toUpperCase() === 'ATTACHMENT');
+
+        for (const attachment of attachments) {
+            const ext = attachment.params && attachment.params.name ? attachment.params.name.split('.').pop().toLowerCase() : '';
+            if (ext === 'pdf') {
+                const headerPart = msg.parts.find(p => p.which === 'HEADER');
+                let subject = 'Unknown', date = 'Unknown';
+                if (headerPart && headerPart.body) {
+                    subject = headerPart.body.subject ? headerPart.body.subject[0] : 'Unknown';
+                    date = headerPart.body.date ? headerPart.body.date[0] : 'Unknown';
+                }
+                pdfAttachments.push({ msg, attachment, subject, date, origName: attachment.params.name });
+            }
+        }
+    }
+
+    if (pdfAttachments.length === 0) {
+        console.log('No PDF attachments found in recent emails.');
+        process.exit(0);
+    }
+
+    console.log('\n📄 Found the following recent PDF attachments:');
+    // Display in reverse chronological order (newest first)
+    const reversedPdfs = pdfAttachments.reverse();
+    reversedPdfs.forEach((pdf, index) => {
+        console.log(`[${index + 1}] File: ${pdf.origName} | Subject: "${pdf.subject}" | Date: ${pdf.date}`);
+    });
+
+    const pdfIndexStr = await askQuestion(`\nSelect the Bank Statement PDF to parse (1-${reversedPdfs.length}): `);
+    const pdfIndex = parseInt(pdfIndexStr, 10) - 1;
+
+    if (isNaN(pdfIndex) || pdfIndex < 0 || pdfIndex >= reversedPdfs.length) {
+        console.error('Invalid selection.');
+        process.exit(1);
+    }
+
+    const targetPdf = reversedPdfs[pdfIndex];
+    console.log(`\n📥 Downloading ${targetPdf.origName}...`);
+
+    try {
+        const partData = await connection.getPartData(targetPdf.msg, targetPdf.attachment);
+        console.log(`✅ Downloaded ${partData.length} bytes.`);
+        connection.end();
+
+        console.log(`\n🧠 Parsing PDF text...`);
+        const pdfData = await pdfParse(partData);
+        let rawText = pdfData.text;
+        
+        if (!rawText || rawText.trim() === '') {
+             console.log(`⚠️  Warning: pdf-parse returned empty text. This might be a scanned image PDF without OCR. Prompting Claude to reject.`);
+        } else {
+             console.log(`✅ Extracted ${rawText.length} characters of text.`);
+        }
+
+        console.log(`🤖 Sending to Claude 3.5 Sonnet to extract ALL transactions (Bypassing Rule 5 limits)...`);
+
+        const prompt = `
+You are an expert accountant system. 
+You are given the raw text of a Bank Statement PDF for the company "${config.name}".
+CRITICAL: Unlike standard invoice parsing, this is a BANK STATEMENT containing MULTIPLE transactions.
+You must extract EVERY SINGLE OUTBOUND PAYMENT transaction mathematically present in the text.
+Do not stop at the first one. Read the entire document text.
+
+Ignore incoming transfers (positive amounts).
+Ignore internal account transfers if they are just moving money between the same company's accounts.
+Focus on external supplier outbound payments.
+
+Return EXACTLY a JSON array of objects with NO markdown wrapping, NO extra text.
+Each object MUST have:
+- "vendorName": The payee company name.
+- "amount": The payment amount (positive number).
+- "paymentReference": The reference number or payment description.
+- "dateCreated": The transaction date in YYYY-MM-DD.
+
+Raw Text:
+${rawText.slice(0, 15000)}
+`;
+
+        const response = await createWithRetry(anthropic, {
+            model: process.env.AI_MODEL || "claude-sonnet-4-6",
+            max_tokens: 3000,
+            temperature: 0.1,
+            system: "You are an expert accountant system.",
+            messages: [{ role: "user", content: prompt }]
+        });
+
+        const jsonString = response.content[0].text.trim();
+        const match = jsonString.match(/\[[\s\S]*\]/);
+        const cleanJson = match ? match[0] : '[]';
+
+        let transactions = [];
+        try {
+            transactions = JSON.parse(cleanJson);
+        } catch (e) {
+            console.error('Failed to parse Claude JSON response:', cleanJson);
+            process.exit(1);
+        }
+
+        console.log(`🎉 Claude extracted ${transactions.length} outbound transactions!`);
+        console.log(transactions);
+
+        for (const tx of transactions) {
+            await reconcileDryRunOrFix(tx.paymentReference, tx.vendorName, tx.amount, tx.dateCreated, config.companyId, isFix);
+        }
+
+        console.log(`\n✅ script complete.`);
+        process.exit(0);
+
+    } catch (err) {
+        console.error(`🚨 Processing failed: ${err.message}`);
+        process.exit(1);
+    }
+}
+
+run();
