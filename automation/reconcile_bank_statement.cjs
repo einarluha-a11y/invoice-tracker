@@ -24,6 +24,7 @@ const configs = {
             host: process.env.IMAP_HOST || 'mail.zone.ee',
             port: parseInt(process.env.IMAP_PORT || '993', 10),
             tls: true,
+            tlsOptions: { rejectUnauthorized: false },
             authTimeout: 20000
         }
     },
@@ -36,6 +37,7 @@ const configs = {
             host: process.env.IMAP_HOST_2 || 'mail.zone.ee',
             port: parseInt(process.env.IMAP_PORT_2 || '993', 10),
             tls: true,
+            tlsOptions: { rejectUnauthorized: false },
             authTimeout: 20000
         }
     }
@@ -116,7 +118,8 @@ async function reconcileDryRunOrFix(reference, vendorName, paidAmount, paymentDa
         const data = doc.data();
         const invoiceAmount = parseFloat(data.amount) || 0;
         
-        const isAmountMatch = Math.abs(invoiceAmount - paidAmount) <= 0.05;
+        // Use 0.50 tolerance to safely absorb Revolut's €0.20/€0.25 transfer fees mapped to total transit.
+        const isAmountMatch = Math.abs(invoiceAmount - paidAmount) <= 0.50;
 
         const dbId = normalizeAlphaNum(data.invoiceId);
         const dbDigits = extractDigits(data.invoiceId);
@@ -179,8 +182,11 @@ async function run() {
     console.log(`Mode: ${isFix ? '🔥 --fix ENABLED (Writes to DB)' : '👁️ DRY RUN (No writes)'}`);
     console.log(`======================================================\n`);
 
-    console.log(`Select target company:\n1. GLOBAL TECHNICS OÜ\n2. IDEACOM OÜ`);
-    const choice = await askQuestion(`> `);
+    let choice = process.argv.find(arg => arg.startsWith('--company='))?.split('=')[1];
+    if (!choice) {
+        console.log(`Select target company:\n1. GLOBAL TECHNICS OÜ\n2. IDEACOM OÜ`);
+        choice = await askQuestion(`> `);
+    }
     const config = configs[choice.trim()];
 
     if (!config) {
@@ -188,83 +194,100 @@ async function run() {
         process.exit(1);
     }
 
-    console.log(`\n📡 Connecting to ${config.name} IMAP...`);
-    let connection;
-    try {
-        connection = await imaps.connect({ imap: config.imap });
-        await connection.openBox('INBOX');
-    } catch (e) {
-        console.error(`🚨 Fatal IMAP connection error: ${e.message}`);
-        console.log(`\n💡 Tip: Your IP might be rate limited by zone.ee. Try running from outside PM2 or wait 5 minutes.`);
-        process.exit(1);
-    }
+    let targetPdfData = null;
+    let originalName = 'local_file.pdf';
 
-    console.log('✅ Connected. Searching for emails from the last 14 days...');
-    const d = new Date();
-    d.setDate(d.getDate() - 14); // 2 weeks back
-    const searchCriteria = ['ALL', ['SINCE', d]];
-    const fetchOptions = { bodies: ['HEADER'], struct: true, markSeen: false };
-
-    const messages = await connection.search(searchCriteria, fetchOptions);
+    const fileArg = process.argv.find(arg => arg.startsWith('--file='))?.split('=')[1];
     
-    if (messages.length === 0) {
-        console.log('No recent emails found.');
-        process.exit(0);
-    }
+    if (fileArg) {
+        const fs = require('fs');
+        if (fs.existsSync(fileArg)) {
+            console.log(`\n📥 Reading local file ${fileArg}...`);
+            targetPdfData = fs.readFileSync(fileArg);
+            originalName = fileArg.split('/').pop();
+        } else {
+            console.error(`🚨 File not found: ${fileArg}`);
+            process.exit(1);
+        }
+    } else {
+        console.log(`\n📡 Connecting to ${config.name} IMAP...`);
+        let connection;
+        try {
+            connection = await imaps.connect({ imap: config.imap });
+            await connection.openBox('INBOX');
+        } catch (e) {
+            console.error(`🚨 Fatal IMAP connection error: ${e.message}`);
+            console.log(`\n💡 Tip: Your IP might be rate limited by zone.ee. Try running from outside PM2 or wait 5 minutes, or use --file=/path/to/pdf`);
+            process.exit(1);
+        }
 
-    const pdfAttachments = [];
+        console.log('✅ Connected. Searching for emails from the last 14 days...');
+        const d = new Date();
+        d.setDate(d.getDate() - 14); // 2 weeks back
+        const searchCriteria = ['ALL', ['SINCE', d]];
+        const fetchOptions = { bodies: ['HEADER'], struct: true, markSeen: false };
 
-    // Extract attachments
-    for (const msg of messages) {
-        if (!msg.attributes || !msg.attributes.struct) continue;
+        const messages = await connection.search(searchCriteria, fetchOptions);
         
-        const parts = imaps.getParts(msg.attributes.struct);
-        const attachments = parts.filter(part => part.disposition && part.disposition.type.toUpperCase() === 'ATTACHMENT');
+        if (messages.length === 0) {
+            console.log('No recent emails found.');
+            process.exit(0);
+        }
 
-        for (const attachment of attachments) {
-            const ext = attachment.params && attachment.params.name ? attachment.params.name.split('.').pop().toLowerCase() : '';
-            if (ext === 'pdf') {
-                const headerPart = msg.parts.find(p => p.which === 'HEADER');
-                let subject = 'Unknown', date = 'Unknown';
-                if (headerPart && headerPart.body) {
-                    subject = headerPart.body.subject ? headerPart.body.subject[0] : 'Unknown';
-                    date = headerPart.body.date ? headerPart.body.date[0] : 'Unknown';
+        const pdfAttachments = [];
+
+        for (const msg of messages) {
+            if (!msg.attributes || !msg.attributes.struct) continue;
+            const parts = imaps.getParts(msg.attributes.struct);
+            const attachments = parts.filter(part => part.disposition && part.disposition.type.toUpperCase() === 'ATTACHMENT');
+
+            for (const attachment of attachments) {
+                const ext = attachment.params && attachment.params.name ? attachment.params.name.split('.').pop().toLowerCase() : '';
+                if (ext === 'pdf') {
+                    const headerPart = msg.parts.find(p => p.which === 'HEADER');
+                    let subject = 'Unknown', date = 'Unknown';
+                    if (headerPart && headerPart.body) {
+                        subject = headerPart.body.subject ? headerPart.body.subject[0] : 'Unknown';
+                        date = headerPart.body.date ? headerPart.body.date[0] : 'Unknown';
+                    }
+                    pdfAttachments.push({ msg, attachment, subject, date, origName: attachment.params.name });
                 }
-                pdfAttachments.push({ msg, attachment, subject, date, origName: attachment.params.name });
             }
         }
+
+        if (pdfAttachments.length === 0) {
+            console.log('No PDF attachments found in recent emails.');
+            process.exit(0);
+        }
+
+        console.log('\n📄 Found the following recent PDF attachments:');
+        const reversedPdfs = pdfAttachments.reverse();
+        reversedPdfs.forEach((pdf, index) => {
+            console.log(`[${index + 1}] File: ${pdf.origName} | Subject: "${pdf.subject}" | Date: ${pdf.date}`);
+        });
+
+        let pdfIndexStr = process.argv.find(arg => arg.startsWith('--pdf='))?.split('=')[1];
+        if (!pdfIndexStr) {
+            pdfIndexStr = await askQuestion(`\nSelect the Bank Statement PDF to parse (1-${reversedPdfs.length}): `);
+        }
+        const pdfIndex = parseInt(pdfIndexStr, 10) - 1;
+
+        if (isNaN(pdfIndex) || pdfIndex < 0 || pdfIndex >= reversedPdfs.length) {
+            console.error('Invalid selection.');
+            process.exit(1);
+        }
+
+        const targetPdf = reversedPdfs[pdfIndex];
+        console.log(`\n📥 Downloading ${targetPdf.origName}...`);
+        targetPdfData = await connection.getPartData(targetPdf.msg, targetPdf.attachment);
+        originalName = targetPdf.origName;
+        console.log(`✅ Downloaded ${targetPdfData.length} bytes.`);
+        connection.end();
     }
-
-    if (pdfAttachments.length === 0) {
-        console.log('No PDF attachments found in recent emails.');
-        process.exit(0);
-    }
-
-    console.log('\n📄 Found the following recent PDF attachments:');
-    // Display in reverse chronological order (newest first)
-    const reversedPdfs = pdfAttachments.reverse();
-    reversedPdfs.forEach((pdf, index) => {
-        console.log(`[${index + 1}] File: ${pdf.origName} | Subject: "${pdf.subject}" | Date: ${pdf.date}`);
-    });
-
-    const pdfIndexStr = await askQuestion(`\nSelect the Bank Statement PDF to parse (1-${reversedPdfs.length}): `);
-    const pdfIndex = parseInt(pdfIndexStr, 10) - 1;
-
-    if (isNaN(pdfIndex) || pdfIndex < 0 || pdfIndex >= reversedPdfs.length) {
-        console.error('Invalid selection.');
-        process.exit(1);
-    }
-
-    const targetPdf = reversedPdfs[pdfIndex];
-    console.log(`\n📥 Downloading ${targetPdf.origName}...`);
 
     try {
-        const partData = await connection.getPartData(targetPdf.msg, targetPdf.attachment);
-        console.log(`✅ Downloaded ${partData.length} bytes.`);
-        connection.end();
-
         console.log(`\n🧠 Parsing PDF text...`);
-        const pdfData = await pdfParse(partData);
+        const pdfData = await pdfParse(targetPdfData);
         let rawText = pdfData.text;
         
         if (!rawText || rawText.trim() === '') {
