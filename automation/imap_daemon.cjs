@@ -16,6 +16,8 @@ const { parse } = require('csv-parse/sync');
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 // Firebase Admin Initialization (Shared Core)
 const { admin, db, bucket } = require('./core/firebase.cjs');
+// Staging layer — saves raw docs before processing for re-run without IMAP
+const { stageDocument, markStagingResult } = require('./core/staging.cjs');
 
 // --- DYNAMIC DICTIONARY ENGINE (Node.js Memory Cache) ---
 const companyAliasCache = {};
@@ -981,6 +983,9 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                             await reportError('STORAGE_UPLOAD_CRITICAL', filename, new Error(`Upload failed after 3 attempts for ${filename}`)).catch(() => {});
                         }
 
+                        // Staging ID — will be set once we know the document type and rawText
+                        let stagingId = null;
+
                         // Helper to inject the generated URL, run the Accountant Agent Audit, and save
                         const saveParsedData = async (data) => {
                             if (data && Array.isArray(data) && data.length > 0) {
@@ -1002,6 +1007,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                     
                                     if (auditedData.status === 'Duplicate') {
                                         console.log(`[Accountant Agent] ℹ️ Duplicate detected — skipping.`);
+                                        await markStagingResult(stagingId, { status: 'duplicate', resultIds: [] });
                                         success = true;
                                     } else if (auditedData.status === 'Error') {
                                         console.error(`[Accountant Agent] 🛑 Invoice rejected with Error status.`);
@@ -1013,9 +1019,11 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                             companyId,
                                             fileUrl
                                         ).catch(() => {});
+                                        await markStagingResult(stagingId, { status: 'error', error: warnings.join('; ') || 'Accountant Agent returned Error status' });
                                         success = true;
                                     } else {
                                         await writeToFirestore([auditedData]);
+                                        await markStagingResult(stagingId, { status: 'success', resultIds: [auditedData.id || auditedData.invoiceId || ''] });
                                         success = true;
                                     }
                                 }
@@ -1032,7 +1040,24 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
 
                                 // --- Detect Bank Statement vs Invoice ---
                                 const lowerText = rawContent.toLowerCase();
-                                if (lowerText.includes('выписка по счету') || lowerText.includes('konto väljavõte') || lowerText.includes('account statement')) {
+                                const isBankStatement = lowerText.includes('выписка по счету') || lowerText.includes('konto väljavõte') || lowerText.includes('account statement');
+
+                                // --- STAGE RAW DOCUMENT (PDF) ---
+                                stagingId = await stageDocument({
+                                    type: isBankStatement ? 'bank_statement' : 'invoice',
+                                    companyId,
+                                    source: {
+                                        subject:    parsedEmail.subject || '',
+                                        from:       parsedEmail.from?.text || '',
+                                        date:       parsedEmail.date?.toString() || '',
+                                        filename:   attachment.filename || filename,
+                                        messageUid: id,
+                                    },
+                                    storageUrl: fileUrl,
+                                    rawText:    rawContent,
+                                });
+
+                                if (isBankStatement) {
                                     console.log(`[Email] Detected Bank Statement PDF: ${attachment.filename || 'unknown'}`);
                                     const parsedTransactions = await parseBankStatementWithAI(rawContent);
 
@@ -1040,6 +1065,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                         for (const tx of parsedTransactions) {
                                             await reconcilePayment(tx.reference || '', tx.description || '', tx.amount, null, null, tx.date || (new Date().toISOString().split('T')[0]), null, null, companyId);
                                         }
+                                        await markStagingResult(stagingId, { status: 'success', resultIds: [] });
                                         console.log(`[Email] Email UID ${id} successfully processed as PDF Bank Statement!`);
                                     }
                                 } else {
@@ -1050,6 +1076,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                         console.warn(`[Vision Auditor] ⚠️  API failure on ${filename} — skipping classification, proceeding with extraction.`);
                                     } else if (visionClass !== 'INVOICE') {
                                         console.log(`[Vision Auditor] 🚨 Skipping attachment ${attachment.filename}. Classified as: ${visionClass}`);
+                                        await markStagingResult(stagingId, { status: 'skipped', error: `Vision classified as ${visionClass}` });
                                         // Safety Net: if filename suggests invoice but Vision rejected it, save as DRAFT for review
                                         const looksLikeInvoice = /inv|arve|faktur|rechnung|factura|facture/i.test(filename);
                                         if (looksLikeInvoice) {
@@ -1076,12 +1103,29 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                 }
                             } else if (mime.includes('image/') || filename.endsWith('.jpg') || filename.endsWith('.jpeg') || filename.endsWith('.png')) {
                                 console.log(`[Image] Native Image detected: ${filename}. Requesting Vision Audit...`);
+
+                                // --- STAGE RAW DOCUMENT (Image) ---
+                                stagingId = await stageDocument({
+                                    type: 'image_invoice',
+                                    companyId,
+                                    source: {
+                                        subject:    parsedEmail.subject || '',
+                                        from:       parsedEmail.from?.text || '',
+                                        date:       parsedEmail.date?.toString() || '',
+                                        filename:   attachment.filename || filename,
+                                        messageUid: id,
+                                    },
+                                    storageUrl: fileUrl,
+                                    rawText:    null, // images have no raw text
+                                });
+
                                 const visionClass = await classifyDocumentWithVision(attachment.content, mime);
                                 if (visionClass === null) {
                                     // Vision API failure for image — same policy as PDFs: proceed with extraction
                                     console.warn(`[Vision Auditor] ⚠️  API failure on image ${filename} — skipping classification, proceeding with extraction.`);
                                 } else if (visionClass !== 'INVOICE') {
                                     console.log(`[Vision Auditor] 🚨 Skipping image ${attachment.filename}. Classified as: ${visionClass}`);
+                                    await markStagingResult(stagingId, { status: 'skipped', error: `Vision classified as ${visionClass}` });
                                     const looksLikeInvoice = /inv|arve|faktur|rechnung|factura|facture/i.test(filename);
                                     if (looksLikeInvoice) {
                                         const saved = await safetyNetSave(
@@ -1114,9 +1158,27 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                 }
 
                                 // --- Detect Bank Statement (Revolut/Wise format check) ---
-                                if (rawContent.includes('Date started (UTC)') && rawContent.includes('State') && rawContent.includes('Reference')) {
+                                const isCsvBankStatement = rawContent.includes('Date started (UTC)') && rawContent.includes('State') && rawContent.includes('Reference');
+
+                                // --- STAGE RAW DOCUMENT (CSV) ---
+                                stagingId = await stageDocument({
+                                    type: isCsvBankStatement ? 'bank_statement' : 'invoice',
+                                    companyId,
+                                    source: {
+                                        subject:    parsedEmail.subject || '',
+                                        from:       parsedEmail.from?.text || '',
+                                        date:       parsedEmail.date?.toString() || '',
+                                        filename:   attachment.filename || filename,
+                                        messageUid: id,
+                                    },
+                                    storageUrl: fileUrl,
+                                    rawText:    rawContent,
+                                });
+
+                                if (isCsvBankStatement) {
                                     console.log(`[Email] Detected Bank Statement CSV: ${attachment.filename}`);
                                     await processBankStatement(rawContent, companyId);
+                                    await markStagingResult(stagingId, { status: 'success', resultIds: [] });
                                     console.log(`[Email] Email UID ${id} successfully processed as Bank Statement!`);
                                 } else {
                                     // Treat as regular invoice text/csv, parse with Claude
@@ -1128,6 +1190,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                             }
                         } catch (err) {
                             console.error(`[Error] Failed to process attachment ${filename}:`, err);
+                            await markStagingResult(stagingId, { status: 'error', error: err.message });
                             // Safety Net: save a DRAFT if we have a file (fileUrl may be null if upload also failed)
                             const saved = await safetyNetSave(
                                 { vendorName: 'UNKNOWN (pipeline exception)', invoiceId: `ATTACHMENT-${Date.now()}` },
