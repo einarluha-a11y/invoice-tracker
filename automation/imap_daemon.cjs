@@ -1203,19 +1203,25 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                     }
                 }
             } else {
-                console.log(`[Email] No attachments found in email. Parsing email body for invoices...`);
+                // ⚠️  NO ATTACHMENT PATH — body text only.
+                // This path is a last resort. The Completeness Gate in accountant_agent.cjs
+                // will reject any body-text record that doesn't have vendor + amount + invoiceId + VAT/reg.
+                // Records without a PDF file should NOT appear on the dashboard as skeleton entries.
+                console.warn(`[Email] ⚠️  Email UID ${id} has NO attachments. Attempting body-text parse (Completeness Gate active).`);
                 const emailBody = parsedEmail.text || parsedEmail.html || '';
                 if (emailBody.trim().length > 10) {
                     const parsedData = await parseInvoiceDataWithAI(emailBody, companyName, customRules);
                     if (parsedData && parsedData.length > 0) {
-                        // FIX Bug 3: route body-text invoices through auditAndProcessInvoice()
-                        // so they get cross-company routing, deduplication, and VIES checks
                         for (let inv of parsedData) {
                             inv.companyId = companyId;
                             try {
+                                // 'BODY_TEXT_NO_ATTACHMENT' triggers the Completeness Gate in accountant_agent.cjs
                                 const auditedData = await auditAndProcessInvoice(inv, inv.fileUrl || 'BODY_TEXT_NO_ATTACHMENT', companyId);
                                 if (auditedData.status !== 'Duplicate' && auditedData.status !== 'Error') {
                                     await writeToFirestore([auditedData]);
+                                    console.log(`[Email] Body-text invoice saved: ${auditedData.vendorName} / ${auditedData.invoiceId}`);
+                                } else if (auditedData.status === 'Error') {
+                                    console.warn(`[Email] Body-text invoice rejected by Completeness Gate: ${(auditedData.validationWarnings || []).join('; ')}`);
                                 }
                             } catch (auditErr) {
                                 if (auditErr.message !== 'BANK_STATEMENT_RECONCILIATION_COMPLETE') {
@@ -1223,9 +1229,8 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                 }
                             }
                         }
-                        console.log(`[Email] Email UID ${id} successfully processed from body text!`);
                     } else {
-                        console.log(`[Email] AI found no invoices in body text.`);
+                        console.log(`[Email] AI found no invoices in body text of UID ${id}.`);
                     }
                 }
             }

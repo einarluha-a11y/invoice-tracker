@@ -106,9 +106,27 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
     // --- 1. PRE-FLIGHT AUDIT: File Integrity ---
     if (!fileUrl || fileUrl === 'BODY_TEXT_NO_ATTACHMENT') {
         if (fileUrl === 'BODY_TEXT_NO_ATTACHMENT') {
-            // Body-text invoice — no file is expected, continue with null fileUrl
+            // Body-text invoice — no file is expected, but we enforce a strict
+            // COMPLETENESS GATE: body-text records without all four key fields
+            // are rejected as junk/partial-parse to prevent skeleton records on dashboard.
             fileUrl = null;
-            warnings.push("NOTE: Invoice extracted from email body text — no PDF attachment.");
+
+            const hasVendor    = !!(docAiPayload.vendorName && docAiPayload.vendorName !== 'Unknown' && docAiPayload.vendorName !== 'UNKNOWN VENDOR' && docAiPayload.vendorName !== 'Not_Found');
+            const hasAmount    = parseAmount(docAiPayload.amount) > 0;
+            const hasInvoiceId = !!(docAiPayload.invoiceId && !String(docAiPayload.invoiceId).startsWith('DRAFT-') && String(docAiPayload.invoiceId).length > 2);
+            const hasVat       = !!(docAiPayload.supplierVat && !['Not_Found','NOT_FOUND_ON_INVOICE','not_found',''].includes(String(docAiPayload.supplierVat).trim()));
+            const hasReg       = !!(docAiPayload.supplierRegistration && !['Not_Found','NOT_FOUND_ON_INVOICE','not_found',''].includes(String(docAiPayload.supplierRegistration).trim()));
+
+            const score = [hasVendor, hasAmount, hasInvoiceId, (hasVat || hasReg)].filter(Boolean).length;
+
+            if (score < 3) {
+                console.error(`[Accountant Agent] 🛑 BODY-TEXT COMPLETENESS GATE: Rejected — score ${score}/4 (vendor:${hasVendor} amount:${hasAmount} invoiceId:${hasInvoiceId} vat/reg:${hasVat||hasReg})`);
+                warnings.push(`COMPLETENESS_GATE: Body-text record rejected (score ${score}/4). Requires: vendor name, positive amount, invoice number, and VAT or registration number. Forward the original PDF instead.`);
+                return { ...docAiPayload, fileUrl: null, status: 'Error', validationWarnings: warnings };
+            }
+
+            warnings.push("NOTE: Invoice extracted from email body text — no PDF attachment. Passed completeness gate.");
+            console.warn(`[Accountant Agent] ⚠️  Body-text invoice accepted (score ${score}/4): ${docAiPayload.vendorName} / ${docAiPayload.invoiceId}`);
         } else {
             console.error(`[Accountant Agent] 🛑 CRITICAL REJECTION: PDF File URL is missing.`);
             warnings.push("CRITICAL: Original PDF document was lost or failed to upload.");
