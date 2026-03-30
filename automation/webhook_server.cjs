@@ -196,6 +196,96 @@ app.post('/api/intake', rateLimit(20, 60_000), async (req, res) => {
     }
 });
 
+// --- REPROCESS INVOICE (on-demand re-extraction via Claude) ---
+// Called by the repair button (🔧) in the dashboard TEGEVUS column.
+// Downloads the original file from Storage, re-runs Claude extraction,
+// and PATCHES the existing Firestore record in-place (never creates a new one).
+app.post('/api/reprocess-invoice', rateLimit(10, 60_000), async (req, res) => {
+    if (!db || !bucket) return res.status(503).json({ error: 'Database unavailable.' });
+
+    const { docId } = req.body;
+    if (!docId) return res.status(400).json({ error: 'Missing docId.' });
+
+    try {
+        // Step 1: Fetch existing record
+        const docRef = db.collection('invoices').doc(docId);
+        const docSnap = await docRef.get();
+        if (!docSnap.exists) return res.status(404).json({ error: `Invoice ${docId} not found.` });
+
+        const existing = docSnap.data();
+        const fileUrl = existing.fileUrl;
+        if (!fileUrl) return res.status(400).json({ error: 'No fileUrl — cannot reprocess without the original file.' });
+
+        console.log(`[Reprocess] 🔧 Starting re-extraction for ${docId} (${existing.vendorName} / ${existing.invoiceId})`);
+
+        // Step 2: Download file from Firebase Storage via Admin SDK (bypasses token expiry)
+        const storageBucket = admin.storage().bucket();
+        let filePath;
+        if (fileUrl.startsWith('gs://')) {
+            filePath = fileUrl.replace(/^gs:\/\/[^/]+\//, '');
+        } else {
+            const urlObj = new URL(fileUrl);
+            filePath = decodeURIComponent(urlObj.pathname.split('/o/')[1].split('?')[0]);
+        }
+        const fileRef = storageBucket.file(filePath);
+        const [fileBuffer] = await fileRef.download();
+        const mimeType = filePath.toLowerCase().endsWith('.pdf') ? 'application/pdf'
+            : filePath.toLowerCase().match(/\.(jpe?g)$/) ? 'image/jpeg' : 'image/png';
+
+        // Step 3: Re-run Claude extraction
+        const { processInvoiceWithDocAI } = require('./document_ai_service.cjs');
+
+        const companyDoc = existing.companyId
+            ? await db.collection('companies').doc(existing.companyId).get()
+            : null;
+        const customRules = companyDoc?.exists ? (companyDoc.data().customRules || '') : '';
+
+        const extracted = await processInvoiceWithDocAI(fileBuffer, mimeType, null, customRules);
+
+        if (!extracted || extracted.length === 0 || extracted[0].type === 'JUNK') {
+            return res.status(422).json({ error: 'Claude could not extract invoice data from this file.' });
+        }
+
+        const fresh = extracted[0];
+
+        // Step 5: Build patch — only update data fields, preserve identity fields
+        const patch = {};
+
+        // Always update these if extraction returned real values
+        if (fresh.vendorName && fresh.vendorName !== 'UNKNOWN') patch.vendorName = fresh.vendorName;
+        if (fresh.invoiceId)          patch.invoiceId = fresh.invoiceId;
+        if (fresh.amount > 0)         patch.amount = fresh.amount;
+        if (fresh.subtotalAmount > 0) patch.subtotalAmount = fresh.subtotalAmount;
+        if (typeof fresh.taxAmount === 'number') patch.taxAmount = fresh.taxAmount;
+        if (fresh.currency)           patch.currency = fresh.currency;
+        if (fresh.dateCreated)        patch.dateCreated = fresh.dateCreated;
+        if (fresh.dueDate)            patch.dueDate = fresh.dueDate;
+        if (fresh.supplierVat && fresh.supplierVat !== 'Not_Found')         patch.supplierVat = fresh.supplierVat;
+        if (fresh.supplierRegistration && fresh.supplierRegistration !== 'Not_Found') patch.supplierRegistration = fresh.supplierRegistration;
+        if (fresh.description)        patch.description = fresh.description;
+        if (Array.isArray(fresh.lineItems) && fresh.lineItems.length > 0)   patch.lineItems = fresh.lineItems;
+        if (fresh.validationWarnings) patch.validationWarnings = fresh.validationWarnings;
+
+        // Fix status: if record was stuck as Error, promote to OOTEL
+        if (existing.status === 'Error' || existing.status === 'NEEDS_REVIEW') {
+            patch.status = 'OOTEL';
+        }
+
+        patch.reprocessedAt = admin.firestore.FieldValue.serverTimestamp();
+
+        // Step 6: Patch Firestore in-place
+        await docRef.update(patch);
+
+        console.log(`[Reprocess] ✅ Patched ${docId}: vendor=${patch.vendorName || existing.vendorName}, invoiceId=${patch.invoiceId || existing.invoiceId}, amount=${patch.amount || existing.amount}`);
+
+        res.json({ success: true, patched: patch });
+
+    } catch (err) {
+        console.error(`[Reprocess] ❌ Failed for ${docId}:`, err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // --- PDF PROXY (bypasses Firebase Storage CORS for the browser) ---
 // Fetches the PDF server-side and streams it to the browser — no CORS preflight.
 app.get('/api/pdf-proxy', async (req, res) => {

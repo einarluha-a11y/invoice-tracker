@@ -29,6 +29,32 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
     const [visibleLimit, setVisibleLimit] = useState(100);
     const [isExportingPDF, setIsExportingPDF] = useState(false);
     const [viewingPdfUrl, setViewingPdfUrl] = useState<string | null>(null);
+    // Repair button state: docId → 'idle' | 'loading' | 'ok' | 'error'
+    const [repairState, setRepairState] = useState<Record<string, 'loading' | 'ok' | 'error'>>({});
+
+    const handleRepair = async (invoice: Invoice) => {
+        if (repairState[invoice.id] === 'loading') return;
+        setRepairState(prev => ({ ...prev, [invoice.id]: 'loading' }));
+        try {
+            const apiBase = (import.meta as any).env?.VITE_API_URL || '';
+            const res = await fetch(`${apiBase}/api/reprocess-invoice`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ docId: invoice.id }),
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ error: res.statusText }));
+                throw new Error(err.error || res.statusText);
+            }
+            setRepairState(prev => ({ ...prev, [invoice.id]: 'ok' }));
+            // Reset to idle after 3 seconds — Firestore listener will update the row automatically
+            setTimeout(() => setRepairState(prev => { const s = { ...prev }; delete s[invoice.id]; return s; }), 3000);
+        } catch (err: any) {
+            console.error('[Repair]', err.message);
+            setRepairState(prev => ({ ...prev, [invoice.id]: 'error' }));
+            setTimeout(() => setRepairState(prev => { const s = { ...prev }; delete s[invoice.id]; return s; }), 4000);
+        }
+    };
 
     const handleSort = (field: SortField) => {
         onSort(field);
@@ -370,6 +396,26 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                                 </td>
                                 <td data-label={t('table.actions')}>
                                     <div className="action-buttons">
+                                        {/* Repair button — re-runs Claude extraction on the original file */}
+                                        {invoice.fileUrl && (() => {
+                                            const rs = repairState[invoice.id];
+                                            const icon = rs === 'loading' ? '⟳' : rs === 'ok' ? '✓' : rs === 'error' ? '✕' : '🔧';
+                                            const color = rs === 'ok' ? '#28a745' : rs === 'error' ? '#dc3545' : 'var(--text-secondary)';
+                                            const spinning = rs === 'loading';
+                                            return (
+                                                <button
+                                                    onClick={() => handleRepair(invoice)}
+                                                    disabled={rs === 'loading'}
+                                                    title={rs === 'ok' ? 'Repaired!' : rs === 'error' ? 'Repair failed' : 'Re-extract data with Claude'}
+                                                    style={{
+                                                        background: 'transparent', border: 'none', color, cursor: rs === 'loading' ? 'wait' : 'pointer',
+                                                        padding: '4px', fontSize: '1rem', opacity: rs ? 1 : 0.6, display: 'flex', alignItems: 'center',
+                                                        animation: spinning ? 'spin 1s linear infinite' : 'none',
+                                                        transition: 'color 0.3s',
+                                                    }}
+                                                >{icon}</button>
+                                            );
+                                        })()}
                                         <button
                                             onClick={() => onEdit(invoice)}
                                             style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', padding: '4px', fontSize: '1.2rem', opacity: 0.9, display: 'flex' }}
