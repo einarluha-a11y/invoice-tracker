@@ -48,7 +48,7 @@ function App() {
     const handleApplyAiFilters = (filters: { searchTerm?: string, status?: string, dateFrom?: string, dateTo?: string, dateFilterType?: 'created' | 'due' }) => {
         if (filters.searchTerm !== undefined) setSearchTerm(filters.searchTerm);
         if (filters.status !== undefined) {
-            const validStatus = ['All', 'Unpaid', 'Pending', 'Paid', 'Overdue', 'NEEDS_REVIEW'].includes(filters.status) ? filters.status : 'All';
+            const validStatus = ['All', 'Unpaid', 'Pending', 'Paid', 'Overdue', 'Error'].includes(filters.status) ? filters.status : 'All';
             setStatusFilter(validStatus as InvoiceStatus | 'All' | 'Unpaid');
         }
         if (filters.dateFilterType !== undefined && ['created', 'due'].includes(filters.dateFilterType)) {
@@ -114,14 +114,6 @@ function App() {
         }
     };
 
-    const handleApproveInvoice = async (id: string) => {
-        try {
-            await updateInvoice(id, { status: 'Pending' });
-        } catch (err) {
-            console.error("Failed to approve invoice", err);
-            alert(t('errors.deleteInvoice')); // reuse generic error key
-        }
-    };
 
     // Stats computed from loaded data using useMemo to prevent main-thread freezing sequentially
     const { totalInvoices, overdueCount, totalAmount } = useMemo(() => {
@@ -129,7 +121,7 @@ function App() {
             // Status filter
             let matchesStatus = true;
             if (statusFilter === 'Unpaid') {
-                matchesStatus = invoice.status === 'Pending' || invoice.status === 'Overdue' || invoice.status === 'NEEDS_REVIEW';
+                matchesStatus = invoice.status === 'Pending' || invoice.status === 'Overdue';
             } else if (statusFilter !== 'All') {
                 matchesStatus = invoice.status === statusFilter;
             }
@@ -318,7 +310,6 @@ function App() {
                 >
                     <option value="All">{t('filters.all')}</option>
                     <option value="Unpaid">{t('filters.unpaid')}</option>
-                    <option value="NEEDS_REVIEW">⚠️ {t('filters.needsReview')}</option>
                     <option value="Pending">{t('filters.pending')}</option>
                     <option value="Paid">{t('filters.paid')}</option>
                     <option value="Overdue">{t('filters.overdue')}</option>
@@ -354,7 +345,6 @@ function App() {
                         }}
                         onEdit={handleEdit}
                         onDelete={handleDeleteClick}
-                        onApprove={handleApproveInvoice}
                         companyName={activeCompany?.name}
                     />
                     

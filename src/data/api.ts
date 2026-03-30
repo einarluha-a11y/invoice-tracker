@@ -17,7 +17,7 @@ export interface RawInvoiceRow {
 
 export const parseStatus = (rawStatus: string, parsedDueDate?: string): InvoiceStatus => {
     const normalized = rawStatus.toLowerCase().trim();
-    if (normalized === 'needs_review' || rawStatus === 'NEEDS_REVIEW' || normalized === 'needs action') return 'NEEDS_REVIEW';
+    if (normalized === 'needs_review' || rawStatus === 'NEEDS_REVIEW' || normalized === 'needs action' || normalized === 'error') return 'Error';
     if (normalized === 'paid' || normalized === 'оплачен') return 'Paid';
     if (normalized === 'overdue' || normalized === 'просрочен') return 'Overdue';
     // 'ootel' (Estonian for "waiting") is treated as Pending, not quarantine

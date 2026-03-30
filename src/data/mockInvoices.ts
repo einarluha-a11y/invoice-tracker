@@ -1,4 +1,4 @@
-export type InvoiceStatus = 'Pending' | 'Paid' | 'Overdue' | 'NEEDS_REVIEW';
+export type InvoiceStatus = 'Pending' | 'Paid' | 'Overdue' | 'Error';
 
 export interface Invoice {
     id: string;

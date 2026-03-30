@@ -17,14 +17,13 @@ interface InvoiceTableProps {
     onSort: (field: SortField) => void;
     onEdit: (invoice: Invoice) => void;
     onDelete: (id: string) => void;
-    onApprove: (id: string) => void;
     companyName?: string;
 }
 
 export type SortField = keyof Invoice;
 export type SortDirection = 'asc' | 'desc';
 
-export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, endDate, sortField, sortDirection, onSort, onEdit, onDelete, onApprove, companyName }: InvoiceTableProps) {
+export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, endDate, sortField, sortDirection, onSort, onEdit, onDelete, companyName }: InvoiceTableProps) {
     const { t, i18n } = useTranslation();
     const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
     const [visibleLimit, setVisibleLimit] = useState(100);
@@ -57,7 +56,7 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                 if (statusFilter === 'All') {
                     matchesStatus = true;
                 } else if (statusFilter === 'Unpaid') {
-                    matchesStatus = invoice.status === 'Pending' || invoice.status === 'Overdue' || invoice.status === 'NEEDS_REVIEW';
+                    matchesStatus = invoice.status === 'Pending' || invoice.status === 'Overdue';
                 } else {
                     matchesStatus = invoice.status === statusFilter;
                 }
@@ -114,7 +113,7 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
             case 'Paid': return 'status-paid';
             case 'Pending': return 'status-pending';
             case 'Overdue': return 'status-overdue';
-            case 'NEEDS_REVIEW': return 'status-needs-review';
+            case 'Error': return 'status-needs-review';
             default: return '';
         }
     };
@@ -148,7 +147,7 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
             inv.dateCreated,
             inv.dueDate,
             inv.amount,
-            inv.status === 'Paid' ? t('filters.paid') : inv.status === 'Pending' ? t('filters.pending') : inv.status === 'NEEDS_REVIEW' ? 'NEEDS REVIEW' : t('filters.overdue')
+            inv.status === 'Paid' ? t('filters.paid') : inv.status === 'Pending' ? t('filters.pending') : inv.status === 'Error' ? 'Error' : t('filters.overdue')
         ]);
 
         const csvContent = [
@@ -228,7 +227,7 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                     inv.dateCreated,
                     inv.dueDate,
                     `${inv.amount} ${inv.currency}`,
-                    inv.status === 'Paid' ? t('filters.paid') : inv.status === 'Pending' ? t('filters.pending') : inv.status === 'NEEDS_REVIEW' ? 'NEEDS REVIEW' : t('filters.overdue')
+                    inv.status === 'Paid' ? t('filters.paid') : inv.status === 'Pending' ? t('filters.pending') : inv.status === 'Error' ? 'Error' : t('filters.overdue')
                 ];
                 tableRows.push(rowData);
             });
@@ -362,7 +361,7 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                                 <td data-label={t('table.status')} style={{ minWidth: '150px' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                         <span style={{ whiteSpace: 'nowrap' }} className={`status-badge ${getStatusClass(invoice.status)}`}>
-                                            {invoice.status === 'Paid' ? t('filters.paid') : invoice.status === 'Pending' ? t('filters.pending') : invoice.status === 'NEEDS_REVIEW' ? t('filters.needsReview') : t('filters.overdue')}
+                                            {invoice.status === 'Paid' ? t('filters.paid') : invoice.status === 'Pending' ? t('filters.pending') : invoice.status === 'Error' ? 'Error' : t('filters.overdue')}
                                         </span>
                                         {invoice.validationWarnings && invoice.validationWarnings.length > 0 && (
                                             <span className="warning-icon" title={invoice.validationWarnings.join('\n')}>⚠️</span>
@@ -371,13 +370,6 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                                 </td>
                                 <td data-label={t('table.actions')}>
                                     <div className="action-buttons">
-                                        {invoice.status === 'NEEDS_REVIEW' && (
-                                            <button
-                                                onClick={() => onApprove(invoice.id)}
-                                                style={{ background: 'transparent', border: 'none', color: '#28a745', cursor: 'pointer', padding: '4px', fontSize: '1.2rem', opacity: 0.9, display: 'flex' }}
-                                                title={t('table.approveBtn', 'Approve — set to Pending')}
-                                            >✓</button>
-                                        )}
                                         <button
                                             onClick={() => onEdit(invoice)}
                                             style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', padding: '4px', fontSize: '1.2rem', opacity: 0.9, display: 'flex' }}
