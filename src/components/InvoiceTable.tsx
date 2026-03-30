@@ -397,16 +397,18 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                                 <td data-label={t('table.actions')}>
                                     <div className="action-buttons">
                                         {/* Repair button — re-runs Claude extraction on the original file */}
-                                        {invoice.fileUrl && (() => {
+                                        {(() => {
                                             const rs = repairState[invoice.id];
+                                            const hasFile = !!invoice.fileUrl;
                                             const icon = rs === 'loading' ? '⟳' : rs === 'ok' ? '✓' : rs === 'error' ? '✕' : '🔧';
-                                            const color = rs === 'ok' ? '#28a745' : rs === 'error' ? '#dc3545' : 'var(--text-secondary)';
+                                            const color = rs === 'ok' ? '#28a745' : rs === 'error' ? '#dc3545' : hasFile ? 'var(--text-secondary)' : 'var(--text-secondary)';
                                             const spinning = rs === 'loading';
+                                            const titleText = rs === 'ok' ? 'Repaired!' : rs === 'error' ? 'Repair failed — no file attached, delete and re-process from email' : hasFile ? 'Re-extract data with Claude' : 'No file attached — delete this record and re-process from email';
                                             return (
                                                 <button
                                                     onClick={() => handleRepair(invoice)}
                                                     disabled={rs === 'loading'}
-                                                    title={rs === 'ok' ? 'Repaired!' : rs === 'error' ? 'Repair failed' : 'Re-extract data with Claude'}
+                                                    title={titleText}
                                                     style={{
                                                         background: 'transparent', border: 'none', color, cursor: rs === 'loading' ? 'wait' : 'pointer',
                                                         padding: '4px', fontSize: '1rem', opacity: rs ? 1 : 0.6, display: 'flex', alignItems: 'center',
