@@ -956,22 +956,32 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
         await connection.openBox('INBOX');
 
         const horizonDate = new Date();
-        horizonDate.setDate(horizonDate.getDate() - 30);
+        horizonDate.setDate(horizonDate.getDate() - 3); // Defeat Zapier: Sweep the last 3 days
         const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
         const sinceStr = `${String(horizonDate.getDate()).padStart(2, '0')}-${months[horizonDate.getMonth()]}-${horizonDate.getFullYear()}`;
         
-        const searchCriteria = ['UNSEEN', ['SINCE', sinceStr]];
+        // Defeat Zapier: Do NOT rely on UNSEEN! Zapier marks it as seen instantly.
+        // We poll ALL messages since 3 days ago, and use our own Firestore memory to deduplicate.
+        const searchCriteria = [['SINCE', sinceStr]];
         // FIX Reliability: do NOT mark as seen on fetch — mark manually after successful Firestore write
         // This prevents losing invoices if PM2 crashes mid-processing
         const fetchOptions = { bodies: [''], markSeen: false };
 
         const allMessages = await connection.search(searchCriteria, fetchOptions);
         const messages = allMessages;
-        console.log(`[Email] Found ${messages.length} unread new emails.`);
+        console.log(`[Email] Found ${messages.length} total emails in the trailing 3-day recovery window.`);
 
         for (const item of messages) {
             const all = item.parts.find(a => a.which === '');
             const id = item.attributes.uid;
+            
+            // Defeat Zapier: Idempotent Sequence Memory Check
+            const uidDocRef = db.collection('processed_email_uids').doc(`${companyId}_${id}`);
+            const uidSnap = await uidDocRef.get();
+            if (uidSnap.exists) {
+                continue; // We already fully processed this UID successfully in the past
+            }
+            
             const parsedEmail = await simpleParser(all.body);
 
             console.log(`[Email] Processing email subject: "${parsedEmail.subject}"`);
@@ -1114,6 +1124,8 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                         }
                                         await markStagingResult(stagingId, { status: 'success', resultIds: [] });
                                         console.log(`[Email] Email UID ${id} successfully processed as PDF Bank Statement!`);
+                                        try { connection.imap.addFlags(id, ['\\Seen'], () => {}); } catch(_) {}
+                                        try { await uidDocRef.set({ processedAt: admin.firestore.FieldValue.serverTimestamp(), subject: parsedEmail.subject || '' }); } catch(_) {}
                                     }
                                 } else {
                                     console.log('[Email] Detected Invoice PDF. Requesting Pre-Flight Vision Audit to check for CMRs...');
@@ -1146,6 +1158,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                         console.log(`[Email] Email UID ${id} successfully processed by Document AI!`);
                                         // FIX Reliability: mark as seen only AFTER successful Firestore write
                                         try { connection.imap.addFlags(id, ['\\Seen'], () => {}); } catch(_) {}
+                                        try { await uidDocRef.set({ processedAt: admin.firestore.FieldValue.serverTimestamp(), subject: parsedEmail.subject || '' }); } catch(_) {}
                                     }
                                 }
                             } else if (mime.includes('image/') || filename.endsWith('.jpg') || filename.endsWith('.jpeg') || filename.endsWith('.png')) {
@@ -1277,6 +1290,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                     try {
                                         await writeToFirestore([auditedData]);
                                         console.log(`[Email] Body-text invoice saved: ${auditedData.vendorName} / ${auditedData.invoiceId}`);
+                                        try { await uidDocRef.set({ processedAt: admin.firestore.FieldValue.serverTimestamp(), subject: parsedEmail.subject || '' }); } catch(_) {}
                                     } catch (writeErr) {
                                         if (writeErr.message && writeErr.message.startsWith('FILE_INTEGRITY_BLOCK')) {
                                             console.warn(`[Email] Body-text write blocked (no file): ${writeErr.message}`);

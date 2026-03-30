@@ -297,10 +297,24 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
             
             const strongIdMatch = (cleanNewId.length > 3 && cleanOldId === cleanNewId);
             const genericDateMatch = (cleanNewId.length <= 3 && amtMatches && vendorFuzzyMatch && data.dateCreated === docAiPayload.dateCreated);
+            
+            // Defeat Zapier: Zapier scrambles IDs (e.g. 26226030115526/4211005197) while Claude extracts correctly (4211005197).
+            // We consider it a fuzzy match if either string fully encapsulates the other.
+            const idFuzzyMatch = (cleanNewId.length > 3 && cleanOldId.length > 3 && (cleanOldId.includes(cleanNewId) || cleanNewId.includes(cleanOldId)));
+            const isZapierGhost = (!data.fileUrl && data.subtotalAmount === undefined);
 
-            if ((strongIdMatch && vendorFuzzyMatch && amtMatches) || genericDateMatch) {
-                if ((!data.fileUrl || data.fileUrl === 'BODY_TEXT_NO_ATTACHMENT') && fileUrl && fileUrl !== 'BODY_TEXT_NO_ATTACHMENT') {
-                    console.log(`[Accountant Agent] ⚔️ GHOST ASSASSINATION: Destroying file-less duplicate ${doc.id} in favor of incoming high-fidelity PDF payload!`);
+            const isDuplicateMatch = (strongIdMatch && vendorFuzzyMatch && amtMatches) || 
+                                     genericDateMatch || 
+                                     (idFuzzyMatch && vendorFuzzyMatch && amtMatches) || 
+                                     (isZapierGhost && vendorFuzzyMatch && amtMatches && data.dateCreated === docAiPayload.dateCreated);
+
+            if (isDuplicateMatch) {
+                const dbNoFile = !data.fileUrl || data.fileUrl === 'BODY_TEXT_NO_ATTACHMENT';
+                // Incoming payload is "better" if it has a real PDF OR if it contains advanced DocAI metadata (subtotal/tax) that Zapier missed.
+                const incomingIsBetter = (fileUrl && fileUrl !== 'BODY_TEXT_NO_ATTACHMENT') || docAiPayload.subtotalAmount !== undefined || docAiPayload.taxAmount !== undefined;
+
+                if (dbNoFile && incomingIsBetter) {
+                    console.log(`[Accountant Agent] ⚔️ ZAPIER GHOST ASSASSINATION: Destroying skeleton duplicate ${doc.id} in favor of full Claude 4.6 payload!`);
                     ghostDocIdToDestroy = doc.id;
                 } else {
                     isDuplicate = true;
@@ -314,12 +328,14 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
             const ghostRef = db.collection('invoices').doc(ghostDocIdToDestroy);
             await db.runTransaction(async (t) => {
                 const ghostDoc = await t.get(ghostRef);
-                if (ghostDoc.exists && !ghostDoc.data().fileUrl) {
+                // The ghost must still exist and must still lack a proper fileUrl to be assassinated.
+                if (ghostDoc.exists && (!ghostDoc.data().fileUrl || ghostDoc.data().fileUrl === 'BODY_TEXT_NO_ATTACHMENT')) {
                     console.log(`[Accountant Agent] 🗑️  Ghost verified and deleted via Transaction lock: ${ghostDocIdToDestroy}`);
                     t.delete(ghostRef);
                 } else {
                     console.warn(`[Accountant Agent] ⚠️  Ghost deletion aborted: doc state changed or file now present (${ghostDocIdToDestroy})`);
                     ghostDocIdToDestroy = null; // Don't skip the incoming record
+                    isDuplicate = true;
                 }
             });
         }
