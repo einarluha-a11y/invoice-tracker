@@ -123,8 +123,9 @@ If an invoice is issued by "FS Teenused OÜ" to "${companyName}", the vendorName
 If the invoice is clearly addressed to a COMPLETELY DIFFERENT BUYER (e.g., "Chempack OÜ" or someone else) and NOT to "${companyName}" or "GLOBAL TECHNICS OÜ", YOU MUST REJECT IT and return an empty array [].
 
 CRITICAL RULE FOR REJECTING NON-INVOICE DOCUMENTS:
-You MUST ONLY extract true Invoices (Arve, Invoice, Rechnung, Lasku).
-If the document is primarily a Receipt (Kviitung, Tšekk, Kvito), a Waybill/CMR (Saateleht, Veoseleht, CMR), a Quote/Proforma (Pakkumine, Proforma, Ettemaksuarve), an Order (Tellimus), Insurance Policy (Poliis), Contract (Leping), or has NO clear amount to pay, YOU MUST REJECT IT and return an empty array []. Do NOT extract a "Kviitung" as an invoice. Do not falsely reject valid invoices just because the text is messy.
+You MUST ONLY extract true Invoices (Arve, Invoice, Rechnung, Lasku, Faktura, Kindlustusmakse arve).
+REJECT and return [] ONLY for: Waybill/CMR (Saateleht, Veoseleht, CMR), Quote/Proforma (Pakkumine, Proforma, Ettemaksuarve), Order confirmation (Tellimuse kinnitus), insurance POLICY contracts (Kindlustuspoliis — the multi-page policy document), Employment Contract (Leping), Advertisement, or documents with NO clear amount to pay.
+ACCEPT (do NOT reject): insurance premium BILLS (e.g. "Arve nr 128446615" from LHV Kindlustus — these have "Arve nr", a due date, and a payment amount), pre-paid receipts (extract as status=Paid), any document with "Arve nr" or "Invoice" heading. Do not falsely reject valid invoices just because the text is messy.
 
 Required fields for EACH invoice object:
 - invoiceId: (e.g. Inv-006, Dok. nr. CRITICAL: NEVER use a generic string like "Arve nr." or "Invoice". It MUST be the actual unique alphanumeric number next to it)
