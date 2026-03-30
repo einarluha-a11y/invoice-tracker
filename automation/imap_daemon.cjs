@@ -133,7 +133,7 @@ Required fields for EACH invoice object:
 - currency: (3 letter code, usually EUR)
 - dateCreated: (DD-MM-YYYY format. CRITICAL: Provide the actual issuing date, not the print/export date)
 - dueDate: (DD-MM-YYYY format. If no explicit due date, use dateCreated)
-- description: (String, max 3-4 words. Guess based on vendor if not explicit)
+- description: (String. SHORT human-readable summary of WHAT the invoice is for — e.g. "Transport services", "Office rent March", "Freight forwarding", "IT support". Extract from the service/goods description text. NEVER use the invoice number, VAT/registration number, or any string consisting only of digits and slashes. If nothing explicit, infer from vendor context.)
 - isPaid: (Boolean. Set to true ONLY IF the invoice explicitly states it is already paid, e.g., "Amount Due 0.00", "Amount Due EUR 0.00", "Makstud", "Paid", "Оплачен". Otherwise, false.)
 
 ${customRulesSection}Raw Data:
@@ -354,6 +354,14 @@ async function writeToFirestore(dataArray) {
                 }
             }
 
+            // Sanitize description: reject strings that look like invoice IDs / registration numbers
+            // (only digits, or digits+slashes+hyphens with no real words, or >10 consecutive digits)
+            const rawDesc = data.description
+                || (data.lineItems && data.lineItems[0] && data.lineItems[0].description)
+                || '';
+            const looksLikeId = /^[\d\/\-\.]+$/.test(rawDesc.trim()) || /\d{7,}/.test(rawDesc);
+            const cleanDescription = (rawDesc && !looksLikeId) ? rawDesc.trim() : '';
+
             t.set(docRef, {
                 invoiceId: invoiceId,
                 vendorName: vendorName,
@@ -375,6 +383,7 @@ async function writeToFirestore(dataArray) {
                 supplierRegistration: data.supplierRegistration || "",
                 supplierVat: data.supplierVat || "",
                 validationWarnings: data.validationWarnings || [],
+                description: cleanDescription,
                 lineItems: data.lineItems || [],
                 createdAt: admin.firestore.FieldValue.serverTimestamp(),
                 companyId: data.companyId || null,

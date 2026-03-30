@@ -91,6 +91,8 @@ CRITICAL DIRECTIVES:
 10. THE COMPOUNDING DEBT TRAP (Võlgnevus): If an invoice contains past arrears or carried-over debt (e.g., "Võlgnevus"), the printed "Total to Pay" ("Tasuda") includes this old debt. To prevent double-counting in the ledger, you MUST strictly isolate the current month's charge: the extracted 'amount' MUST mathematically equal 'subtotalAmount' + 'taxAmount'. NEVER extract the cumulative balance ("Tasuda") or the isolated "Võlgnevus" itself as the final invoice 'amount'.
 11. LOGISTICS & FREIGHT INVOICES: For logistics companies (e.g. NUNNER Logistics UAB, DSV, DELFI), DO NOT extract the "Shipper", "Consignee", or "Pakrovimo adresas" as the Vendor Name. The Vendor is ALWAYS the logistics company issuing the invoice, found in the top header or footer (e.g. NUNNER Logistics UAB). Furthermore, do NOT extract "Tracking no", "Užsakymo nr", "Order" or "Delivery no" as the Invoice ID. You MUST extract the official "Invoice" / "PVM sąskaita - faktūra" number.
 
+12. DESCRIPTION FIELD: Extract the top-level "description" as a SHORT human-readable summary of WHAT the invoice is for (e.g. "Transport services", "Office rent March", "Packaging materials", "Freight forwarding"). This MUST be derived from the service/goods description text on the invoice — NOT from the invoice number, NOT from the VAT/registration number, NOT from tracking numbers. If lineItems exist, use the first lineItem's description text. If no explicit description exists, infer from vendor context (e.g. logistics vendor → "Transport services"). NEVER output a string that consists only of digits, slashes, or looks like an ID (e.g. "4226030081026" or "1031/26/A" are WRONG — those are invoice/registration numbers, not descriptions).
+
 IF TYPE A (INVOICE), respond ONLY with a JSON array matching this schema:
 [
   {
@@ -108,6 +110,7 @@ IF TYPE A (INVOICE), respond ONLY with a JSON array matching this schema:
     "dateCreated": "YYYY-MM-DD",
     "dueDate": "YYYY-MM-DD",
     "status": "OOTEL or Paid",
+    "description": "short human-readable summary of what this invoice is for",
     "lineItems": [ { "description": "string", "amount": number } ]
   }
 ]
