@@ -91,9 +91,18 @@ async function getStagedDocument(stagingId) {
  * List recent staging documents, optionally filtered by company/status.
  */
 async function listStagedDocuments({ companyId = null, status = null, limit = 50 } = {}) {
-    let q = db.collection(COLLECTION).orderBy('receivedAt', 'desc').limit(limit);
+    let q = db.collection(COLLECTION);
+    
+    // If filtering by fields, drop orderBy to avoid requiring complex composite indexes.
     if (companyId) q = q.where('companyId', '==', companyId);
     if (status)    q = q.where('processingStatus', '==', status);
+    
+    if (!companyId && !status) {
+        q = q.orderBy('receivedAt', 'desc');
+    }
+    
+    q = q.limit(limit);
+    
     const snap = await q.get();
     return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
