@@ -253,10 +253,13 @@ async function writeToFirestore(dataArray) {
                 }
             }
 
-            // --- FILE INTEGRITY CHECK ---
+            // --- FILE INTEGRITY CHECK (Rule 31: no file = no record) ---
+            // IMPORTANT: throw, do NOT silently return.
+            // A silent return would cause saveParsedData() to set success=true
+            // and mark the email as \\Seen — making it invisible to the next poll.
+            // Throwing forces success=false so the email stays UNSEEN and retried.
             if (!data.fileUrl) {
-                console.warn(`[Firestore] 🛑 CRITICAL REJECTION: Refusing to write invoice without a file attachment (Vendor: ${vendorName}, Invoice: ${invoiceId}). Audit block active.`);
-                return; // Completely bypass Firebase write
+                throw new Error(`FILE_INTEGRITY_BLOCK: No fileUrl for ${vendorName} / ${invoiceId}. Record not saved.`);
             }
 
             // --- DUPLICATE PREVENTION LOGIC ---
@@ -488,10 +491,14 @@ async function runMakerCheckerLoop(content, mimeType, companyData, maxAttempts =
             critique = supervisorVerdict.critique;
 
             if (extractionAttempts >= maxAttempts) {
-                console.log(`[Supervisor] ⚠️ Max reflection attempts reached. Accepting with missing data flag.`);
+                // After 5 failed attempts, do NOT force-accept with ANOMALY_DETECTED —
+                // that would create a skeleton/partial record on the dashboard.
+                // Instead: mark as Error so accountant_agent routes to Safety Net (which
+                // requires a fileUrl) or discards. The email stays UNSEEN for retry.
+                console.warn(`[Supervisor] ⛔ Max reflection attempts (${maxAttempts}) reached. Marking as Error — will NOT save partial record.`);
                 tempParsed[0].validationWarnings = tempParsed[0].validationWarnings || [];
-                tempParsed[0].validationWarnings.push(`SUPERVISOR: Forced to accept missing data after deep scan.`);
-                tempParsed[0].status = 'ANOMALY_DETECTED';
+                tempParsed[0].validationWarnings.push(`SUPERVISOR: Rejected after ${maxAttempts} extraction attempts. Missing: ${supervisorVerdict.critique}`);
+                tempParsed[0].status = 'Error';
                 parsedData = tempParsed;
             }
         } else if (!supervisorVerdict.passed && !supervisorVerdict.needsReExtraction) {
@@ -1022,9 +1029,21 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                         await markStagingResult(stagingId, { status: 'error', error: warnings.join('; ') || 'Accountant Agent returned Error status' });
                                         success = true;
                                     } else {
-                                        await writeToFirestore([auditedData]);
-                                        await markStagingResult(stagingId, { status: 'success', resultIds: [auditedData.id || auditedData.invoiceId || ''] });
-                                        success = true;
+                                        try {
+                                            await writeToFirestore([auditedData]);
+                                            await markStagingResult(stagingId, { status: 'success', resultIds: [auditedData.id || auditedData.invoiceId || ''] });
+                                            success = true;
+                                        } catch (writeErr) {
+                                            if (writeErr.message && writeErr.message.startsWith('FILE_INTEGRITY_BLOCK')) {
+                                                // Record has no fileUrl — don't mark email as Seen,
+                                                // it will be retried on the next poll cycle.
+                                                console.error(`[Firestore] 🛑 ${writeErr.message}`);
+                                                await markStagingResult(stagingId, { status: 'error', error: writeErr.message });
+                                                // success stays false → email NOT marked \\Seen → retried
+                                            } else {
+                                                throw writeErr; // Genuine Firestore error — rethrow
+                                            }
+                                        }
                                     }
                                 }
                                 return success;
@@ -1215,11 +1234,28 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                         for (let inv of parsedData) {
                             inv.companyId = companyId;
                             try {
+                                // Step A: Supervisor gate — same data-quality check as the PDF path
+                                const supervisorVerdict = await intellectualSupervisorGate(inv);
+                                if (!supervisorVerdict.passed) {
+                                    console.warn(`[Email] Body-text invoice REJECTED by Supervisor: ${supervisorVerdict.critique}`);
+                                    console.warn(`[Email] → Forward the original PDF to the inbox instead of forwarding body text only.`);
+                                    continue; // Skip this record — do not save
+                                }
+
+                                // Step B: Completeness Gate (score 4/4) + Cross-company routing
                                 // 'BODY_TEXT_NO_ATTACHMENT' triggers the Completeness Gate in accountant_agent.cjs
                                 const auditedData = await auditAndProcessInvoice(inv, inv.fileUrl || 'BODY_TEXT_NO_ATTACHMENT', companyId);
                                 if (auditedData.status !== 'Duplicate' && auditedData.status !== 'Error') {
-                                    await writeToFirestore([auditedData]);
-                                    console.log(`[Email] Body-text invoice saved: ${auditedData.vendorName} / ${auditedData.invoiceId}`);
+                                    try {
+                                        await writeToFirestore([auditedData]);
+                                        console.log(`[Email] Body-text invoice saved: ${auditedData.vendorName} / ${auditedData.invoiceId}`);
+                                    } catch (writeErr) {
+                                        if (writeErr.message && writeErr.message.startsWith('FILE_INTEGRITY_BLOCK')) {
+                                            console.warn(`[Email] Body-text write blocked (no file): ${writeErr.message}`);
+                                        } else {
+                                            throw writeErr;
+                                        }
+                                    }
                                 } else if (auditedData.status === 'Error') {
                                     console.warn(`[Email] Body-text invoice rejected by Completeness Gate: ${(auditedData.validationWarnings || []).join('; ')}`);
                                 }

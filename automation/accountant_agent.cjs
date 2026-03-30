@@ -119,9 +119,11 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
 
             const score = [hasVendor, hasAmount, hasInvoiceId, (hasVat || hasReg)].filter(Boolean).length;
 
-            if (score < 3) {
+            // ALL 4 fields required: score 3/4 (missing VAT/Reg) still rejected.
+            // Nunner-type records with vendor+amount+invoiceId but no VAT/Reg are blocked here.
+            if (score < 4) {
                 console.error(`[Accountant Agent] 🛑 BODY-TEXT COMPLETENESS GATE: Rejected — score ${score}/4 (vendor:${hasVendor} amount:${hasAmount} invoiceId:${hasInvoiceId} vat/reg:${hasVat||hasReg})`);
-                warnings.push(`COMPLETENESS_GATE: Body-text record rejected (score ${score}/4). Requires: vendor name, positive amount, invoice number, and VAT or registration number. Forward the original PDF instead.`);
+                warnings.push(`COMPLETENESS_GATE: Body-text record rejected (score ${score}/4). ALL required: vendor name, positive amount, invoice number, and VAT or registration number. Forward the original PDF instead.`);
                 return { ...docAiPayload, fileUrl: null, status: 'Error', validationWarnings: warnings };
             }
 
