@@ -922,7 +922,26 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
 
     try {
         console.log(`[Email] Connecting to IMAP server ${config.imap.host} for ${companyName} (${config.imap.user})...`);
-        const connection = await imaps.connect(config);
+
+        // Retry with backoff on rate-limit errors (some IMAP servers throttle rapid reconnects)
+        let connection;
+        const MAX_IMAP_ATTEMPTS = 3;
+        for (let attempt = 1; attempt <= MAX_IMAP_ATTEMPTS; attempt++) {
+            try {
+                connection = await imaps.connect(config);
+                break;
+            } catch (connErr) {
+                const isRateLimit = /rate.limit|too many|429|login.wait/i.test(connErr.message);
+                if (isRateLimit && attempt < MAX_IMAP_ATTEMPTS) {
+                    const waitSec = attempt * 60; // 60s, 120s
+                    console.warn(`[Email] ⚠️  IMAP rate limited for ${companyName} (attempt ${attempt}). Waiting ${waitSec}s...`);
+                    await new Promise(r => setTimeout(r, waitSec * 1000));
+                } else {
+                    throw connErr; // rethrow to outer catch
+                }
+            }
+        }
+        if (!connection) throw new Error('IMAP connection failed after retries');
 
         console.log('[Email] Connection successful! Opening INBOX.');
         await connection.openBox('INBOX');
@@ -1298,11 +1317,12 @@ async function pollAllCompanyInboxes() {
         for (const doc of companiesSnapshot.docs) {
             const data = doc.data();
             if (data.imapHost && data.imapUser && data.imapPassword) {
+                // Trim all values — Firestore UI can introduce leading/trailing spaces
                 const customConfig = {
-                    user: data.imapUser,
-                    password: data.imapPassword,
-                    host: data.imapHost.trim(),
-                    port: data.imapPort || 993
+                    user:     (data.imapUser    || '').trim(),
+                    password: (data.imapPassword || '').trim(),
+                    host:     (data.imapHost     || '').trim(),
+                    port:     data.imapPort || 993
                 };
                 await checkEmailForInvoices(customConfig, data.name, doc.id, data.customAiRules || "");
             }

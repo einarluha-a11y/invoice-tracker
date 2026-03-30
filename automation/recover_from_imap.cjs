@@ -63,16 +63,20 @@ async function getImapConfig(companyId) {
     const doc = await db.collection('companies').doc(companyId).get();
     if (doc.exists) {
         const d = doc.data();
-        if (d.imapHost && d.imapUser && d.imapPassword) {
-            return { user: d.imapUser, password: d.imapPassword, host: d.imapHost, port: d.imapPort || 993 };
+        // Trim all values — Firestore UI sometimes introduces leading/trailing spaces
+        const host = (d.imapHost || '').trim();
+        const user = (d.imapUser || '').trim();
+        const pass = (d.imapPassword || '').trim();
+        if (host && user && pass) {
+            return { user, password: pass, host, port: d.imapPort || 993 };
         }
     }
     // Fall back to environment .env
     if (process.env.IMAP_USER && process.env.IMAP_PASSWORD && process.env.IMAP_HOST) {
         return {
-            user:     process.env.IMAP_USER,
-            password: process.env.IMAP_PASSWORD,
-            host:     process.env.IMAP_HOST,
+            user:     process.env.IMAP_USER.trim(),
+            password: process.env.IMAP_PASSWORD.trim(),
+            host:     process.env.IMAP_HOST.trim(),
             port:     parseInt(process.env.IMAP_PORT || '993', 10),
         };
     }
@@ -97,13 +101,28 @@ async function resetSeenFlags(imapConf, sinceDate, untilDate, label) {
 
     console.log(`  [IMAP] Connecting to ${imapConf.host} as ${imapConf.user}...`);
     let connection;
-    try {
-        connection = await imaps.connect(config);
-        await connection.openBox('INBOX');
-    } catch (err) {
-        console.error(`  [IMAP] ❌ Connection failed: ${err.message}`);
-        return 0;
+    const MAX_CONNECT_ATTEMPTS = 3;
+    for (let attempt = 1; attempt <= MAX_CONNECT_ATTEMPTS; attempt++) {
+        try {
+            connection = await imaps.connect(config);
+            await connection.openBox('INBOX');
+            break; // success
+        } catch (err) {
+            const isRateLimit = /rate.limit|too many|429|login.wait/i.test(err.message);
+            if (isRateLimit && attempt < MAX_CONNECT_ATTEMPTS) {
+                const waitSec = attempt * 30; // 30s, 60s
+                console.warn(`  [IMAP] ⚠️  Rate limited (attempt ${attempt}/${MAX_CONNECT_ATTEMPTS}). Waiting ${waitSec}s before retry...`);
+                await new Promise(r => setTimeout(r, waitSec * 1000));
+            } else {
+                console.error(`  [IMAP] ❌ Connection failed (attempt ${attempt}/${MAX_CONNECT_ATTEMPTS}): ${err.message}`);
+                if (isRateLimit) {
+                    console.error(`  [IMAP]    Rate limit active. Wait a few minutes and re-run the script.`);
+                }
+                return 0;
+            }
+        }
     }
+    if (!connection) return 0;
 
     // Search SEEN messages in the date range (these were already processed — we want to re-process them)
     const sinceImap = toImapDate(sinceDate);
