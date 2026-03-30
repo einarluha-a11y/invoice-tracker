@@ -957,7 +957,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
         await connection.openBox('INBOX');
 
         const horizonDate = new Date();
-        horizonDate.setDate(horizonDate.getDate() - 3); // Defeat Zapier: Sweep the last 3 days
+        horizonDate.setDate(horizonDate.getDate() - 5); // Defeat Zapier: Sweep the last 3 days
         const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
         const sinceStr = `${String(horizonDate.getDate()).padStart(2, '0')}-${months[horizonDate.getMonth()]}-${horizonDate.getFullYear()}`;
         
