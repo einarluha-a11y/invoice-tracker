@@ -60,21 +60,30 @@ async function findBadInvoices() {
     for (const doc of snap.docs) {
         const d = doc.data();
 
-        const hasMissingFile = !d.fileUrl || d.fileUrl === 'BODY_TEXT_NO_ATTACHMENT';
-        const hasZeroAmount = !d.amount || Number(d.amount) === 0;
-        const isMissingIdentity = (!d.supplierVat || d.supplierVat === 'Not_Found') && (!d.supplierRegistration || d.supplierRegistration === 'Not_Found');
-        const isMissingLineItems = !d.lineItems || !Array.isArray(d.lineItems) || d.lineItems.length === 0;
-        const isStuck = d.status === 'NEEDS_REVIEW' || d.status === 'DRAFT';
+        const hasMissingFile   = !d.fileUrl || d.fileUrl === 'BODY_TEXT_NO_ATTACHMENT';
+        const hasZeroAmount    = !d.amount || Number(d.amount) === 0;
+        const isMissingIdentity = (!d.supplierVat || d.supplierVat === 'Not_Found') &&
+                                  (!d.supplierRegistration || d.supplierRegistration === 'Not_Found');
 
-        let reason = null;
-        if (hasMissingFile) reason = 'Missing File';
-        else if (hasZeroAmount) reason = 'Zero Amount';
-        else if (isMissingIdentity) reason = 'Missing VAT & RegNo';
-        else if (isMissingLineItems) reason = 'Missing Line Items';
-        else if (isStuck) reason = `Stuck in ${d.status}`;
+        // NEEDS_REVIEW is a valid human-review status when the file exists but VAT/Reg
+        // is absent from the document. Deleting such records causes an infinite re-queue
+        // loop because the original PDF won't have that information either.
+        // Only flag NEEDS_REVIEW/DRAFT as "stuck" when there is ALSO no file.
+        const isStuck = (d.status === 'NEEDS_REVIEW' || d.status === 'DRAFT') && hasMissingFile;
 
-        if (reason) {
-            badInvoices.push({ id: doc.id, data: d, reason });
+        // Missing line items alone is not a reliable reason for deletion: many legitimate
+        // invoices from small vendors genuinely have no itemisation. Re-processing won't
+        // produce line items if the PDF doesn't contain them — it only creates churn.
+        // Include it only as additional context when the record is already bad for another reason.
+
+        let reasons = [];
+        if (hasMissingFile)    reasons.push('Missing File');
+        if (hasZeroAmount)     reasons.push('Zero Amount');
+        if (isMissingIdentity && hasMissingFile) reasons.push('Missing VAT & RegNo');
+        if (isStuck)           reasons.push(`Stuck in ${d.status}`);
+
+        if (reasons.length > 0) {
+            badInvoices.push({ id: doc.id, data: d, reason: reasons.join(' + ') });
         }
     }
     return badInvoices;
@@ -256,12 +265,19 @@ async function resetSeenFlags(imapConf, sinceDate, untilDate, label) {
     console.log('\nStep 3: Database Cleanup');
     if (!dryRun) {
         console.log(`Deleting ${badInvoices.length} records from Firestore...`);
-        const batch = db.batch();
-        for (const { id } of badInvoices) {
-            batch.delete(db.collection('invoices').doc(id));
+        const BATCH_SIZE = 400;
+        let deleted = 0;
+        for (let i = 0; i < badInvoices.length; i += BATCH_SIZE) {
+            const batch = db.batch();
+            const chunk = badInvoices.slice(i, i + BATCH_SIZE);
+            for (const { id } of chunk) {
+                batch.delete(db.collection('invoices').doc(id));
+            }
+            await batch.commit();
+            deleted += chunk.length;
+            console.log(`  ✅ Batch ${Math.ceil((i + 1) / BATCH_SIZE)}: deleted ${chunk.length} records (${deleted}/${badInvoices.length} total)`);
         }
-        await batch.commit();
-        console.log(`✅ Deleted successfully.`);
+        console.log(`✅ Deleted ${deleted} records successfully.`);
     } else {
         console.log(`[DRY RUN] Would delete ${badInvoices.length} records.`);
     }
