@@ -1,4 +1,4 @@
-import { collection, onSnapshot, doc, getDoc, deleteDoc, updateDoc, query, orderBy, where, limit } from 'firebase/firestore';
+import { collection, onSnapshot, doc, getDoc, deleteDoc, updateDoc, setDoc, query, orderBy, where, limit, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Invoice, InvoiceStatus } from './mockInvoices';
 
@@ -202,5 +202,43 @@ export const updateInvoice = async (invoiceId: string, data: Partial<Invoice>): 
                 }
             }
         }
+    }
+
+    // ── Teacher Agent: save corrected invoice as ground-truth example ──────────
+    // Every manual save via the pencil icon is treated as a verified correction.
+    // This feeds the few-shot learning system in document_ai_service.cjs.
+    try {
+        const snap = await getDoc(invoiceRef);
+        if (snap.exists()) {
+            const d = snap.data();
+            const vendorName = (d.vendorName || d.vendor || '').trim();
+            if (vendorName) {
+                const safeKey = `${vendorName}_${invoiceId}`
+                    .replace(/[^a-zA-Z0-9_\-]/g, '_')
+                    .slice(0, 80);
+
+                const exampleRef = doc(db!, 'invoice_examples', safeKey);
+                await setDoc(exampleRef, {
+                    vendorName: vendorName.toLowerCase(),
+                    groundTruth: {
+                        invoiceId,
+                        vendorName,
+                        amount:      d.amount      ?? null,
+                        currency:    d.currency    ?? null,
+                        dateCreated: d.dateCreated ?? null,
+                        dueDate:     d.dueDate     ?? null,
+                    },
+                    fileUrl:   d.fileUrl   || d.downloadUrl || null,
+                    companyId: d.companyId || null,
+                    updatedAt: serverTimestamp(),
+                    createdAt: serverTimestamp(),
+                }, { merge: true });
+
+                console.log(`[Teacher Agent] ✅ Ground-truth saved for: ${vendorName} (${safeKey})`);
+            }
+        }
+    } catch (teachErr) {
+        // Non-fatal: don't block the save if Teacher Agent fails
+        console.warn(`[Teacher Agent] ⚠️  Could not save example: ${teachErr}`);
     }
 };
