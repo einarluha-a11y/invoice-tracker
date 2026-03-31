@@ -1,283 +1,235 @@
-const { Anthropic } = require('@anthropic-ai/sdk');
-
-const anthropic = new Anthropic({
-    apiKey: process.env.ANTHROPIC_API_KEY
+// document_ai_service.cjs — Google Document AI extraction engine (no Claude/Anthropic)
+const { DocumentProcessorServiceClient } = require('@google-cloud/documentai').v1;
+const { serviceAccount } = require('./core/firebase.cjs');
+// --- Google Document AI Setup ---
+const docaiClient = new DocumentProcessorServiceClient({
+    credentials: serviceAccount,
+    apiEndpoint: 'eu-documentai.googleapis.com'
 });
+const PROJECT_ID = 'invoice-tracker-xyz';
+const LOCATION = 'eu';
+const PROCESSOR_ID = '8087614a36686ed4'; // Invoice Parser
+const PROCESSOR_NAME = `projects/${PROJECT_ID}/locations/${LOCATION}/processors/${PROCESSOR_ID}`;
 
 /**
- * Balanced-brace JSON object extractor.
- * Handles nested objects and arrays correctly — unlike regex which stops at the first `}`.
- * Scans the raw string for any JSON object with a known `type` field.
+ * Parse a numeric string into a float, handling European formats (1.200,50 or 1,200.50)
  */
-function salvageJsonObjects(str) {
-    const results = [];
-    const KNOWN_TYPES = new Set(['INVOICE', 'BANK_STATEMENT']);
-    let i = 0;
-    while (i < str.length) {
-        if (str[i] !== '{') { i++; continue; }
-        // Walk forward tracking depth, respecting strings and escape sequences
-        let depth = 0, j = i, inStr = false, escape = false;
-        while (j < str.length) {
-            const ch = str[j];
-            if (escape)          { escape = false; }
-            else if (ch === '\\' && inStr) { escape = true; }
-            else if (ch === '"') { inStr = !inStr; }
-            else if (!inStr && ch === '{') { depth++; }
-            else if (!inStr && ch === '}') {
-                depth--;
-                if (depth === 0) {
-                    const candidate = str.slice(i, j + 1);
-                    try {
-                        const parsed = JSON.parse(candidate);
-                        if (parsed && typeof parsed === 'object' && KNOWN_TYPES.has(parsed.type)) {
-                            results.push(parsed);
-                        }
-                    } catch (_) { /* malformed fragment — skip */ }
-                    break;
-                }
-            }
-            j++;
+function cleanNum(str) {
+    if (!str && str !== 0) return 0;
+    let s = String(str).replace(/[^\d.,-]/g, '').trim();
+    if (s.includes(',') && s.includes('.')) {
+        if (s.lastIndexOf(',') > s.lastIndexOf('.')) {
+            s = s.replace(/\./g, '').replace(',', '.');
+        } else {
+            s = s.replace(/,/g, '');
         }
-        i = j + 1;
+    } else if (s.includes(',')) {
+        s = s.replace(',', '.');
     }
-    return results;
+    return parseFloat(s) || 0;
 }
 
 /**
- * PURE CLAUDE EXTRACTION ENGINE
- * Now supports Supervisor Reflection Loops (criticism parameter) and few-shot examples.
+ * Convert Document AI date mentionText (various formats) to YYYY-MM-DD string.
+ */
+function parseDocAiDate(text) {
+    if (!text) return null;
+    // DocAI often returns YYYY-MM-DD or MM/DD/YYYY or DD.MM.YYYY
+    const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+
+    const euroSlash = text.match(/^(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{2,4})/);
+    if (euroSlash) {
+        const [, d, m, y] = euroSlash;
+        const year = y.length === 2 ? `20${y}` : y;
+        return `${year}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+    }
+    return null;
+}
+
+/**
+ * Infer description from vendor name when document has no explicit service description.
+ */
+function inferDescription(vendorName) {
+    const v = (vendorName || '').toLowerCase();
+    if (/nunner|girteka|linava|dsv|transport|freight|logistics|cargo|express|kuller|post/i.test(v)) return 'Freight forwarding';
+    if (/kindlustus|insurance|assurance/i.test(v)) return 'Insurance premium';
+    if (/rent|üür|arrend/i.test(v)) return 'Office rent';
+    return 'Services';
+}
+
+/**
+ * Main extraction function — replaces the former Claude-based engine.
+ * Signature is kept identical so imap_daemon.cjs needs no changes.
+ *
+ * @param {Buffer} buffer       Raw file bytes (PDF or image)
+ * @param {string} mimeType     MIME type, e.g. 'application/pdf'
+ * @param {string|null} supervisorCritique  Ignored (no LLM loop) — kept for API compat
+ * @param {string|null} customRules         Ignored (no LLM loop) — kept for API compat
+ * @param {string|null} vendorHint          Ignored — kept for API compat
+ * @returns {Promise<Array>} Array of invoice objects or []
  */
 async function processInvoiceWithDocAI(buffer, mimeType = 'application/pdf', supervisorCritique = null, customRules = null, vendorHint = null) {
-    if (supervisorCritique) {
-        console.log(`[Cognitive Extractor] 🧠 Receiving orders from Supervisor... Executing deep re-scan for missing data!`);
-    } else {
-        console.log(`[Cognitive Extractor] 🧠 Routing document natively through Claude 3.5 Sonnet...`);
-    }
-    
+    console.log(`[DocAI] 📄 Sending document to Google Document AI Invoice Parser (${PROCESSOR_ID})...`);
+
     try {
-        const base64Data = buffer.toString('base64');
-        const isPdf = mimeType.toLowerCase().includes('pdf');
-        let normalizedMime = isPdf ? 'application/pdf' : (mimeType.toLowerCase().includes('png') ? 'image/png' : 'image/jpeg');
-        const blockType = isPdf ? "document" : "image";
+        const request = {
+            name: PROCESSOR_NAME,
+            rawDocument: {
+                content: buffer.toString('base64'),
+                mimeType: mimeType || 'application/pdf',
+            },
+        };
 
-        let systemPrompt = `You are the Supreme AI Extraction Engine for a European Enterprise.
-Your job is to read the attached financial document and extract the core data into a strict JSON format.
+        const [result] = await docaiClient.processDocument(request);
+        const { document } = result;
 
-First, determine the TYPE of document:
-TYPE A: INVOICE — any document requesting payment for goods or services. Includes: Arve, Faktura, Invoice, Bill, Rechnung, Sąskaita-faktūra, Lasku, Nota, Счёт — AND insurance premium bills (Kindlustusmakse arve, Vakuutusmaksu). The key test: does it say "Arve nr" or "Invoice" or "Faktura" and request a specific payment amount? If YES → TYPE A.
-TYPE B: BANK STATEMENT (Выписка, Account Statement, Ledger, Transaction History)
-TYPE C: JUNK — documents that are NOT payment requests: CMR, Delivery Note (Saateleht, Veoseleht), Advertisement, Ettemaksuteatis, Pro forma, Tellimuse kinnitus, blank pages, insurance POLICY documents (Kindlustuspoliis — the actual policy contract, NOT the premium payment bill).
-
-CRITICAL DIRECTIVES:
-1. INTELLIGENT CURRENCY: Extract the TRUE AMOUNT TO PAY in the international billing currency (EUR/USD). DO NOT extract the local tax conversion equivalent.
-2. MANDATORY FIELDS (INVOICES): Vendor, Subtotal, Tax, Total, Supplier Reg No, and VAT Reg No. 
-3. LANGUAGE & LOCALIZATION HINTS: Baltic invoices are critical. For ESTONIAN (OÜ/AS companies):
-- supplierVat: look for "KMKR nr", "km.reg.nr", "kmkr", "käibemaksukohustuslase number", or "EE" prefix + 9 digits (e.g. EE101234567)
-- supplierRegistration: look for "Reg.nr", "registrikood", "reg.kood", "Reg nr", or an 8-digit number in the footer
-- These fields are ALWAYS in the tiny footer at the very bottom of the page — scan it carefully
-- ESTONIAN AMOUNTS — read carefully: "Tasuda EUR" or "Tasuda kokku" = FINAL AMOUNT TO PAY (this is the 'amount' field, includes VAT). "Kokku" or "Kokku käibemaksuta" alone = subtotal WITHOUT VAT ('subtotalAmount'). "Käibemaks X%" = VAT amount ('taxAmount'). RULE: amount = subtotalAmount + taxAmount = "Tasuda" value.
-- ESTONIAN INSURANCE BILLS (LHV Kindlustus, If Kindlustus, Seesam, Gjensidige): "Arve nr" = invoiceId, "KUUPÄEV" = dateCreated, "TASUMISE TÄHTPÄEV" = dueDate, "KINDLUSTUSMAKSE" = amount (insurance premium). VAT is 0 for insurance (exempt). supplierVat = Not_Found is acceptable. description = the insurance product type (e.g. "Kodukindlustus", "Sõidukikindlustus").
-- For LATVIAN (SIA companies): "PVN" = VAT, "Reģ.nr" = Reg No
-- For LITHUANIAN (UAB companies): "PVM" = VAT, "Įm.k." or "kodas" = Reg No; "Sąskaitą apmokėti" = due date; "Data" or "Išrašymo data" = issue date
-- **Polish (Sp. z o.o. / S.A.)**: invoiceId = "Faktura numer" or "Numer faktury" value (e.g. "pl21-30"). dateCreated = "Data wystawienia". dueDate = "Termin płatności". amount = "Wartość brutto" or "Do zapłaty" (total WITH VAT). subtotalAmount = "Wartość netto". taxAmount = "Wartość VAT". supplierVat = "NIP" followed by 10 digits, may be formatted as PL+10 digits (e.g. PL1133099765). supplierRegistration = "KRS" (10 digits) or "REGON" (9 digits). "np" in VAT% column = nie podlega = VAT not applicable = taxAmount is 0.
-- **Ukrainian (ТОВ / ФОП / private persons)**: If the vendor is a private person (first name + last name, no company suffix), they may use a personal tax ID called "ІПН" or "ЄДРПОУ" (8-10 digits). If no tax number exists on the document, output Not_Found — do NOT invent one.
-- **General rule for private persons**: If the vendor name appears to be a human name (two words, no company suffix like OÜ/AS/Ltd/GmbH/Sp.z o.o.), set supplierRegistration and supplierVat to Not_Found unless explicitly printed on the document. Private persons are not required to have VAT numbers.
-- For Czech/Slovak: "IČO" = Reg No, "DIČ" = VAT No
-4. COMPLEX TAX BREAKDOWNS: If there are multiple tax rates or items (e.g., 20% and 0%), look for the master or total "Käibemaks" (Tax) and "Kokku" (Total) at the bottom summary. Do not mistake the row values for the total tax.
-5. NO HALLUCINATIONS: If a text field (especially regNo or vatNumber) is completely absent from the physical document, you MUST output 'NOT_FOUND_ON_INVOICE'. Do not invent numbers.
-6. DYNAMIC PRIORITY: I have provided a 'customRules' object detailing company-specific overrides. You must MATHEMATICALLY prioritize the customRules over any standard logic. If a customRule instructs a 30-day dueDate for a specific vendor, you MUST calculate and output that exact overridden date.
-7. THE PRE-PAID RECEIPT RULE: If the physical document contains the text 'KAARDIMAKSE', 'MAKSTUD', 'TASUTUD', 'PAID', 'Maha võetud', 'Google Pay', or 'Apple Pay', you MUST explicitly set the 'status' field to 'Paid'. If these words do NOT appear, you MUST default the 'status' field strictly to 'OOTEL' (Pending).
-8. THE RELATIONAL TEMPORAL RULE: If an invoice lacks a strict absolute Due Date (e.g. '14.03.2026') but instead provides a relational temporal clause like 'Maksetähtaeg: tasuda 14 päeva jooksul' (pay within 14 days), 'tasuda 7 päeva jooksul', or 'Neto 14 päeva', you MUST mathematically add that integer (e.g., 14) to the 'dateCreated' (Invoice Date) to calculate and output the exact YYYY-MM-DD absolute 'dueDate'. Do NOT return null if a relational day count is present.
-9. THE ABSOLUTE DATE FALLBACK (RECEIPTS): If an invoice genuinely lacks ANY Due Date or relational temporal clause whatsoever (or if it is a pre-paid receipt like Google/Esvika), you MUST mathematically fallback by cloning the exact "dateCreated" string and outputting it as the "dueDate". NEVER output "NOT_FOUND_ON_INVOICE" or null for the dueDate field. Every invoice must have a YYYY-MM-DD.
-10. THE COMPOUNDING DEBT TRAP (Võlgnevus): ONLY applies when the invoice explicitly contains the word "Võlgnevus" (arrears/overdue debt carried forward). In that case, the printed "Tasuda" (Total to Pay) includes old debt — you MUST isolate the current period charge: amount = subtotalAmount + taxAmount. For ALL OTHER invoices (no Võlgnevus), the 'amount' field MUST be the "Tasuda" / "Total" / "Do zapłaty" / "Bendra suma" value — i.e., the full amount to pay including VAT.
-11. LOGISTICS & FREIGHT INVOICES — NUNNER RULE (CRITICAL, READ CAREFULLY):
-Lithuanian logistics invoices (NUNNER Logistics UAB, DSV, Girteka, Linava) have a table with FOUR columns: "PVM sąskaita-faktūra / Invoice" | "Užsakymo nr. / Tracking no." | "Pozicijos nr. / Pos. no." | "Data / Date".
-- The INVOICE ID is ONLY the value in the FIRST column ("PVM sąskaita-faktūra / Invoice"). FORMAT: always contains a slash, like "NN/NNNNNNNNNN" — e.g. "26/4211005335". If your candidate invoiceId has NO SLASH, it is WRONG.
-- The TRACKING NUMBER in the SECOND column ("Užsakymo nr. / Tracking no.") is a long number WITHOUT a slash, e.g. "4226030081026" or "42260300810". This is NEVER the invoice ID — not even part of it.
-- SELF-CHECK: Before outputting invoiceId for a NUNNER invoice — does it contain a "/"? If NO → you extracted the tracking number by mistake. Look again at the FIRST column only.
-- ⚠️ VENDOR NAME — MOST COMMON MISTAKE: The VENDOR is the company in the TOP-LEFT LETTERHEAD (e.g. "NUNNER Logistics UAB"), NOT the "Siuntėjas / Shipper" or "Gavėjas / Consignee" fields. "PACKAGING SOLUTIONS NUR-SULTAN" is the cargo shipper, NEVER the vendor.
-- REAL EXAMPLE: invoiceId="26/4211005335" ✓ (has slash) vs invoiceId="4226030081026" ✗ (no slash = tracking number), vendorName="NUNNER Logistics UAB", amount=4500.00, description="Freight forwarding".
-
-12. DESCRIPTION FIELD: Extract the top-level "description" as a SHORT human-readable summary of WHAT the invoice is for. Rules:
-- Use the service/goods description text from the invoice body or lineItems
-- NEVER use the invoice number, tracking number, VAT/registration number, or any numeric-looking string
-- If no explicit description is found, INFER from vendor type: NUNNER/DSV/Girteka → "Freight forwarding"; transport/logistics company → "Transport services"; insurance bill → "Insurance premium"; office supply → "Office supplies"
-- The description field MUST always be filled — never leave it null or empty
-- WRONG examples: "4226030081026", "1031/26/A", "LT100006153417" — these are IDs, not descriptions
-- RIGHT examples: "Freight forwarding", "Transport services", "Insurance premium", "Office rent March"
-
-IF TYPE A (INVOICE), respond ONLY with a JSON array matching this schema:
-[
-  {
-    "type": "INVOICE",
-    "invoiceId": "string",
-    "vendorName": "string",
-    "supplierRegistration": "string or Not_Found",
-    "supplierVat": "string or Not_Found",
-    "receiverName": "string",
-    "receiverVat": "string",
-    "amount": number,
-    "taxAmount": number,
-    "subtotalAmount": number,
-    "currency": "EUR/USD/GBP",
-    "dateCreated": "YYYY-MM-DD",
-    "dueDate": "YYYY-MM-DD",
-    "status": "OOTEL or Paid",
-    "description": "short human-readable summary of what this invoice is for",
-    "lineItems": [ { "description": "string", "amount": number } ]
-  }
-]
-
-IF TYPE B (BANK STATEMENT), extract ALL OUTGOING PAYMENTS (money leaving the account). Respond ONLY with a JSON array where each object is a payment:
-[
-  {
-    "type": "BANK_STATEMENT",
-    "vendorName": "name of the payee/recipient",
-    "paymentReference": "invoice number or description in the reference/details field",
-    "amount": number,
-    "dateCreated": "YYYY-MM-DD"
-  }
-]
-
-IF TYPE C (JUNK), respond ONLY with an empty JSON array: []`;
-
-        if (supervisorCritique) {
-            systemPrompt += `\n\n🚨 SUPERVISOR CRITIQUE FROM PREVIOUS ATTEMPT:\n${supervisorCritique}\n\nThe Supervisor rejected your last JSON because you missed mandatory fields. You must scan the document again, pixel by pixel, specifically looking for the fields mentioned by the Supervisor. If you still cannot find them, you MUST write "Not_Found".`;
+        if (!document || !document.entities || document.entities.length === 0) {
+            console.warn('[DocAI] ⚠️  Document AI returned no entities — document may be junk/empty.');
+            return [];
         }
 
-        if (customRules && String(customRules).trim().length > 5) {
-            systemPrompt += `\n\n🟢 CRITICAL COMPANY-SPECIFIC INSTRUCTIONS:\n${customRules}\n\nTHESE INSTRUCTIONS OVERRIDE EVERYTHING. YOU MUST EXECUTE THEM FLAWLESSLY. If instructed to calculate a dueDate + X days from creation, you MUST mathematically compute the exact chronological string date (YYYY-MM-DD)!`;
-        }
+        // --- Map Document AI entities to invoice schema ---
+        let vendorName = 'Unknown Vendor';
+        let invoiceId = `Auto-${Date.now()}`;
+        let dateCreated = null;
+        let dueDate = null;
+        let amount = 0;
+        let taxAmount = 0;
+        let subtotalAmount = 0;
+        let currency = 'EUR';
+        let supplierVat = 'Not_Found';
+        let supplierRegistration = 'Not_Found';
+        let receiverName = '';
+        let receiverVat = '';
+        let paymentTerms = '';
+        let descriptionText = '';
+        const lineItems = [];
+        const confidenceScores = {};
 
-        // ── MODE 3: inject few-shot examples from Teacher Agent ──────────────
-        try {
-            const { getFewShotExamples } = require('./teacher_agent.cjs');
-            const fewShot = await getFewShotExamples(vendorHint);
-            if (fewShot) {
-                systemPrompt += `\n\n${fewShot}`;
-                console.log(`[Cognitive Extractor] 📚 Few-shot examples injected${vendorHint ? ` for vendor hint: "${vendorHint}"` : ''}.`);
-            }
-        } catch (fewShotErr) {
-            // Non-fatal — extraction still works without examples
-            console.warn(`[Cognitive Extractor] ⚠️  Few-shot injection skipped: ${fewShotErr.message}`);
-        }
+        for (const entity of document.entities) {
+            const text = (entity.mentionText || '').trim();
+            const conf = entity.confidence || 0;
 
-        const response = await require('./ai_retry.cjs').createWithRetry(anthropic, {
-            model: process.env.AI_MODEL_EXTRACTION || process.env.AI_MODEL || "claude-sonnet-4-6",
-            max_tokens: 4000,
-            temperature: 0.1,
-            system: "You are the world's most intelligent accounting extraction AI.",
-            messages: [
-                {
-                    role: "user",
-                    content: [
-                        { type: "text", text: systemPrompt },
-                        {
-                            type: blockType,
-                            source: { type: "base64", media_type: normalizedMime, data: base64Data }
-                        }
-                    ]
-                }
-            ]
-        });
-
-        let rawJson = response.content[0].text.trim();
-        const jsonMatch = rawJson.match(/\[\s*\{[\s\S]*\}\s*\]/);
-        if (jsonMatch) {
-            rawJson = jsonMatch[0];
-        } else if (rawJson.includes('[]')) {
-            rawJson = '[]';
-        } else {
-            rawJson = rawJson.replace(/^```json\n|\n```$/g, '');
-        }
-        let extractedData = [];
-        try {
-            extractedData = JSON.parse(rawJson);
-        } catch (e) {
-            console.log(`[Cognitive Extractor] ⚠️ JSON parse failed (likely truncated response). Attempting balanced-brace salvage...`);
-            extractedData = salvageJsonObjects(rawJson);
-            if (extractedData.length > 0) {
-                console.log(`[Cognitive Extractor] 🚑 SALVAGE SUCCESS! Recovered ${extractedData.length} item(s).`);
-            } else {
-                const preview = rawJson.slice(0, 500);
-                console.error(`[Cognitive Extractor] 🚨 Salvage failed. Raw response was:\n${preview}`);
-                throw new Error(`AI response unparseable — salvage recovered 0 items. Preview: ${preview}`);
-            }
-        }
-        
-        if (!Array.isArray(extractedData)) {
-            extractedData = [extractedData];
-        }
-        
-        // --- SANITIZE MISSING FIELDS EXPLICITLY ---
-        extractedData.forEach(inv => {
-            if (inv.type !== 'BANK_STATEMENT') {
-                if (!inv.supplierRegistration || String(inv.supplierRegistration).trim() === '' || String(inv.supplierRegistration).toLowerCase() === 'null') {
-                    inv.supplierRegistration = 'Not_Found';
-                }
-                if (!inv.supplierVat || String(inv.supplierVat).trim() === '' || String(inv.supplierVat).toLowerCase() === 'null') {
-                    inv.supplierVat = 'Not_Found';
-                }
-            }
-        });
-
-        // --- DETERMINISTIC POST-PROCESSING (code-level rules, always enforced) ---
-        extractedData.forEach(inv => {
-            if (inv.type === 'INVOICE') {
-
-                // RULE A: NUNNER/Lithuanian logistics — invoiceId must contain a slash
-                // If AI returned a tracking number (no slash), clear it so it's obvious something is wrong
-                const isLithuanianLogistics = /nunner|girteka|linava|dsv/i.test(inv.vendorName || '');
-                if (isLithuanianLogistics && inv.invoiceId && !inv.invoiceId.includes('/')) {
-                    console.warn(`[PostProcess] ⚠️  NUNNER invoiceId "${inv.invoiceId}" has no slash — likely tracking number. Clearing.`);
-                    inv.invoiceId = `RECHECK:${inv.invoiceId}`;
-                }
-
-                // RULE B: vendorName must not be a cargo party (shipper/consignee)
-                // NUNNER invoices list "PACKAGING SOLUTIONS" as the shipper, not the vendor
-                if (/packaging solutions|nur-sultan/i.test(inv.vendorName || '')) {
-                    console.warn(`[PostProcess] ⚠️  vendorName "${inv.vendorName}" looks like a shipper/consignee, not a vendor. Clearing.`);
-                    inv.vendorName = 'NUNNER Logistics UAB';
-                }
-
-                // RULE C: description must not look like an ID or be empty
-                const desc = (inv.description || '').trim();
-                const descLooksLikeId = !desc
-                    || /^[\d\/\-\.]+$/.test(desc)
-                    || /\d{7,}/.test(desc)
-                    || desc === inv.invoiceId
-                    || desc === inv.supplierVat
-                    || desc === inv.supplierRegistration;
-
-                if (descLooksLikeId) {
-                    // Infer from vendor name
-                    const vendor = (inv.vendorName || '').toLowerCase();
-                    if (/nunner|girteka|linava|dsv|transport|freight|logistics|cargo|express|kuller|post/i.test(vendor)) {
-                        inv.description = 'Freight forwarding';
-                    } else if (/kindlustus|insurance|assurance/i.test(vendor)) {
-                        inv.description = 'Insurance premium';
-                    } else if (/rent|üür|arrend/i.test(vendor)) {
-                        inv.description = 'Office rent';
-                    } else {
-                        inv.description = 'Services';
+            switch (entity.type) {
+                case 'supplier_name':
+                    vendorName = text;
+                    confidenceScores.vendor = conf;
+                    break;
+                case 'invoice_id':
+                    invoiceId = text;
+                    confidenceScores.invoiceId = conf;
+                    break;
+                case 'invoice_date':
+                case 'issue_date':
+                    dateCreated = parseDocAiDate(text);
+                    break;
+                case 'due_date':
+                    dueDate = parseDocAiDate(text);
+                    break;
+                case 'total_amount':
+                    amount = cleanNum(text);
+                    confidenceScores.total = conf;
+                    break;
+                case 'total_tax_amount':
+                    taxAmount = cleanNum(text);
+                    break;
+                case 'net_amount':
+                case 'subtotal':
+                    subtotalAmount = cleanNum(text);
+                    break;
+                case 'currency':
+                    currency = text.toUpperCase() || 'EUR';
+                    break;
+                case 'supplier_tax_id':
+                    supplierVat = text || 'Not_Found';
+                    break;
+                case 'supplier_registration_number':
+                    supplierRegistration = text || 'Not_Found';
+                    break;
+                case 'receiver_name':
+                    receiverName = text;
+                    break;
+                case 'receiver_tax_id':
+                    receiverVat = text;
+                    break;
+                case 'payment_terms':
+                    paymentTerms = text;
+                    break;
+                case 'description':
+                case 'service_description':
+                    if (text && text.length > 3) descriptionText = text;
+                    break;
+                case 'line_item': {
+                    let itemDesc = '';
+                    let itemAmt = 0;
+                    if (entity.properties) {
+                        const d = entity.properties.find(p => p.type === 'line_item/description');
+                        const a = entity.properties.find(p => p.type === 'line_item/amount');
+                        if (d) itemDesc = (d.mentionText || '').replace(/\n/g, ' ').trim();
+                        if (a) itemAmt = cleanNum(a.mentionText);
                     }
-                    console.log(`[PostProcess] 📝 description was ID-like, replaced with: "${inv.description}"`);
+                    if (itemDesc || itemAmt) lineItems.push({ description: itemDesc, amount: itemAmt });
+                    break;
                 }
             }
-        });
-        // --- END DETERMINISTIC POST-PROCESSING ---
-        
-        console.log(`[Cognitive Extractor] ✅ Extraction Complete:`);
-        if (extractedData.length > 0) {
-            console.log(`   -> Payload Type: ${extractedData[0].type || 'INVOICE'}`);
-            console.log(`   -> First Item Vendor: ${extractedData[0].vendorName}`);
-            console.log(`   -> Items Extracted: ${extractedData.length}`);
         }
-        
-        return extractedData;
+
+        // --- Fallbacks ---
+        if (!dateCreated) dateCreated = new Date().toISOString().split('T')[0];
+        if (!dueDate) dueDate = dateCreated; // No due date → clone creation date
+
+        // If subtotal+tax not available but total is, keep total as amount
+        if (subtotalAmount === 0 && taxAmount === 0 && amount > 0) {
+            subtotalAmount = amount; // Best guess
+        }
+
+        // Infer description
+        const description = descriptionText && descriptionText.length > 3
+            ? descriptionText
+            : (lineItems.length > 0 ? lineItems[0].description : inferDescription(vendorName));
+
+        // Determine status — DocAI doesn't extract "paid" status, default OOTEL
+        const status = 'OOTEL';
+
+        // --- Validation warnings ---
+        const validationWarnings = [];
+        const computedTotal = parseFloat((subtotalAmount + taxAmount).toFixed(2));
+        if (amount > 0 && subtotalAmount > 0 && Math.abs(computedTotal - amount) > 0.05) {
+            validationWarnings.push(`Math mismatch: ${subtotalAmount} + ${taxAmount} ≠ ${amount}`);
+        }
+        if ((confidenceScores.total || 0) < 0.6 || (confidenceScores.vendor || 0) < 0.6) {
+            validationWarnings.push(`Low DocAI confidence: total=${(confidenceScores.total||0).toFixed(2)}, vendor=${(confidenceScores.vendor||0).toFixed(2)}`);
+        }
+        if (amount === 0) {
+            validationWarnings.push('Total amount not extracted — manual review required');
+        }
+
+        console.log(`[DocAI] ✅ Extraction complete: vendor="${vendorName}", invoiceId="${invoiceId}", amount=${amount} ${currency}`);
+
+        return [{
+            type: 'INVOICE',
+            invoiceId,
+            vendorName,
+            supplierRegistration,
+            supplierVat,
+            receiverName,
+            receiverVat,
+            amount,
+            taxAmount,
+            subtotalAmount,
+            currency,
+            dateCreated,
+            dueDate,
+            status,
+            description,
+            paymentTerms,
+            lineItems,
+            validationWarnings: validationWarnings.length > 0 ? validationWarnings : undefined,
+        }];
 
     } catch (error) {
-        console.error(`[Cognitive Extractor] 🚨 Local Exception:`, error.message);
+        console.error(`[DocAI] 🚨 Extraction failed:`, error.message);
         throw error;
     }
 }

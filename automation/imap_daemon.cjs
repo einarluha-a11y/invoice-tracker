@@ -4,7 +4,6 @@ const { safetyNetSave } = require('./safety_net.cjs');
 const { intellectualSupervisorGate } = require('./supreme_supervisor.cjs');
 const imaps = require('imap-simple');
 const simpleParser = require('mailparser').simpleParser;
-const Anthropic = require('@anthropic-ai/sdk');
 const pdfParse = require('pdf-parse');
 const { processInvoiceWithDocAI } = require('./document_ai_service.cjs');
 const { classifyDocumentWithVision } = require('./vision_auditor.cjs');
@@ -12,8 +11,6 @@ const { auditAndProcessInvoice } = require('./accountant_agent.cjs');
 const { runDashboardAudit } = require('./dashboard_auditor_agent.cjs');
 const { parse } = require('csv-parse/sync');
 
-// Initialize Anthropic API
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 // Firebase Admin Initialization (Shared Core)
 const { admin, db, bucket } = require('./core/firebase.cjs');
 // Staging layer — saves raw docs before processing for re-run without IMAP
@@ -97,105 +94,10 @@ async function uploadToStorage(companyId, fileName, contentType, buffer) {
  * 1. AI Parsing: Sends raw text (or CSV string) to Claude to extract fields
  */
 async function parseInvoiceDataWithAI(rawText, companyName = "GLOBAL TECHNICS OÜ", customRules = "") {
-    console.log(`[AI] Parsing raw data with Claude for company: ${companyName}...`);
-
-    let customRulesSection = "";
-    if (customRules && customRules.trim().length > 0) {
-        customRulesSection = `
-CRITICAL USER-DEFINED AI RULES (MUST OBEY):
-${customRules}
-`;
-    }
-
-    // System prompt defines the strict output we expect
-    const prompt = `
-You are an expert accountant system. 
-Extract ALL invoices from the provided raw text (often a messy CSV, PDF report, or email body).
-Return EXACTLY a JSON array of invoice objects with NO markdown wrapping, NO extra text.
-Even if there is only one invoice, return it as an ARRAY containing that single object.
-
-CRITICAL RULE FOR VENDOR NAME:
-The company "${companyName}" (and any variations) AND "GLOBAL TECHNICS OÜ" are ALWAYS the BUYER/CUSTOMER. 
-They are NEVER the vendor/seller. 
-You must find the ACTUAL company that issued the invoice to ${companyName} (e.g., look for "Müüja", "Saatja", "Tarnija", or the company logo text). 
-CRITICAL ENGLISH INVOICE RULE: If you see "Bill To", the company listed under it is the BUYER. If you see "Recipient" alongside bank details (IBAN/Account), that company is the VENDOR receiving the money.
-If an invoice is issued by "FS Teenused OÜ" to "${companyName}", the vendorName MUST be "FS Teenused OÜ".
-If the invoice is clearly addressed to a COMPLETELY DIFFERENT BUYER (e.g., "Chempack OÜ" or someone else) and NOT to "${companyName}" or "GLOBAL TECHNICS OÜ", YOU MUST REJECT IT and return an empty array [].
-
-CRITICAL RULE FOR REJECTING NON-INVOICE DOCUMENTS:
-You MUST ONLY extract true Invoices (Arve, Invoice, Rechnung, Lasku, Faktura, Kindlustusmakse arve).
-REJECT and return [] ONLY for: Waybill/CMR (Saateleht, Veoseleht, CMR), Quote/Proforma (Pakkumine, Proforma, Ettemaksuarve), Order confirmation (Tellimuse kinnitus), insurance POLICY contracts (Kindlustuspoliis — the multi-page policy document), Employment Contract (Leping), Advertisement, or documents with NO clear amount to pay.
-ACCEPT (do NOT reject): insurance premium BILLS (e.g. "Arve nr 128446615" from LHV Kindlustus — these have "Arve nr", a due date, and a payment amount), pre-paid receipts (extract as status=Paid), any document with "Arve nr" or "Invoice" heading. Do not falsely reject valid invoices just because the text is messy.
-
-Required fields for EACH invoice object:
-- invoiceId: (e.g. Inv-006, Dok. nr. CRITICAL: NEVER use a generic string like "Arve nr." or "Invoice". It MUST be the actual unique alphanumeric number next to it)
-- vendorName: (The EXACT company issuing the invoice, NEVER ${companyName} and NEVER GLOBAL TECHNICS OÜ)
-- amount: (Number only. Final total amount for the current period, EXCLUDING past debt)
-- currency: (3 letter code, usually EUR)
-- dateCreated: (DD-MM-YYYY format. CRITICAL: Provide the actual issuing date, not the print/export date)
-- dueDate: (DD-MM-YYYY format. If no explicit due date, use dateCreated)
-- description: (String. SHORT human-readable summary of WHAT the invoice is for — e.g. "Transport services", "Office rent March", "Freight forwarding", "IT support". Extract from the service/goods description text. NEVER use the invoice number, VAT/registration number, or any string consisting only of digits and slashes. If nothing explicit, infer from vendor context.)
-- isPaid: (Boolean. Set to true ONLY IF the invoice explicitly states it is already paid, e.g., "Amount Due 0.00", "Amount Due EUR 0.00", "Makstud", "Paid", "Оплачен". Otherwise, false.)
-
-${customRulesSection}Raw Data:
-${rawText}
-`;
-    try {
-        const response = await require('./ai_retry.cjs').createWithRetry(anthropic, {
-            model: process.env.AI_MODEL_EXTRACTION || process.env.AI_MODEL || "claude-sonnet-4-6",
-            max_tokens: 1500,
-            temperature: 0.1,
-            system: "You are an expert accountant system.",
-            messages: [{ role: "user", content: prompt }]
-        });
-
-        // Depending on response structure from Anthropic, text is typically in content[0].text
-        const jsonString = response.content[0].text.trim();
-
-        // Extract just the JSON array, ignoring any potential conversational text or markdown blocks
-        const match = jsonString.match(/\[[\s\S]*\]/);
-        const cleanJson = match ? match[0] : '[]';
-
-        const parsedArray = JSON.parse(cleanJson);
-
-        // --- PRE-PROCESSING HOOK FOR TRICKY VENDORS ---
-        parsedArray.forEach(invoice => {
-            if (invoice.vendorName && invoice.vendorName.toLowerCase().includes('result group')) {
-
-                // Extract real ID 
-                // e.g. 260228.9
-                const idMatch = rawText.match(/(\d{6}\.\d{1,2})/);
-                if (idMatch && idMatch[1]) {
-                    invoice.invoiceId = idMatch[1];
-                }
-
-            }
-        });
-
-        // Safety check: if AI missed the negative sign for a credit invoice, force it
-        const lowerText = rawText.toLowerCase();
-        const isCreditInvoice = lowerText.includes('kreeditarve') || lowerText.includes('krediitarve') || lowerText.includes('credit note') || lowerText.includes('credit invoice') || lowerText.includes('kreedit');
-
-        if (Array.isArray(parsedArray)) {
-            parsedArray.forEach(invoice => {
-                let currentAmt = 0;
-                if (typeof invoice.amount === 'string') {
-                    currentAmt = parseFloat(invoice.amount.replace(/[^0-9.-]+/g, '')) || 0;
-                } else if (typeof invoice.amount === 'number') {
-                    currentAmt = invoice.amount;
-                }
-
-                if (isCreditInvoice && currentAmt > 0) {
-                    invoice.amount = -currentAmt; // Force it negative
-                }
-            });
-        }
-
-        return parsedArray;
-    } catch (error) {
-        console.error('[AI Error] Failed to parse data:', error);
-        return null; // Return null if parsing fails
-    }
+    // Body-text-only emails cannot be processed by Google Document AI (requires a PDF/image file).
+    // These emails will be skipped — please forward the original PDF attachment to the inbox.
+    console.warn(`[DocAI] ⚠️  Body-text email for "${companyName}" skipped — Google Document AI requires a PDF or image file. Please forward the original invoice PDF.`);
+    return null;
 }
 
 /**
@@ -855,59 +757,12 @@ async function processBankStatement(csvText, companyId = null) {
 
 /**
  * 3.5 AI Parsing for Bank Statements (PDFs)
+ * PDF bank statements require Claude for text extraction — disabled.
+ * Use CSV bank statement exports (Revolut/Wise CSV) instead — they work without AI.
  */
 async function parseBankStatementWithAI(rawText) {
-    console.log('[AI] Parsing PDF Bank Statement with Claude...');
-
-    const prompt = `
-You are an expert accountant system parsing a bank account statement (e.g. from Revolut Business).
-Extract ALL outgoing payment transactions (Expenses / Расходы).
-Return EXACTLY a JSON array of transaction objects with NO markdown wrapping, NO extra text.
-
-Required fields for EACH transaction object:
-- date: (String. The date of the transaction in YYYY-MM-DD format. E.g. 2026-03-02)
-- description: (String. The name of the recipient/payee, e.g. "Google One", "Bolt", "Alexela AS", or payment description)
-- reference: (String. Any invoice number or reference code mentioned in the payment details. Leave empty string if none)
-- amount: (Number only, decimal separated by dot. MUST be a positive absolute number representing the expense amount, e.g. 10.00)
-
-Ignore any incoming money (Прибыль), starting balances, and bank fees if they are labeled simply as 'Комиссия'. Focus on payments to vendors.
-
-Raw Data:
-${rawText}
-`;
-
-    try {
-        const response = await require('./ai_retry.cjs').createWithRetry(anthropic, {
-            model: "claude-haiku-4-5-20251001",
-            max_tokens: 2000,
-            temperature: 0.1,
-            system: "You are an expert accountant system.",
-            messages: [{ role: "user", content: prompt }]
-        });
-
-        const jsonString = response.content[0].text.trim();
-        const cleanJson = jsonString.replace(/^```json/g, '').replace(/^```/g, '').replace(/```$/g, '').trim();
-
-        try {
-            return JSON.parse(cleanJson);
-        } catch (parseErr) {
-            // Salvage: extract first valid JSON array from the response
-            console.warn('[AI] Bank statement JSON parse failed — attempting array salvage...');
-            const arrMatch = cleanJson.match(/\[\s*\{[\s\S]*\}\s*\]/);
-            if (arrMatch) {
-                try {
-                    const salvaged = JSON.parse(arrMatch[0]);
-                    console.log(`[AI] Bank statement salvage success: ${salvaged.length} transaction(s) recovered.`);
-                    return salvaged;
-                } catch (_) {}
-            }
-            console.error('[AI] Bank statement salvage failed. Raw snippet:', cleanJson.slice(0, 300));
-            return null;
-        }
-    } catch (error) {
-        console.error('[AI Error] Failed to parse bank statement data:', error);
-        return null;
-    }
+    console.warn('[DocAI] ⚠️  PDF bank statement parsing disabled (required Claude). Use CSV export from your bank instead.');
+    return null;
 }
 
 /**

@@ -357,54 +357,30 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
         docAiPayload.viesValidation = viesResult;
     }
 
-    // --- 4. THE BRAIN: LLM Accounting Audit ---
-    console.log(`[Accountant Agent] 🧠 Handing over to Claude 3.5 for contextual analysis...`);
-    const prompt = `
-You are the Chief Accountant AI for a European enterprise.
-Review the following extracted invoice data.
+    // --- 4. RULE-BASED ACCOUNTING AUDIT (Claude disabled) ---
+    console.log(`[Accountant Agent] 🔢 Running rule-based compliance audit (no AI)...`);
+    {
+        // Apply the same 3 compliance rules that Claude was checking, but in code
+        const aiAnalysis = { recommendedStatus: 'Pending', generatedWarnings: [] };
 
-Extracted Data:
-${JSON.stringify(docAiPayload, null, 2)}
-
-VIES API Verification Result for Supplier:
-${JSON.stringify(viesResult, null, 2)}
-
-Rules to enforce:
-1. If the Total Tax is > 0 but the VIES API Verification says "isValid: false", this is highly suspicious (charging VAT without a valid cross-border VAT number). Flag it!
-2. If the company is charging VAT but no 'supplierVat' was extracted at all, flag it as a missing required tax credential.
-3. If 'total' does not precisely equal 'subtotal' + 'tax', flag a mathematical error.
-
-Respond ONLY with a valid JSON strictly following this schema:
-{
-  "complianceAudit": "A short 1-sentence thought process of your audit",
-  "recommendedStatus": "Needs Action | Pending",
-  "generatedWarnings": ["string of warning 1", "string of warning 2"] 
-}
-Do not return any markdown wrappers, just the raw JSON.`;
-
-    try {
-        const response = await require('./ai_retry.cjs').createWithRetry(anthropic, {
-            model: process.env.AI_MODEL_EXTRACTION || process.env.AI_MODEL || "claude-sonnet-4-6",
-            max_tokens: 500,
-            temperature: 0.1,
-            system: "You are an expert strict accountant checking for tax fraud and compliance.",
-            messages: [{ role: "user", content: prompt }]
-        });
-
-        let rawJson = response.content[0].text.trim().replace(/^```json\n?|\n?```$/g, '').trim();
-        const jsonStart = rawJson.indexOf('{');
-        if (jsonStart > 0) rawJson = rawJson.slice(jsonStart);
-        let aiAnalysis;
-        try {
-            aiAnalysis = JSON.parse(rawJson);
-        } catch (parseErr) {
-            // Use Pending as default — a parse failure is a system error, not evidence of a bad invoice.
-            // The invoice already passed all hard validation rules above to reach this point.
-            console.warn(`[Accountant Agent] ⚠️  AI audit response was not valid JSON. Using safe defaults (Pending).`);
-            aiAnalysis = { recommendedStatus: 'Pending', generatedWarnings: ['NOTE: AI compliance audit parse failed — proceeding with rule-based validation only.'] };
+        // Rule 1: VAT charged but VIES says supplier is invalid
+        if (docAiPayload.taxAmount > 0 && viesResult && viesResult.isValid === false) {
+            aiAnalysis.generatedWarnings.push('CRITICAL: Supplier charges VAT but VIES validation returned invalid — possible fraud.');
+            aiAnalysis.recommendedStatus = 'Needs Action';
+        }
+        // Rule 2: Tax amount present but no supplierVat extracted
+        if (docAiPayload.taxAmount > 0 && (!docAiPayload.supplierVat || docAiPayload.supplierVat === 'Not_Found')) {
+            aiAnalysis.generatedWarnings.push('INFO: Tax charged but supplier VAT number not found on document.');
+        }
+        // Rule 3: Math check subtotal + tax = total
+        if (docAiPayload.subtotalAmount > 0 && docAiPayload.taxAmount > 0) {
+            const computed = parseFloat((docAiPayload.subtotalAmount + docAiPayload.taxAmount).toFixed(2));
+            if (Math.abs(computed - docAiPayload.amount) > 0.05) {
+                aiAnalysis.generatedWarnings.push(`INFO: Math check — ${docAiPayload.subtotalAmount} + ${docAiPayload.taxAmount} = ${computed} ≠ ${docAiPayload.amount}`);
+            }
         }
 
-        console.log(`[Accountant Agent] 📝 Audit Complete. Status: ${aiAnalysis.recommendedStatus}`);
+        console.log(`[Accountant Agent] 📝 Rule-based audit done. Status: ${aiAnalysis.recommendedStatus}`);
         
         // Merge AI findings
         if (aiAnalysis.generatedWarnings && aiAnalysis.generatedWarnings.length > 0) {
@@ -423,8 +399,6 @@ Do not return any markdown wrappers, just the raw JSON.`;
              console.log(`[Accountant Agent] 🔒 Immutable 'Paid' status preserved despite ${warnings.length} warnings.`);
         }
 
-    } catch (e) {
-        console.error(`[Accountant Agent] ⚠️ Brain logic failed or timed out. Falling back to strict OCR rules.`, e.message);
     }
 
     return {
