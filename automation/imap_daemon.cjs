@@ -987,6 +987,29 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
 
             console.log(`[Email] Processing email subject: "${parsedEmail.subject}"`);
 
+            // ★ COST FIX: skip billing/system emails that should never be processed as invoices
+            // Without this, Anthropic billing receipts create a self-reinforcing loop:
+            // API usage → billing email → daemon processes email → more API usage → more billing emails
+            const senderAddress = (parsedEmail.from?.text || '').toLowerCase();
+            const emailSubject  = (parsedEmail.subject || '').toLowerCase();
+            const BILLING_SENDER_PATTERNS = [
+                'anthropic', 'stripe.com', 'no-reply@', 'noreply@', 'donotreply@',
+                'billing@', 'invoices@', 'receipts@', 'payments@', 'notifications@'
+            ];
+            const BILLING_SUBJECT_PATTERNS = [
+                'your receipt', 'payment receipt', 'auto-recharge', 'payment confirmation',
+                'invoice from anthropic', 'receipt from anthropic', 'subscription renewal',
+                'payment processed', 'charge notification'
+            ];
+            const isBillingSender  = BILLING_SENDER_PATTERNS.some(p => senderAddress.includes(p));
+            const isBillingSubject = BILLING_SUBJECT_PATTERNS.some(p => emailSubject.includes(p));
+            if (isBillingSender || isBillingSubject) {
+                console.log(`[Email] 🚫 Skipping billing/system email: "${parsedEmail.subject}" from ${senderAddress}`);
+                // Save UID so it's never touched again
+                try { await uidDocRef.set({ processedAt: admin.firestore.FieldValue.serverTimestamp(), subject: parsedEmail.subject || '', type: 'billing_skip' }); } catch(_) {}
+                continue;
+            }
+
             // Find attachments
             if (parsedEmail.attachments && parsedEmail.attachments.length > 0) {
                 for (const attachment of parsedEmail.attachments) {
@@ -1316,6 +1339,9 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                         }
                     } else {
                         console.log(`[Email] AI found no invoices in body text of UID ${id}.`);
+                        // ★ COST FIX: save UID even when body-text extraction finds nothing —
+                        // otherwise the daemon will call AI on the same email body every 5 minutes
+                        try { await uidDocRef.set({ processedAt: admin.firestore.FieldValue.serverTimestamp(), subject: parsedEmail.subject || '', type: 'no_invoice_found' }); } catch(uidErr) { console.error(`[UID] ⚠️  Failed to save no-invoice UID: ${uidErr.message}`); }
                     }
                 }
             }
