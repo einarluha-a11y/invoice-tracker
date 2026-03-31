@@ -1,0 +1,462 @@
+#!/usr/bin/env node
+/**
+ * ╔══════════════════════════════════════════════════════════════════╗
+ * ║              TEACHER AGENT — Invoice Extraction Trainer          ║
+ * ╠══════════════════════════════════════════════════════════════════╣
+ * ║  Three operating modes:                                          ║
+ * ║                                                                  ║
+ * ║  MODE 1: --teach <file.pdf>                                      ║
+ * ║    Interactive session: run AI extraction → show results →       ║
+ * ║    let you correct wrong fields → save as ground truth example   ║
+ * ║    to Firestore collection `invoice_examples`.                   ║
+ * ║                                                                  ║
+ * ║  MODE 2: --eval [--vendor <name>]                                ║
+ * ║    Batch accuracy measurement: for every stored example,         ║
+ * ║    re-run extraction and compare against saved ground truth.     ║
+ * ║    Prints per-field accuracy report + overall score.             ║
+ * ║                                                                  ║
+ * ║  MODE 3 (automatic / library):                                   ║
+ * ║    getFewShotExamples(vendorHint) — called by document_ai_service║
+ * ║    to inject 1–2 verified examples into the Claude prompt.       ║
+ * ║    This file exports that function so it can be required.        ║
+ * ╚══════════════════════════════════════════════════════════════════╝
+ *
+ * Usage:
+ *   node teacher_agent.cjs --teach ./invoice.pdf
+ *   node teacher_agent.cjs --teach ./invoice.pdf --vendor "NUNNER Logistics UAB"
+ *   node teacher_agent.cjs --eval
+ *   node teacher_agent.cjs --eval --vendor "NUNNER"
+ */
+
+'use strict';
+
+require('dotenv').config({ path: require('path').join(__dirname, '.env') });
+
+const fs          = require('fs');
+const path        = require('path');
+const readline    = require('readline');
+const { admin, db, bucket } = require('./core/firebase.cjs');
+
+// ── Colours for terminal output ──────────────────────────────────────────────
+const C = {
+    reset:  '\x1b[0m',
+    bold:   '\x1b[1m',
+    red:    '\x1b[31m',
+    green:  '\x1b[32m',
+    yellow: '\x1b[33m',
+    cyan:   '\x1b[36m',
+    grey:   '\x1b[90m',
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  FIRESTORE HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+
+const COLLECTION = 'invoice_examples';
+
+/**
+ * Save a ground-truth example to Firestore.
+ * Documents are keyed by vendorName + invoiceId to avoid accidental duplicates.
+ */
+async function saveExample(example) {
+    if (!db) throw new Error('Firestore not initialised');
+    const safeKey = `${example.vendorName}_${example.groundTruth.invoiceId}`
+        .replace(/[^a-zA-Z0-9_\-]/g, '_')
+        .slice(0, 80);
+    const docRef = db.collection(COLLECTION).doc(safeKey);
+    await docRef.set({
+        ...example,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    return safeKey;
+}
+
+/**
+ * Retrieve all examples, optionally filtered by vendor name (partial match, case-insensitive).
+ */
+async function loadExamples(vendorFilter = null) {
+    if (!db) throw new Error('Firestore not initialised');
+    let ref = db.collection(COLLECTION);
+    const snap = await ref.get();
+    let docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    if (vendorFilter) {
+        const q = vendorFilter.toLowerCase();
+        docs = docs.filter(d => (d.vendorName || '').toLowerCase().includes(q));
+    }
+    return docs;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  MODE 3 — FEW-SHOT EXAMPLES (exported for document_ai_service.cjs)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Fetches 1–2 verified examples from Firestore matching the given vendor hint.
+ * Returns a formatted string block ready to inject into the Claude prompt.
+ *
+ * Called from document_ai_service.cjs before making the Anthropic API call.
+ *
+ * @param {string|null} vendorHint  - partial vendor name, or null for no filter
+ * @param {number}      maxExamples - how many examples to inject (default 2)
+ * @returns {Promise<string|null>}  - formatted block, or null if none found
+ */
+async function getFewShotExamples(vendorHint = null, maxExamples = 2) {
+    try {
+        if (!db) return null;
+        const examples = await loadExamples(vendorHint);
+        if (examples.length === 0) return null;
+
+        // Prefer examples that have teachingNotes (more instructive)
+        examples.sort((a, b) => (b.teachingNotes ? 1 : 0) - (a.teachingNotes ? 1 : 0));
+        const selected = examples.slice(0, maxExamples);
+
+        const lines = ['📚 VERIFIED EXTRACTION EXAMPLES (ground truth from real invoices):'];
+        lines.push('These are CORRECT extractions that you MUST use as a reference.\n');
+
+        selected.forEach((ex, i) => {
+            lines.push(`--- Example ${i + 1}: ${ex.vendorName} ---`);
+            if (ex.documentDescription) {
+                lines.push(`Document structure: ${ex.documentDescription}`);
+            }
+            if (ex.teachingNotes) {
+                lines.push(`Key rules: ${ex.teachingNotes}`);
+            }
+            lines.push('Correct JSON output:');
+            lines.push(JSON.stringify(ex.groundTruth, null, 2));
+            lines.push('');
+        });
+
+        lines.push('END OF EXAMPLES. Apply the same field extraction logic to the current document.');
+        return lines.join('\n');
+    } catch (err) {
+        console.warn(`[TeacherAgent] ⚠️  Could not load few-shot examples: ${err.message}`);
+        return null;
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  MODE 1 — --teach
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function runTeachMode(filePath, vendorHint) {
+    console.log(`\n${C.bold}${C.cyan}╔══════════════════════════════════╗`);
+    console.log(`║      TEACHER AGENT — TEACH MODE  ║`);
+    console.log(`╚══════════════════════════════════╝${C.reset}\n`);
+
+    if (!fs.existsSync(filePath)) {
+        console.error(`${C.red}✗ File not found: ${filePath}${C.reset}`);
+        process.exit(1);
+    }
+
+    const buffer   = fs.readFileSync(filePath);
+    const ext      = path.extname(filePath).toLowerCase();
+    const mimeType = ext === '.pdf' ? 'application/pdf'
+                   : ext === '.png' ? 'image/png' : 'image/jpeg';
+
+    console.log(`${C.grey}📄 File: ${filePath} (${(buffer.length / 1024).toFixed(1)} KB)${C.reset}`);
+    console.log(`${C.grey}🤖 Running AI extraction...${C.reset}\n`);
+
+    // Dynamic require to avoid circular dep — document_ai_service requires teacher_agent for few-shot
+    const { processInvoiceWithDocAI } = require('./document_ai_service.cjs');
+    let extracted;
+    try {
+        extracted = await processInvoiceWithDocAI(buffer, mimeType);
+    } catch (err) {
+        console.error(`${C.red}✗ Extraction failed: ${err.message}${C.reset}`);
+        process.exit(1);
+    }
+
+    if (!extracted || extracted.length === 0) {
+        console.log(`${C.yellow}⚠  AI returned empty result (JUNK document?)${C.reset}`);
+        process.exit(0);
+    }
+
+    const inv = extracted[0];
+
+    // ── Print current extraction ──────────────────────────────────────────────
+    console.log(`${C.bold}${C.yellow}═══ AI EXTRACTION RESULT ═══${C.reset}`);
+    console.log(JSON.stringify(inv, null, 2));
+    console.log('');
+
+    // ── Interactive correction session ────────────────────────────────────────
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    const ask = (q) => new Promise(resolve => rl.question(q, resolve));
+
+    console.log(`${C.bold}Now correct any wrong fields. Press ENTER to keep the current value.${C.reset}`);
+    console.log(`${C.grey}(Type the corrected value, or just press ENTER to accept as-is)${C.reset}\n`);
+
+    const EDITABLE_FIELDS = [
+        'invoiceId', 'vendorName', 'supplierRegistration', 'supplierVat',
+        'amount', 'subtotalAmount', 'taxAmount', 'currency',
+        'dateCreated', 'dueDate', 'status', 'description'
+    ];
+
+    const corrected = { ...inv };
+
+    for (const field of EDITABLE_FIELDS) {
+        const current = corrected[field];
+        if (current === undefined) continue;
+        const input = await ask(
+            `  ${C.cyan}${field}${C.reset} [${C.yellow}${current}${C.reset}]: `
+        );
+        if (input.trim() !== '') {
+            // Convert numeric fields
+            if (['amount', 'subtotalAmount', 'taxAmount'].includes(field)) {
+                const num = parseFloat(input.replace(',', '.'));
+                corrected[field] = isNaN(num) ? input.trim() : num;
+            } else {
+                corrected[field] = input.trim();
+            }
+            console.log(`    ${C.green}✓ Updated: ${field} = ${corrected[field]}${C.reset}`);
+        }
+    }
+
+    // ── Gather metadata ───────────────────────────────────────────────────────
+    console.log(`\n${C.bold}Metadata for this example:${C.reset}`);
+
+    const defaultVendor = vendorHint || corrected.vendorName || '';
+    const vendorInput = await ask(`  Vendor name [${defaultVendor}]: `);
+    const finalVendor = vendorInput.trim() || defaultVendor;
+
+    const docDesc = await ask(`  Document structure description (optional, helps AI): `);
+    const notes   = await ask(`  Teaching notes — key rules for this vendor (optional): `);
+
+    rl.close();
+
+    // ── Upload PDF to Firebase Storage ────────────────────────────────────────
+    let pdfStoragePath = null;
+    if (bucket) {
+        try {
+            const destPath = `invoice_examples/${finalVendor.replace(/[^a-z0-9]/gi, '_')}/${path.basename(filePath)}`;
+            await bucket.upload(filePath, {
+                destination: destPath,
+                metadata: { contentType: mimeType }
+            });
+            pdfStoragePath = `gs://${bucket.name}/${destPath}`;
+            console.log(`\n${C.green}☁  PDF uploaded to: ${pdfStoragePath}${C.reset}`);
+        } catch (uploadErr) {
+            console.warn(`${C.yellow}⚠  PDF upload failed (non-fatal): ${uploadErr.message}${C.reset}`);
+        }
+    }
+
+    // ── Build & save example ──────────────────────────────────────────────────
+    const example = {
+        vendorName:          finalVendor,
+        vendorType:          guessVendorType(finalVendor),
+        vendorPatterns:      [finalVendor.toLowerCase(), ...extractPatterns(finalVendor)],
+        documentDescription: docDesc.trim() || null,
+        groundTruth:         corrected,
+        teachingNotes:       notes.trim() || null,
+        pdfStoragePath,
+    };
+
+    console.log(`\n${C.grey}Saving to Firestore collection '${COLLECTION}'...${C.reset}`);
+    const savedKey = await saveExample(example);
+    console.log(`${C.bold}${C.green}✅ Example saved! Document ID: ${savedKey}${C.reset}\n`);
+}
+
+function guessVendorType(vendorName) {
+    const n = vendorName.toLowerCase();
+    if (/nunner|dsv|girteka|linava|dhl|fedex|ups|tnt/i.test(n)) return 'logistics_LT';
+    if (/kindlustus|insurance|if |seesam|gjensidige|lhv kind/i.test(n)) return 'insurance_EE';
+    if (/pank|bank|finance|lhv(?! kind)/i.test(n)) return 'bank_EE';
+    if (/rent|üür|arrend|kinnisvara/i.test(n)) return 'rental_EE';
+    return 'generic';
+}
+
+function extractPatterns(vendorName) {
+    // Returns shorter versions of the vendor name for fuzzy matching
+    const words = vendorName.toLowerCase().split(/\s+/);
+    // Remove company suffixes
+    const filtered = words.filter(w => !/(oü|as|uab|sia|llc|gmbh|inc|bv|sp\.z\.o\.o\.)/.test(w));
+    const patterns = [];
+    if (filtered.length > 0) patterns.push(filtered[0]); // first word
+    if (filtered.length > 1) patterns.push(filtered.slice(0, 2).join(' ')); // first two words
+    return [...new Set(patterns)];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  MODE 2 — --eval
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function runEvalMode(vendorFilter) {
+    console.log(`\n${C.bold}${C.cyan}╔══════════════════════════════════╗`);
+    console.log(`║      TEACHER AGENT — EVAL MODE   ║`);
+    console.log(`╚══════════════════════════════════╝${C.reset}\n`);
+
+    const examples = await loadExamples(vendorFilter);
+    if (examples.length === 0) {
+        console.log(`${C.yellow}No examples found${vendorFilter ? ` for vendor "${vendorFilter}"` : ''}.${C.reset}`);
+        console.log(`Run with --teach to add examples first.\n`);
+        process.exit(0);
+    }
+
+    console.log(`${C.grey}Found ${examples.length} example(s)${vendorFilter ? ` matching "${vendorFilter}"` : ''}.${C.reset}\n`);
+
+    const COMPARE_FIELDS = [
+        'invoiceId', 'vendorName', 'supplierRegistration', 'supplierVat',
+        'amount', 'subtotalAmount', 'taxAmount', 'currency',
+        'dateCreated', 'dueDate', 'status', 'description'
+    ];
+
+    let totalFields  = 0;
+    let correctFields = 0;
+    const perVendorStats = {};
+    const failures = [];
+
+    const { processInvoiceWithDocAI } = require('./document_ai_service.cjs');
+
+    for (const example of examples) {
+        console.log(`${C.bold}─── Evaluating: ${example.vendorName} (${example.id}) ───${C.reset}`);
+
+        // Download PDF from Storage if available
+        let buffer = null;
+        if (example.pdfStoragePath && bucket) {
+            try {
+                const gsPath = example.pdfStoragePath.replace(`gs://${bucket.name}/`, '');
+                const [fileBuffer] = await bucket.file(gsPath).download();
+                buffer = fileBuffer;
+                console.log(`  ${C.grey}Downloaded PDF from Storage.${C.reset}`);
+            } catch (dlErr) {
+                console.warn(`  ${C.yellow}⚠  Could not download PDF: ${dlErr.message}${C.reset}`);
+            }
+        }
+
+        if (!buffer) {
+            console.log(`  ${C.yellow}⚠  No PDF available for this example — skipping extraction, comparing stored truth only.${C.reset}`);
+            // Cannot re-run extraction without the PDF — skip
+            continue;
+        }
+
+        let extracted;
+        try {
+            extracted = await processInvoiceWithDocAI(buffer, 'application/pdf');
+        } catch (err) {
+            console.log(`  ${C.red}✗ Extraction error: ${err.message}${C.reset}`);
+            failures.push({ id: example.id, error: err.message });
+            continue;
+        }
+
+        if (!extracted || extracted.length === 0) {
+            console.log(`  ${C.red}✗ AI returned empty — extraction completely failed.${C.reset}`);
+            failures.push({ id: example.id, error: 'empty result' });
+            continue;
+        }
+
+        const ai  = extracted[0];
+        const gt  = example.groundTruth;
+        const vendorKey = example.vendorName;
+
+        if (!perVendorStats[vendorKey]) {
+            perVendorStats[vendorKey] = { correct: 0, total: 0, wrongFields: [] };
+        }
+
+        for (const field of COMPARE_FIELDS) {
+            if (gt[field] === undefined) continue;
+            totalFields++;
+            perVendorStats[vendorKey].total++;
+
+            const gtVal = String(gt[field] || '').trim().toLowerCase();
+            const aiVal = String(ai[field] || '').trim().toLowerCase();
+            const isCorrect = gtVal === aiVal;
+
+            if (isCorrect) {
+                correctFields++;
+                perVendorStats[vendorKey].correct++;
+                console.log(`  ${C.green}✓${C.reset} ${field.padEnd(25)} ${C.grey}${gt[field]}${C.reset}`);
+            } else {
+                perVendorStats[vendorKey].wrongFields.push(field);
+                console.log(`  ${C.red}✗${C.reset} ${field.padEnd(25)} expected: ${C.green}${gt[field]}${C.reset} | got: ${C.red}${ai[field]}${C.reset}`);
+            }
+        }
+        console.log('');
+    }
+
+    // ── Summary report ────────────────────────────────────────────────────────
+    console.log(`${C.bold}═══════════════════════════════════════`);
+    console.log(`            EVAL SUMMARY               `);
+    console.log(`═══════════════════════════════════════${C.reset}\n`);
+
+    const overallPct = totalFields > 0 ? ((correctFields / totalFields) * 100).toFixed(1) : 'N/A';
+    const scoreColor = parseFloat(overallPct) >= 90 ? C.green
+                     : parseFloat(overallPct) >= 70 ? C.yellow : C.red;
+    console.log(`  Overall accuracy: ${scoreColor}${C.bold}${overallPct}%${C.reset} (${correctFields}/${totalFields} fields correct)\n`);
+
+    Object.entries(perVendorStats).forEach(([vendor, stats]) => {
+        const pct = stats.total > 0 ? ((stats.correct / stats.total) * 100).toFixed(1) : '—';
+        const col = parseFloat(pct) >= 90 ? C.green : parseFloat(pct) >= 70 ? C.yellow : C.red;
+        console.log(`  ${vendor.padEnd(35)} ${col}${pct}%${C.reset}`);
+        if (stats.wrongFields.length > 0) {
+            console.log(`    ${C.grey}Wrong fields: ${stats.wrongFields.join(', ')}${C.reset}`);
+        }
+    });
+
+    if (failures.length > 0) {
+        console.log(`\n  ${C.red}Extraction failures (${failures.length}):${C.reset}`);
+        failures.forEach(f => console.log(`    ${f.id}: ${f.error}`));
+    }
+
+    console.log('');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  ENTRY POINT
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function main() {
+    const args   = process.argv.slice(2);
+    const mode   = args[0];
+
+    if (mode === '--teach') {
+        const filePath   = args[1];
+        const vendorIdx  = args.indexOf('--vendor');
+        const vendorHint = vendorIdx >= 0 ? args[vendorIdx + 1] : null;
+
+        if (!filePath) {
+            console.error(`${C.red}Usage: node teacher_agent.cjs --teach <file.pdf> [--vendor "Vendor Name"]${C.reset}`);
+            process.exit(1);
+        }
+        await runTeachMode(filePath, vendorHint);
+
+    } else if (mode === '--eval') {
+        const vendorIdx  = args.indexOf('--vendor');
+        const vendorHint = vendorIdx >= 0 ? args[vendorIdx + 1] : null;
+        await runEvalMode(vendorHint);
+
+    } else {
+        console.log(`
+${C.bold}Teacher Agent — Invoice Extraction Trainer${C.reset}
+
+${C.cyan}Modes:${C.reset}
+  ${C.bold}--teach <file.pdf>${C.reset} [--vendor "Name"]
+      Run AI extraction, let you correct wrong fields,
+      save as verified ground truth for future training.
+
+  ${C.bold}--eval${C.reset} [--vendor "Name"]
+      Re-run extraction on all stored examples,
+      compare against ground truth, print accuracy report.
+
+${C.cyan}Examples:${C.reset}
+  node teacher_agent.cjs --teach ./nunner_invoice.pdf --vendor "NUNNER Logistics UAB"
+  node teacher_agent.cjs --teach ./lhv_bill.pdf
+  node teacher_agent.cjs --eval
+  node teacher_agent.cjs --eval --vendor NUNNER
+`);
+        process.exit(0);
+    }
+
+    process.exit(0);
+}
+
+// Run only when called directly (not when required as a library)
+if (require.main === module) {
+    main().catch(err => {
+        console.error(`${C.red}Fatal error: ${err.message}${C.reset}`);
+        if (process.env.DEBUG) console.error(err);
+        process.exit(1);
+    });
+}
+
+// Export for Mode 3 (document_ai_service.cjs imports this)
+module.exports = { getFewShotExamples };

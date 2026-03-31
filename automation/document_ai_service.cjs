@@ -44,10 +44,10 @@ function salvageJsonObjects(str) {
 }
 
 /**
- * PURE CLAUDE EXTRACTION ENGINE 
- * Now supports Supervisor Reflection Loops (criticism parameter).
+ * PURE CLAUDE EXTRACTION ENGINE
+ * Now supports Supervisor Reflection Loops (criticism parameter) and few-shot examples.
  */
-async function processInvoiceWithDocAI(buffer, mimeType = 'application/pdf', supervisorCritique = null, customRules = null) {
+async function processInvoiceWithDocAI(buffer, mimeType = 'application/pdf', supervisorCritique = null, customRules = null, vendorHint = null) {
     if (supervisorCritique) {
         console.log(`[Cognitive Extractor] 🧠 Receiving orders from Supervisor... Executing deep re-scan for missing data!`);
     } else {
@@ -147,6 +147,19 @@ IF TYPE C (JUNK), respond ONLY with an empty JSON array: []`;
 
         if (customRules && String(customRules).trim().length > 5) {
             systemPrompt += `\n\n🟢 CRITICAL COMPANY-SPECIFIC INSTRUCTIONS:\n${customRules}\n\nTHESE INSTRUCTIONS OVERRIDE EVERYTHING. YOU MUST EXECUTE THEM FLAWLESSLY. If instructed to calculate a dueDate + X days from creation, you MUST mathematically compute the exact chronological string date (YYYY-MM-DD)!`;
+        }
+
+        // ── MODE 3: inject few-shot examples from Teacher Agent ──────────────
+        try {
+            const { getFewShotExamples } = require('./teacher_agent.cjs');
+            const fewShot = await getFewShotExamples(vendorHint);
+            if (fewShot) {
+                systemPrompt += `\n\n${fewShot}`;
+                console.log(`[Cognitive Extractor] 📚 Few-shot examples injected${vendorHint ? ` for vendor hint: "${vendorHint}"` : ''}.`);
+            }
+        } catch (fewShotErr) {
+            // Non-fatal — extraction still works without examples
+            console.warn(`[Cognitive Extractor] ⚠️  Few-shot injection skipped: ${fewShotErr.message}`);
         }
 
         const response = await require('./ai_retry.cjs').createWithRetry(anthropic, {
