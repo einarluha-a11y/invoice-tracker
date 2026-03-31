@@ -1149,6 +1149,9 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                             ).catch(() => null);
                                             if (!saved) console.warn(`[Safety Net] Could not save DRAFT for Vision-rejected ${filename} (no file uploaded)`);
                                         }
+                                        // ★ COST FIX: mark UID as processed even for rejected docs —
+                                        // without this, Vision Auditor gets called again every 5-minute poll forever
+                                        try { await uidDocRef.set({ processedAt: admin.firestore.FieldValue.serverTimestamp(), subject: parsedEmail.subject || '', type: 'vision_rejected', reason: visionClass }); } catch(uidErr) { console.error(`[UID] ⚠️  FAILED to save UID for vision-rejected ${filename}: ${uidErr.message}`); }
                                         continue;
                                     }
                                     // visionClass === null (API failure) or visionClass === 'INVOICE' — proceed
@@ -1197,6 +1200,8 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                         ).catch(() => null);
                                         if (!saved) console.warn(`[Safety Net] Could not save DRAFT for Vision-rejected image ${filename} (no file uploaded)`);
                                     }
+                                    // ★ COST FIX: mark UID even for rejected images
+                                    try { await uidDocRef.set({ processedAt: admin.firestore.FieldValue.serverTimestamp(), subject: parsedEmail.subject || '', type: 'vision_rejected', reason: visionClass }); } catch(uidErr) { console.error(`[UID] ⚠️  FAILED to save UID for vision-rejected image ${filename}: ${uidErr.message}`); }
                                     continue;
                                 }
                                 // visionClass === null (API failure) or visionClass === 'INVOICE' — proceed
@@ -1207,6 +1212,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                     console.log(`[Email] Email UID ${id} successfully processed by Document AI from Image!`);
                                     // FIX Reliability: mark as seen only AFTER successful Firestore write
                                     try { connection.imap.addFlags(id, ['\\Seen'], () => {}); } catch(_) {}
+                                    try { await uidDocRef.set({ processedAt: admin.firestore.FieldValue.serverTimestamp(), subject: parsedEmail.subject || '' }); } catch(uidErr) { console.error(`[UID] ⚠️  FAILED to save processed UID ${id}: ${uidErr.message}`); }
                                 }
                             } else {
                                 // Default for CSV and readable texts
