@@ -142,7 +142,7 @@ ${rawText}
 `;
     try {
         const response = await require('./ai_retry.cjs').createWithRetry(anthropic, {
-            model: process.env.AI_MODEL_EXTRACTION || process.env.AI_MODEL || "claude-opus-4-6",
+            model: process.env.AI_MODEL_EXTRACTION || process.env.AI_MODEL || "claude-sonnet-4-6",
             max_tokens: 1500,
             temperature: 0.1,
             system: "You are an expert accountant system.",
@@ -1126,7 +1126,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                         await markStagingResult(stagingId, { status: 'success', resultIds: [] });
                                         console.log(`[Email] Email UID ${id} successfully processed as PDF Bank Statement!`);
                                         try { connection.imap.addFlags(id, ['\\Seen'], () => {}); } catch(_) {}
-                                        try { await uidDocRef.set({ processedAt: admin.firestore.FieldValue.serverTimestamp(), subject: parsedEmail.subject || '' }); } catch(_) {}
+                                        try { await uidDocRef.set({ processedAt: admin.firestore.FieldValue.serverTimestamp(), subject: parsedEmail.subject || '' }); } catch(uidErr) { console.error(`[UID] ⚠️  FAILED to save processed UID ${id} — email WILL be retried next poll! Error: ${uidErr.message}`); }
                                     }
                                 } else {
                                     console.log('[Email] Detected Invoice PDF. Requesting Pre-Flight Vision Audit to check for CMRs...');
@@ -1159,7 +1159,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                         console.log(`[Email] Email UID ${id} successfully processed by Document AI!`);
                                         // FIX Reliability: mark as seen only AFTER successful Firestore write
                                         try { connection.imap.addFlags(id, ['\\Seen'], () => {}); } catch(_) {}
-                                        try { await uidDocRef.set({ processedAt: admin.firestore.FieldValue.serverTimestamp(), subject: parsedEmail.subject || '' }); } catch(_) {}
+                                        try { await uidDocRef.set({ processedAt: admin.firestore.FieldValue.serverTimestamp(), subject: parsedEmail.subject || '' }); } catch(uidErr) { console.error(`[UID] ⚠️  FAILED to save processed UID ${id} — email WILL be retried next poll! Error: ${uidErr.message}`); }
                                     }
                                 }
                             } else if (mime.includes('image/') || filename.endsWith('.jpg') || filename.endsWith('.jpeg') || filename.endsWith('.png')) {
@@ -1291,7 +1291,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                     try {
                                         await writeToFirestore([auditedData]);
                                         console.log(`[Email] Body-text invoice saved: ${auditedData.vendorName} / ${auditedData.invoiceId}`);
-                                        try { await uidDocRef.set({ processedAt: admin.firestore.FieldValue.serverTimestamp(), subject: parsedEmail.subject || '' }); } catch(_) {}
+                                        try { await uidDocRef.set({ processedAt: admin.firestore.FieldValue.serverTimestamp(), subject: parsedEmail.subject || '' }); } catch(uidErr) { console.error(`[UID] ⚠️  FAILED to save processed UID ${id} — email WILL be retried next poll! Error: ${uidErr.message}`); }
                                     } catch (writeErr) {
                                         if (writeErr.message && writeErr.message.startsWith('FILE_INTEGRITY_BLOCK')) {
                                             console.warn(`[Email] Body-text write blocked (no file): ${writeErr.message}`);
