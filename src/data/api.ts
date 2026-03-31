@@ -177,6 +177,11 @@ export const updateInvoice = async (invoiceId: string, data: Partial<Invoice>): 
     if (data.dateCreated !== undefined) updateData.dateCreated = data.dateCreated;
     if (data.dueDate !== undefined) updateData.dueDate = data.dueDate;
     if (data.status !== undefined) updateData.status = data.status;
+    if (data.supplierVat !== undefined) updateData.supplierVat = data.supplierVat;
+    if (data.supplierRegistration !== undefined) updateData.supplierRegistration = data.supplierRegistration;
+    if (data.subtotalAmount !== undefined) updateData.subtotalAmount = data.subtotalAmount;
+    if (data.taxAmount !== undefined) updateData.taxAmount = data.taxAmount;
+    if (data.description !== undefined) updateData.description = data.description;
 
     await updateDoc(invoiceRef, updateData);
 

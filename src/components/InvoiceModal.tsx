@@ -14,11 +14,14 @@ export function InvoiceModal({ invoice, onClose, onSave }: InvoiceModalProps) {
     const [description, setDescription] = useState(invoice?.description || '');
     const [amount, setAmount] = useState(invoice?.amount?.toString() || '');
     const [currency, setCurrency] = useState(invoice?.currency || 'EUR');
-    // Ensure format is YYYY-MM-DD for the date inputs
     const safeDate = (dateStr: string | undefined) => dateStr ? dateStr.substring(0, 10) : '';
     const [dateCreated, setDateCreated] = useState(safeDate(invoice?.dateCreated));
     const [dueDate, setDueDate] = useState(safeDate(invoice?.dueDate));
     const [status, setStatus] = useState<InvoiceStatus>(invoice?.status || 'Pending');
+    const [supplierVat, setSupplierVat] = useState(invoice?.supplierVat || '');
+    const [supplierRegistration, setSupplierRegistration] = useState(invoice?.supplierRegistration || '');
+    const [subtotalAmount, setSubtotalAmount] = useState(invoice?.subtotalAmount?.toString() || '');
+    const [taxAmount, setTaxAmount] = useState(invoice?.taxAmount?.toString() || '');
     const [isSaving, setIsSaving] = useState(false);
 
     if (!invoice) return null;
@@ -34,7 +37,11 @@ export function InvoiceModal({ invoice, onClose, onSave }: InvoiceModalProps) {
                 currency,
                 dateCreated,
                 dueDate,
-                status
+                status,
+                supplierVat,
+                supplierRegistration,
+                subtotalAmount: subtotalAmount ? parseFloat(subtotalAmount) : undefined,
+                taxAmount: taxAmount ? parseFloat(taxAmount) : undefined,
             });
             onClose();
         } catch (error) {
@@ -137,6 +144,38 @@ export function InvoiceModal({ invoice, onClose, onSave }: InvoiceModalProps) {
                                 </label>
                             </div>
 
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                                <label style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                                    <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>VAT</span>
+                                    <input type="text" value={supplierVat} onChange={e => setSupplierVat(e.target.value)}
+                                        className="settings-input"
+                                        style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 'var(--radius-md)', padding: '0.8rem 1rem', color: '#fff' }}
+                                    />
+                                </label>
+                                <label style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                                    <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>Рег. код</span>
+                                    <input type="text" value={supplierRegistration} onChange={e => setSupplierRegistration(e.target.value)}
+                                        className="settings-input"
+                                        style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 'var(--radius-md)', padding: '0.8rem 1rem', color: '#fff' }}
+                                    />
+                                </label>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                                <label style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                                    <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>Sub</span>
+                                    <input type="number" step="0.01" value={subtotalAmount} onChange={e => setSubtotalAmount(e.target.value)}
+                                        className="settings-input"
+                                        style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 'var(--radius-md)', padding: '0.8rem 1rem', color: '#fff', fontFamily: 'monospace' }}
+                                    />
+                                </label>
+                                <label style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                                    <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>Tax</span>
+                                    <input type="number" step="0.01" value={taxAmount} onChange={e => setTaxAmount(e.target.value)}
+                                        className="settings-input"
+                                        style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 'var(--radius-md)', padding: '0.8rem 1rem', color: '#fff', fontFamily: 'monospace' }}
+                                    />
+                                </label>
+                            </div>
                             <label style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
                                 <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>{t('modal.status')}</span>
                                 <select value={status} onChange={e => setStatus(e.target.value as InvoiceStatus)}
