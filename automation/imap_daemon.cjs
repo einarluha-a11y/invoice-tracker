@@ -842,29 +842,6 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
 
             console.log(`[Email] Processing email subject: "${parsedEmail.subject}"`);
 
-            // ★ COST FIX: skip billing/system emails that should never be processed as invoices
-            // Without this, Anthropic billing receipts create a self-reinforcing loop:
-            // API usage → billing email → daemon processes email → more API usage → more billing emails
-            const senderAddress = (parsedEmail.from?.text || '').toLowerCase();
-            const emailSubject  = (parsedEmail.subject || '').toLowerCase();
-            const BILLING_SENDER_PATTERNS = [
-                'anthropic', 'stripe.com', 'no-reply@', 'noreply@', 'donotreply@',
-                'billing@', 'invoices@', 'receipts@', 'payments@', 'notifications@'
-            ];
-            const BILLING_SUBJECT_PATTERNS = [
-                'your receipt', 'payment receipt', 'auto-recharge', 'payment confirmation',
-                'invoice from anthropic', 'receipt from anthropic', 'subscription renewal',
-                'payment processed', 'charge notification'
-            ];
-            const isBillingSender  = BILLING_SENDER_PATTERNS.some(p => senderAddress.includes(p));
-            const isBillingSubject = BILLING_SUBJECT_PATTERNS.some(p => emailSubject.includes(p));
-            if (isBillingSender || isBillingSubject) {
-                console.log(`[Email] 🚫 Skipping billing/system email: "${parsedEmail.subject}" from ${senderAddress}`);
-                // Save UID so it's never touched again
-                await saveUid('billing_skip');
-                continue;
-            }
-
             // Catch-all flag: set to true whenever UID is saved anywhere below.
             // At the end of this email's processing, if still false, we save the UID
             // to guarantee every email is touched at most once.
@@ -878,6 +855,35 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                     console.error(`[UID] ⚠️  Failed to save UID (type=${type}): ${e.message}`);
                 }
             };
+
+            // ★ COST FIX: skip billing/system emails that should never be processed as invoices
+            // Without this, Anthropic billing receipts create a self-reinforcing loop:
+            // API usage → billing email → daemon processes email → more API usage → more billing emails
+            const senderAddress = (parsedEmail.from?.text || '').toLowerCase();
+            const emailSubject  = (parsedEmail.subject || '').toLowerCase();
+            const emailBodyText = (parsedEmail.text || '').substring(0, 1000).toLowerCase();
+            
+            const BILLING_SENDER_PATTERNS = [
+                'anthropic', 'stripe.com', 'no-reply@', 'noreply@', 'donotreply@',
+                'billing@', 'invoices@', 'receipts@', 'payments@', 'notifications@'
+            ];
+            const BILLING_SUBJECT_PATTERNS = [
+                'your receipt', 'payment receipt', 'auto-recharge', 'payment confirmation',
+                'invoice from anthropic', 'receipt from anthropic', 'subscription renewal',
+                'payment processed', 'charge notification'
+            ];
+            
+            const isBillingSender  = BILLING_SENDER_PATTERNS.some(p => senderAddress.includes(p));
+            const isBillingSubject = BILLING_SUBJECT_PATTERNS.some(p => emailSubject.includes(p));
+            // Defend against Gmail auto-forwarding replacing the original sender
+            const isBillingBody = emailBodyText.includes('anthropic') && (emailBodyText.includes('receipt') || emailBodyText.includes('stripe') || emailBodyText.includes('charge'));
+
+            if (isBillingSender || isBillingSubject || isBillingBody) {
+                console.log(`[Email] 🚫 Skipping billing/system email: "${parsedEmail.subject}" from ${senderAddress}`);
+                // Save UID so it's never touched again
+                await saveUid('billing_skip');
+                continue;
+            }
 
             // Find attachments
             if (parsedEmail.attachments && parsedEmail.attachments.length > 0) {

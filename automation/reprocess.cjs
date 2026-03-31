@@ -32,13 +32,13 @@ let _pipeline = null;
 async function getPipeline() {
     if (_pipeline) return _pipeline;
     const pdfParse          = require('pdf-parse');
-    const { parseBankStatementWithAI, reconcilePayment, parseInvoiceDataWithAI } = require('./accountant_agent.cjs');
+    const { parseBankStatementWithAI, reconcilePayment } = require('./accountant_agent.cjs');
     const { runMakerCheckerLoop }    = require('./maker_checker.cjs');
     const { classifyDocumentWithVision } = require('./vision_auditor.cjs');
     const { auditAndProcessInvoice } = require('./accountant_agent.cjs');
     const { writeToFirestore }       = require('./firestore_writer.cjs');
     const { safetyNetSave }          = require('./safety_net.cjs');
-    _pipeline = { pdfParse, parseBankStatementWithAI, reconcilePayment, parseInvoiceDataWithAI,
+    _pipeline = { pdfParse, parseBankStatementWithAI, reconcilePayment,
                   runMakerCheckerLoop, classifyDocumentWithVision, auditAndProcessInvoice,
                   writeToFirestore, safetyNetSave };
     return _pipeline;
@@ -95,7 +95,7 @@ async function reprocessDocument(stagedDoc, { dry = false } = {}) {
     }
 
     // ── Load pipeline ─────────────────────────────────────────────────────────
-    const { pdfParse, parseBankStatementWithAI, reconcilePayment, parseInvoiceDataWithAI,
+    const { pdfParse, parseBankStatementWithAI, reconcilePayment,
             runMakerCheckerLoop, classifyDocumentWithVision, auditAndProcessInvoice,
             writeToFirestore, safetyNetSave } = await getPipeline();
 
@@ -202,15 +202,9 @@ async function reprocessDocument(stagedDoc, { dry = false } = {}) {
                 await markStagingResult(id, { status: 'success', resultIds: [] });
                 console.log(`[Reprocess] ✅ CSV bank statement re-processed.`);
             } else {
-                console.log(`[Reprocess] 📃 Re-processing as CSV/text Invoice...`);
-                const companySnap = await db.collection('companies').doc(companyId).get();
-                const companyName = companySnap.exists ? (companySnap.data().name || '') : '';
-                const parsed = await parseInvoiceDataWithAI(content, companyName, customRules);
-                if (await saveParsedData(parsed)) {
-                    await markStagingResult(id, { status: 'success', resultIds: [] });
-                    console.log(`[Reprocess] ✅ CSV invoice re-processed.`);
-                    return true;
-                }
+                console.warn(`[Reprocess] ⚠️  Body-text email skipped — Google Document AI requires a PDF or image file.`);
+                await markStagingResult(id, { status: 'skipped', error: 'Body-text without attachment not supported by DocAI' });
+                return false;
             }
         }
     } catch (err) {
