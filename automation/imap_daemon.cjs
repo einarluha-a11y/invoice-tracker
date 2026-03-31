@@ -1006,9 +1006,23 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
             if (isBillingSender || isBillingSubject) {
                 console.log(`[Email] 🚫 Skipping billing/system email: "${parsedEmail.subject}" from ${senderAddress}`);
                 // Save UID so it's never touched again
-                try { await uidDocRef.set({ processedAt: admin.firestore.FieldValue.serverTimestamp(), subject: parsedEmail.subject || '', type: 'billing_skip' }); } catch(_) {}
+                await saveUid('billing_skip');
                 continue;
             }
+
+            // Catch-all flag: set to true whenever UID is saved anywhere below.
+            // At the end of this email's processing, if still false, we save the UID
+            // to guarantee every email is touched at most once.
+            let uidSaved = false;
+            const saveUid = async (type = 'processed') => {
+                if (uidSaved) return;
+                try {
+                    await uidDocRef.set({ processedAt: admin.firestore.FieldValue.serverTimestamp(), subject: parsedEmail.subject || '', type });
+                    uidSaved = true;
+                } catch (e) {
+                    console.error(`[UID] ⚠️  Failed to save UID (type=${type}): ${e.message}`);
+                }
+            };
 
             // Find attachments
             if (parsedEmail.attachments && parsedEmail.attachments.length > 0) {
@@ -1149,7 +1163,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                         await markStagingResult(stagingId, { status: 'success', resultIds: [] });
                                         console.log(`[Email] Email UID ${id} successfully processed as PDF Bank Statement!`);
                                         try { connection.imap.addFlags(id, ['\\Seen'], () => {}); } catch(_) {}
-                                        try { await uidDocRef.set({ processedAt: admin.firestore.FieldValue.serverTimestamp(), subject: parsedEmail.subject || '' }); } catch(uidErr) { console.error(`[UID] ⚠️  FAILED to save processed UID ${id} — email WILL be retried next poll! Error: ${uidErr.message}`); }
+                                        await saveUid('bank_statement');
                                     }
                                 } else {
                                     console.log('[Email] Detected Invoice PDF. Requesting Pre-Flight Vision Audit to check for CMRs...');
@@ -1172,9 +1186,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                             ).catch(() => null);
                                             if (!saved) console.warn(`[Safety Net] Could not save DRAFT for Vision-rejected ${filename} (no file uploaded)`);
                                         }
-                                        // ★ COST FIX: mark UID as processed even for rejected docs —
-                                        // without this, Vision Auditor gets called again every 5-minute poll forever
-                                        try { await uidDocRef.set({ processedAt: admin.firestore.FieldValue.serverTimestamp(), subject: parsedEmail.subject || '', type: 'vision_rejected', reason: visionClass }); } catch(uidErr) { console.error(`[UID] ⚠️  FAILED to save UID for vision-rejected ${filename}: ${uidErr.message}`); }
+                                        await saveUid('vision_rejected');
                                         continue;
                                     }
                                     // visionClass === null (API failure) or visionClass === 'INVOICE' — proceed
@@ -1183,9 +1195,8 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                     const parsedData = await runMakerCheckerLoop(attachment.content, mime || 'application/pdf', { customAiRules: customRules });
                                     if (await saveParsedData(parsedData)) {
                                         console.log(`[Email] Email UID ${id} successfully processed by Document AI!`);
-                                        // FIX Reliability: mark as seen only AFTER successful Firestore write
                                         try { connection.imap.addFlags(id, ['\\Seen'], () => {}); } catch(_) {}
-                                        try { await uidDocRef.set({ processedAt: admin.firestore.FieldValue.serverTimestamp(), subject: parsedEmail.subject || '' }); } catch(uidErr) { console.error(`[UID] ⚠️  FAILED to save processed UID ${id} — email WILL be retried next poll! Error: ${uidErr.message}`); }
+                                        await saveUid('invoice_pdf');
                                     }
                                 }
                             } else if (mime.includes('image/') || filename.endsWith('.jpg') || filename.endsWith('.jpeg') || filename.endsWith('.png')) {
@@ -1223,8 +1234,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                         ).catch(() => null);
                                         if (!saved) console.warn(`[Safety Net] Could not save DRAFT for Vision-rejected image ${filename} (no file uploaded)`);
                                     }
-                                    // ★ COST FIX: mark UID even for rejected images
-                                    try { await uidDocRef.set({ processedAt: admin.firestore.FieldValue.serverTimestamp(), subject: parsedEmail.subject || '', type: 'vision_rejected', reason: visionClass }); } catch(uidErr) { console.error(`[UID] ⚠️  FAILED to save UID for vision-rejected image ${filename}: ${uidErr.message}`); }
+                                    await saveUid('vision_rejected');
                                     continue;
                                 }
                                 // visionClass === null (API failure) or visionClass === 'INVOICE' — proceed
@@ -1233,9 +1243,8 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                 const parsedData = await runMakerCheckerLoop(attachment.content, mime, { customAiRules: customRules });
                                 if (await saveParsedData(parsedData)) {
                                     console.log(`[Email] Email UID ${id} successfully processed by Document AI from Image!`);
-                                    // FIX Reliability: mark as seen only AFTER successful Firestore write
                                     try { connection.imap.addFlags(id, ['\\Seen'], () => {}); } catch(_) {}
-                                    try { await uidDocRef.set({ processedAt: admin.firestore.FieldValue.serverTimestamp(), subject: parsedEmail.subject || '' }); } catch(uidErr) { console.error(`[UID] ⚠️  FAILED to save processed UID ${id}: ${uidErr.message}`); }
+                                    await saveUid('invoice_image');
                                 }
                             } else {
                                 // Default for CSV and readable texts
@@ -1244,6 +1253,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                 // --- Prevent Binary Leakage ---
                                 if ((mime && mime.includes('image')) || filename.endsWith('.gif') || filename.endsWith('.heic') || filename.endsWith('.bmp')) {
                                     console.log(`[System] Ignoring unsupported binary image format: ${filename}`);
+                                    await saveUid('unsupported_format');
                                     continue;
                                 }
 
@@ -1270,11 +1280,13 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                     await processBankStatement(rawContent, companyId);
                                     await markStagingResult(stagingId, { status: 'success', resultIds: [] });
                                     console.log(`[Email] Email UID ${id} successfully processed as Bank Statement!`);
+                                    await saveUid('bank_statement_csv');
                                 } else {
                                     // Treat as regular invoice text/csv, parse with Claude
                                     const parsedData = await parseInvoiceDataWithAI(rawContent, companyName, customRules);
                                     if (await saveParsedData(parsedData)) {
                                         console.log(`[Email] Email UID ${id} successfully processed!`);
+                                        await saveUid('invoice_csv');
                                     }
                                 }
                             }
@@ -1289,6 +1301,8 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                 fileUrl  // may be null — Safety Net will reject without file and log warning
                             ).catch(() => null);
                             if (!saved) console.warn(`[Safety Net] Invoice lost for ${filename}: pipeline exception AND no file. Original error: ${err.message}`);
+                            // Save UID so this broken attachment is not retried indefinitely
+                            await saveUid('pipeline_exception');
                         }
                     }
                 }
@@ -1299,7 +1313,10 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                 // Records without a PDF file should NOT appear on the dashboard as skeleton entries.
                 console.warn(`[Email] ⚠️  Email UID ${id} has NO attachments. Attempting body-text parse (Completeness Gate active).`);
                 const emailBody = parsedEmail.text || parsedEmail.html || '';
-                if (emailBody.trim().length > 10) {
+                if (emailBody.trim().length <= 10) {
+                    console.log(`[Email] UID ${id} has empty body — skipping.`);
+                    await saveUid('empty_body');
+                } else if (emailBody.trim().length > 10) {
                     const parsedData = await parseInvoiceDataWithAI(emailBody, companyName, customRules);
                     if (parsedData && parsedData.length > 0) {
                         for (let inv of parsedData) {
@@ -1320,16 +1337,20 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                     try {
                                         await writeToFirestore([auditedData]);
                                         console.log(`[Email] Body-text invoice saved: ${auditedData.vendorName} / ${auditedData.invoiceId}`);
-                                        try { await uidDocRef.set({ processedAt: admin.firestore.FieldValue.serverTimestamp(), subject: parsedEmail.subject || '' }); } catch(uidErr) { console.error(`[UID] ⚠️  FAILED to save processed UID ${id} — email WILL be retried next poll! Error: ${uidErr.message}`); }
+                                        await saveUid('body_text_invoice');
                                     } catch (writeErr) {
                                         if (writeErr.message && writeErr.message.startsWith('FILE_INTEGRITY_BLOCK')) {
                                             console.warn(`[Email] Body-text write blocked (no file): ${writeErr.message}`);
+                                            await saveUid('body_text_no_file');
                                         } else {
                                             throw writeErr;
                                         }
                                     }
                                 } else if (auditedData.status === 'Error') {
                                     console.warn(`[Email] Body-text invoice rejected by Completeness Gate: ${(auditedData.validationWarnings || []).join('; ')}`);
+                                    await saveUid('body_text_rejected');
+                                } else if (auditedData.status === 'Duplicate') {
+                                    await saveUid('body_text_duplicate');
                                 }
                             } catch (auditErr) {
                                 if (auditErr.message !== 'BANK_STATEMENT_RECONCILIATION_COMPLETE') {
@@ -1339,13 +1360,16 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                         }
                     } else {
                         console.log(`[Email] AI found no invoices in body text of UID ${id}.`);
-                        // ★ COST FIX: save UID even when body-text extraction finds nothing —
-                        // otherwise the daemon will call AI on the same email body every 5 minutes
-                        try { await uidDocRef.set({ processedAt: admin.firestore.FieldValue.serverTimestamp(), subject: parsedEmail.subject || '', type: 'no_invoice_found' }); } catch(uidErr) { console.error(`[UID] ⚠️  Failed to save no-invoice UID: ${uidErr.message}`); }
+                        await saveUid('no_invoice_found');
                     }
-                }
-            }
-        }
+                } // end else if emailBody.trim().length > 10
+            } // end else (no attachments)
+
+            // ★ FINAL CATCH-ALL: if none of the paths above saved the UID, save now.
+            // This guarantees every email in the sweep window is processed exactly once,
+            // regardless of which code path was taken.
+            await saveUid('catch_all');
+        } // end for each email
 
         connection.end();
         console.log(`[System] IMAP connection closed for ${companyName}.`);
