@@ -207,6 +207,52 @@ IF TYPE C (JUNK), respond ONLY with an empty JSON array: []`;
                 }
             }
         });
+
+        // --- DETERMINISTIC POST-PROCESSING (code-level rules, always enforced) ---
+        extractedData.forEach(inv => {
+            if (inv.type === 'INVOICE') {
+
+                // RULE A: NUNNER/Lithuanian logistics — invoiceId must contain a slash
+                // If AI returned a tracking number (no slash), clear it so it's obvious something is wrong
+                const isLithuanianLogistics = /nunner|girteka|linava|dsv/i.test(inv.vendorName || '');
+                if (isLithuanianLogistics && inv.invoiceId && !inv.invoiceId.includes('/')) {
+                    console.warn(`[PostProcess] ⚠️  NUNNER invoiceId "${inv.invoiceId}" has no slash — likely tracking number. Clearing.`);
+                    inv.invoiceId = `RECHECK:${inv.invoiceId}`;
+                }
+
+                // RULE B: vendorName must not be a cargo party (shipper/consignee)
+                // NUNNER invoices list "PACKAGING SOLUTIONS" as the shipper, not the vendor
+                if (/packaging solutions|nur-sultan/i.test(inv.vendorName || '')) {
+                    console.warn(`[PostProcess] ⚠️  vendorName "${inv.vendorName}" looks like a shipper/consignee, not a vendor. Clearing.`);
+                    inv.vendorName = 'NUNNER Logistics UAB';
+                }
+
+                // RULE C: description must not look like an ID or be empty
+                const desc = (inv.description || '').trim();
+                const descLooksLikeId = !desc
+                    || /^[\d\/\-\.]+$/.test(desc)
+                    || /\d{7,}/.test(desc)
+                    || desc === inv.invoiceId
+                    || desc === inv.supplierVat
+                    || desc === inv.supplierRegistration;
+
+                if (descLooksLikeId) {
+                    // Infer from vendor name
+                    const vendor = (inv.vendorName || '').toLowerCase();
+                    if (/nunner|girteka|linava|dsv|transport|freight|logistics|cargo|express|kuller|post/i.test(vendor)) {
+                        inv.description = 'Freight forwarding';
+                    } else if (/kindlustus|insurance|assurance/i.test(vendor)) {
+                        inv.description = 'Insurance premium';
+                    } else if (/rent|üür|arrend/i.test(vendor)) {
+                        inv.description = 'Office rent';
+                    } else {
+                        inv.description = 'Services';
+                    }
+                    console.log(`[PostProcess] 📝 description was ID-like, replaced with: "${inv.description}"`);
+                }
+            }
+        });
+        // --- END DETERMINISTIC POST-PROCESSING ---
         
         console.log(`[Cognitive Extractor] ✅ Extraction Complete:`);
         if (extractedData.length > 0) {
