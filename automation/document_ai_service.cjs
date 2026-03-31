@@ -92,12 +92,19 @@ CRITICAL DIRECTIVES:
 10. THE COMPOUNDING DEBT TRAP (Võlgnevus): ONLY applies when the invoice explicitly contains the word "Võlgnevus" (arrears/overdue debt carried forward). In that case, the printed "Tasuda" (Total to Pay) includes old debt — you MUST isolate the current period charge: amount = subtotalAmount + taxAmount. For ALL OTHER invoices (no Võlgnevus), the 'amount' field MUST be the "Tasuda" / "Total" / "Do zapłaty" / "Bendra suma" value — i.e., the full amount to pay including VAT.
 11. LOGISTICS & FREIGHT INVOICES — NUNNER RULE (CRITICAL, READ CAREFULLY):
 Lithuanian logistics invoices (NUNNER Logistics UAB, DSV, Girteka, Linava) have a table with FOUR columns: "PVM sąskaita-faktūra / Invoice" | "Užsakymo nr. / Tracking no." | "Pozicijos nr. / Pos. no." | "Data / Date".
-- The INVOICE ID is ONLY the value in the FIRST column ("PVM sąskaita-faktūra / Invoice"). It looks like "NN/NNNNNNNNNN" (e.g. "26/4211005335"). NEVER combine it with values from other columns.
-- The TRACKING NUMBER in the SECOND column ("Užsakymo nr. / Tracking no.") e.g. "42260300810" is NEVER the invoice ID. Do NOT prepend or append it to the invoice ID.
-- ⚠️ VENDOR NAME — THIS IS THE MOST COMMON MISTAKE: The VENDOR is the company printed in the TOP-LEFT LETTERHEAD of the document (e.g. "NUNNER Logistics UAB"). This is the company SENDING the invoice and requesting payment. The fields labeled "Siuntėjas / Shipper" or "Gavėjas / Consignee" (e.g. "PACKAGING SOLUTIONS NUR-SULTAN") describe the cargo route parties — they are NEVER the vendor. If you see "PACKAGING SOLUTIONS" anywhere on a NUNNER invoice, it is the cargo shipper, NOT the vendor.
-- REAL EXAMPLE from NUNNER invoice: invoiceId="26/4211005335", vendorName="NUNNER Logistics UAB", supplierVat="LT100006153417", supplierRegistration="302632959", amount=4500.00, taxAmount=0, subtotalAmount=4500.00, description="Freight forwarding".
+- The INVOICE ID is ONLY the value in the FIRST column ("PVM sąskaita-faktūra / Invoice"). FORMAT: always contains a slash, like "NN/NNNNNNNNNN" — e.g. "26/4211005335". If your candidate invoiceId has NO SLASH, it is WRONG.
+- The TRACKING NUMBER in the SECOND column ("Užsakymo nr. / Tracking no.") is a long number WITHOUT a slash, e.g. "4226030081026" or "42260300810". This is NEVER the invoice ID — not even part of it.
+- SELF-CHECK: Before outputting invoiceId for a NUNNER invoice — does it contain a "/"? If NO → you extracted the tracking number by mistake. Look again at the FIRST column only.
+- ⚠️ VENDOR NAME — MOST COMMON MISTAKE: The VENDOR is the company in the TOP-LEFT LETTERHEAD (e.g. "NUNNER Logistics UAB"), NOT the "Siuntėjas / Shipper" or "Gavėjas / Consignee" fields. "PACKAGING SOLUTIONS NUR-SULTAN" is the cargo shipper, NEVER the vendor.
+- REAL EXAMPLE: invoiceId="26/4211005335" ✓ (has slash) vs invoiceId="4226030081026" ✗ (no slash = tracking number), vendorName="NUNNER Logistics UAB", amount=4500.00, description="Freight forwarding".
 
-12. DESCRIPTION FIELD: Extract the top-level "description" as a SHORT human-readable summary of WHAT the invoice is for (e.g. "Transport services", "Office rent March", "Packaging materials", "Freight forwarding"). This MUST be derived from the service/goods description text on the invoice — NOT from the invoice number, NOT from the VAT/registration number, NOT from tracking numbers. If lineItems exist, use the first lineItem's description text. If no explicit description exists, infer from vendor context (e.g. logistics vendor → "Transport services"). NEVER output a string that consists only of digits, slashes, or looks like an ID (e.g. "4226030081026" or "1031/26/A" are WRONG — those are invoice/registration numbers, not descriptions).
+12. DESCRIPTION FIELD: Extract the top-level "description" as a SHORT human-readable summary of WHAT the invoice is for. Rules:
+- Use the service/goods description text from the invoice body or lineItems
+- NEVER use the invoice number, tracking number, VAT/registration number, or any numeric-looking string
+- If no explicit description is found, INFER from vendor type: NUNNER/DSV/Girteka → "Freight forwarding"; transport/logistics company → "Transport services"; insurance bill → "Insurance premium"; office supply → "Office supplies"
+- The description field MUST always be filled — never leave it null or empty
+- WRONG examples: "4226030081026", "1031/26/A", "LT100006153417" — these are IDs, not descriptions
+- RIGHT examples: "Freight forwarding", "Transport services", "Insurance premium", "Office rent March"
 
 IF TYPE A (INVOICE), respond ONLY with a JSON array matching this schema:
 [
