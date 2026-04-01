@@ -212,31 +212,51 @@ export const updateInvoice = async (invoiceId: string, data: Partial<Invoice>): 
     // ── Teacher Agent: save corrected invoice as ground-truth example ──────────
     // Every manual save via the pencil icon is treated as a verified correction.
     // This feeds the few-shot learning system in document_ai_service.cjs.
+    // Runs unconditionally — even if no fields were changed — so the Teacher
+    // always has an up-to-date record of the human-verified correct state.
     try {
         const snap = await getDoc(invoiceRef);
         if (snap.exists()) {
             const d = snap.data();
             const vendorName = (d.vendorName || d.vendor || '').trim();
             if (vendorName) {
-                const safeKey = `${vendorName}_${invoiceId}`
+                // Key: vendor name + actual invoice number (not Firestore doc ID)
+                const invoiceNumber = d.invoiceId || invoiceId;
+                const safeKey = `${vendorName}_${invoiceNumber}`
                     .replace(/[^a-zA-Z0-9_\-]/g, '_')
                     .slice(0, 80);
 
+                // Derive vendor matching patterns for Teacher Agent lookup
+                const vendorWords = vendorName.toLowerCase().split(/\s+/)
+                    .filter((w: string) => !/(oü|as|uab|sia|llc|gmbh|inc|bv)/.test(w));
+                const vendorPatterns: string[] = [vendorName.toLowerCase()];
+                if (vendorWords[0]) vendorPatterns.push(vendorWords[0]);
+                if (vendorWords.length > 1) vendorPatterns.push(vendorWords.slice(0, 2).join(' '));
+
                 const exampleRef = doc(db!, 'invoice_examples', safeKey);
                 await setDoc(exampleRef, {
-                    vendorName: vendorName.toLowerCase(),
+                    vendorName,
+                    vendorPatterns: [...new Set(vendorPatterns)],
                     groundTruth: {
-                        invoiceId,
-                        vendorName,
-                        amount:      d.amount      ?? null,
-                        currency:    d.currency    ?? null,
-                        dateCreated: d.dateCreated ?? null,
-                        dueDate:     d.dueDate     ?? null,
+                        invoiceId:            invoiceNumber,
+                        vendorName:           vendorName,
+                        supplierRegistration: d.supplierRegistration ?? null,
+                        supplierVat:          d.supplierVat          ?? null,
+                        amount:               d.amount               ?? null,
+                        subtotalAmount:       d.subtotalAmount       ?? null,
+                        taxAmount:            d.taxAmount            ?? null,
+                        currency:             d.currency             ?? null,
+                        dateCreated:          d.dateCreated          ?? null,
+                        dueDate:              d.dueDate              ?? null,
+                        status:               d.status               ?? null,
+                        description:          d.description          ?? null,
                     },
-                    fileUrl:   d.fileUrl   || d.downloadUrl || null,
-                    companyId: d.companyId || null,
-                    updatedAt: serverTimestamp(),
-                    createdAt: serverTimestamp(),
+                    // Raw file references — used by Repairman and Teacher agents
+                    fileUrl:    d.fileUrl    || d.downloadUrl || null,
+                    stagingId:  d.stagingId  || null,  // → raw_documents → storageUrl (original PDF)
+                    companyId:  d.companyId  || null,
+                    updatedAt:  serverTimestamp(),
+                    createdAt:  serverTimestamp(),
                 }, { merge: true });
 
                 console.log(`[Teacher Agent] ✅ Ground-truth saved for: ${vendorName} (${safeKey})`);
