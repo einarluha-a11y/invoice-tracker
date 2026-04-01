@@ -66,6 +66,7 @@ const resources = {
             table: {
                 id: "ID",
                 vendor: "Поставщик",
+                invoice_no: "Счет №",
                 description: "Описание",
                 created: "Создан",
                 dueDate: "Срок оплаты",
@@ -186,6 +187,7 @@ const resources = {
             table: {
                 id: "ID",
                 vendor: "Vendor",
+                invoice_no: "Invoice No.",
                 description: "Description",
                 created: "Created",
                 dueDate: "Due Date",
@@ -306,6 +308,7 @@ const resources = {
             table: {
                 id: "ID",
                 vendor: "Tarnija",
+                invoice_no: "Arve nr.",
                 description: "Kirjeldus",
                 created: "Loodud",
                 dueDate: "Maksetähtaeg",

@@ -159,7 +159,7 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
         // Generate CSV header
         const headers = [
             t('table.vendor'),
-            t('table.description'),
+            t('table.invoice_no'),
             t('table.created'),
             t('table.dueDate'),
             t('table.amount'),
@@ -169,7 +169,7 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
         // Format data rows
         const rows = filteredAndSortedInvoices.map(inv => [
             `"${inv.vendor.replace(/"/g, '""')}"`,
-            `"${(inv.invoiceId ? (inv.description && inv.description !== inv.invoiceId ? inv.invoiceId + ' / ' + inv.description : inv.invoiceId) : (inv.description || '')).replace(/"/g, '""')}"`,
+            `"${(inv.invoiceId || '').replace(/"/g, '""')}"`,
             inv.dateCreated,
             inv.dueDate,
             inv.amount,
@@ -314,8 +314,8 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                             <th onClick={() => handleSort('vendor')} style={{ width: '18%' }}>
                                 <div className="th-content">{t('table.vendor')} <span>{renderSortIcon('vendor')}</span></div>
                             </th>
-                            <th onClick={() => handleSort('description')} style={{ width: '22%' }}>
-                                <div className="th-content">{t('table.description')} <span>{renderSortIcon('description')}</span></div>
+                            <th onClick={() => handleSort('invoiceId')} style={{ width: '22%' }}>
+                                <div className="th-content">{t('table.invoice_no')} <span>{renderSortIcon('invoiceId')}</span></div>
                             </th>
                             <th onClick={() => handleSort('dateCreated')} style={{ width: '12%' }}>
                                 <div className="th-content">{t('table.created')} <span>{renderSortIcon('dateCreated')}</span></div>
@@ -361,11 +361,11 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                                             </div>
                                         </div>
                                     </td>
-                                <td data-label={t('table.description')} style={{ lineHeight: '1.4', maxWidth: '250px', whiteSpace: 'normal', wordBreak: 'break-word' }}>
-                                    {invoice.invoiceId && <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.9rem', marginBottom: '2px', wordBreak: 'break-all' }}>{invoice.invoiceId}</div>}
-                                    <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                                        {invoice.description && invoice.description !== invoice.invoiceId ? invoice.description : (!invoice.invoiceId && <span style={{ opacity: 0.4 }}>—</span>)}
-                                    </div>
+                                <td data-label={t('table.invoice_no')} style={{ lineHeight: '1.4', maxWidth: '200px', whiteSpace: 'normal', wordBreak: 'break-word' }}>
+                                    {invoice.invoiceId
+                                        ? <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.9rem', wordBreak: 'break-all' }}>{invoice.invoiceId}</span>
+                                        : <span style={{ opacity: 0.4 }}>—</span>
+                                    }
                                 </td>
                                 <td data-label={t('table.created')}>{formatDate(invoice.dateCreated)}</td>
                                 <td data-label={t('table.dueDate')}>
@@ -531,19 +531,9 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                             &times;
                         </button>
                     </div>
-                    {viewingPdfUrl.toLowerCase().includes('.pdf') ? (
-                        <div style={{ width: '90%', height: '85vh', background: '#fff', borderRadius: 'var(--radius-lg)', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden' }}>
-                            <InvoicePdfViewer url={viewingPdfUrl} />
-                        </div>
-                    ) : (
-                        <div style={{ width: '90%', height: '85vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fff', borderRadius: 'var(--radius-lg)' }}>
-                            <img
-                                src={viewingPdfUrl}
-                                alt="Invoice Document"
-                                style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: 'var(--radius-lg)' }}
-                            />
-                        </div>
-                    )}
+                    <div style={{ width: '90%', height: '85vh', background: '#fff', borderRadius: 'var(--radius-lg)', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden' }}>
+                        <InvoicePdfViewer url={viewingPdfUrl} />
+                    </div>
                 </div>
             )}
         </div>

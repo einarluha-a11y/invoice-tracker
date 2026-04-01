@@ -16,36 +16,51 @@ export const InvoicePdfViewer: React.FC<InvoicePdfViewerProps> = ({ url }) => {
     const [numPages, setNumPages] = useState<number>();
     const [pageNumber, setPageNumber] = useState<number>(1);
     const [error, setError] = useState<string | null>(null);
-    const [pdfFile, setPdfFile] = useState<Blob | string | null>(null);
+    const [fileData, setFileData] = useState<{ blob: Blob; isImage: boolean } | null>(null);
+    const [imageSrc, setImageSrc] = useState<string | null>(null);
 
     useEffect(() => {
         let active = true;
 
-        const loadPdf = async () => {
+        const loadFile = async () => {
             try {
-                // Route the download through our backend PDF proxy to avoid Firebase Storage CORS issues.
-                // The proxy fetches the file server-side and streams it back to the browser.
+                // Always route through backend proxy — works for all companies, all file types.
+                // Proxy uses Firebase Admin SDK so tokens never expire from the browser's perspective.
                 const apiBase = import.meta.env.VITE_API_URL || '';
                 const proxyUrl = `${apiBase}/api/pdf-proxy?url=${encodeURIComponent(url)}`;
                 const response = await fetch(proxyUrl);
 
-                if (!response.ok) throw new Error(`Failed to download PDF data.`);
+                if (!response.ok) throw new Error(`Failed to download file (${response.status}).`);
 
+                const contentType = response.headers.get('content-type') || '';
                 const blob = await response.blob();
-                if (active) {
-                    setPdfFile(blob);
+
+                if (!active) return;
+
+                const isImage = contentType.startsWith('image/') ||
+                    /\.(png|jpe?g|gif|webp|bmp)(\?|$)/i.test(url);
+
+                setFileData({ blob, isImage });
+
+                if (isImage) {
+                    const objectUrl = URL.createObjectURL(blob);
+                    setImageSrc(objectUrl);
                 }
             } catch (err) {
-                console.error('Failed to fetch PDF blob:', err);
+                console.error('Failed to fetch file:', err);
                 if (active) {
                     setError(err instanceof Error ? err.message : String(err));
                 }
             }
         };
 
-        loadPdf();
+        loadFile();
 
-        return () => { active = false; };
+        return () => {
+            active = false;
+            // Clean up blob URL when component unmounts or url changes
+            if (imageSrc) URL.revokeObjectURL(imageSrc);
+        };
     }, [url]);
 
     function onDocumentLoadSuccess({ numPages }: { numPages: number }): void {
@@ -58,28 +73,42 @@ export const InvoicePdfViewer: React.FC<InvoicePdfViewerProps> = ({ url }) => {
         setError(error.message);
     }
 
+    const spinner = (label: string) => (
+        <div style={{ color: '#666', fontSize: '1.2rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', marginTop: '2rem' }}>
+            <div className="spinner" style={{ width: '40px', height: '40px', border: '3px solid rgba(0,0,0,0.1)', borderTop: '3px solid var(--accent-color)', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+            {label}
+            <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
+        </div>
+    );
+
     return (
         <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', background: '#f5f5f5', overflow: 'auto', padding: '20px', borderRadius: 'var(--radius-lg)' }}>
             {error ? (
                 <div style={{ color: 'red', padding: '20px', textAlign: 'center' }}>
-                    <p>Failed to load PDF: {error}</p>
+                    <p>Failed to load file: {error}</p>
                     <a href={url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-color)', textDecoration: 'underline' }}>
-                        Click here to download/open the file directly
+                        Click here to open the file directly
                     </a>
                 </div>
-            ) : pdfFile ? (
+            ) : !fileData ? (
+                spinner('Downloading Secure File...')
+            ) : fileData.isImage ? (
+                imageSrc ? (
+                    <img
+                        src={imageSrc}
+                        alt="Invoice Document"
+                        style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: 'var(--radius-lg)' }}
+                    />
+                ) : (
+                    spinner('Rendering Image...')
+                )
+            ) : (
                 <>
                     <Document
-                        file={pdfFile}
+                        file={fileData.blob}
                         onLoadSuccess={onDocumentLoadSuccess}
                         onLoadError={onDocumentLoadError}
-                        loading={
-                            <div style={{ color: '#666', fontSize: '1.2rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', marginTop: '2rem' }}>
-                                <div className="spinner" style={{ width: '40px', height: '40px', border: '3px solid rgba(0,0,0,0.1)', borderTop: '3px solid var(--accent-color)', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
-                                Loading PDF Document...
-                                <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
-                            </div>
-                        }
+                        loading={spinner('Loading PDF Document...')}
                     >
                         <Page
                             pageNumber={pageNumber}
@@ -109,12 +138,6 @@ export const InvoicePdfViewer: React.FC<InvoicePdfViewerProps> = ({ url }) => {
                         </div>
                     )}
                 </>
-            ) : (
-                <div style={{ color: '#666', fontSize: '1.2rem', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', marginTop: '2rem' }}>
-                    <div className="spinner" style={{ width: '40px', height: '40px', border: '3px solid rgba(0,0,0,0.1)', borderTop: '3px solid var(--accent-color)', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
-                    Downloading Secure PDF Data...
-                    <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
-                </div>
             )}
         </div>
     );
