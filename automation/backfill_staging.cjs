@@ -131,6 +131,8 @@ async function alreadyStaged(invoiceId) {
                     resultIds:        [id],
                     backfilled:       true, // marker so you can distinguish from live records
                 });
+                // Also write back-link from the invoice to its staging entry
+                await db.collection('invoices').doc(id).update({ stagingId: ref.id });
             } catch (err) {
                 console.error(`   ❌ Failed to create staging entry: ${err.message}`);
                 errors++;

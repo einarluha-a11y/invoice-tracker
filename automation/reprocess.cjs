@@ -134,6 +134,7 @@ async function reprocessDocument(stagedDoc, { dry = false } = {}) {
                 await safetyNetSave(auditedData, (auditedData.validationWarnings || []).join('; ') || 'Error', companyId, storageUrl).catch(() => {});
                 success = true;
             } else {
+                auditedData.stagingId = id; // Back-link to raw_documents for source tracing
                 await writeToFirestore([auditedData]);
                 console.log(`[Reprocess]    ✅ Saved to Firestore.`);
                 success = true;

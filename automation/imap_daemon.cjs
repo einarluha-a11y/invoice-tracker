@@ -290,7 +290,8 @@ async function writeToFirestore(dataArray) {
                 lineItems: data.lineItems || [],
                 createdAt: admin.firestore.FieldValue.serverTimestamp(),
                 companyId: data.companyId || null,
-                fileUrl: data.fileUrl || null
+                fileUrl: data.fileUrl || null,
+                stagingId: data.stagingId || null  // Link to raw_documents entry for source tracing
             });
 
             if (!data.companyId) {
@@ -967,6 +968,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                         success = true;
                                     } else {
                                         try {
+                                            auditedData.stagingId = stagingId; // Back-link to raw_documents for source tracing
                                             await writeToFirestore([auditedData]);
                                             await markStagingResult(stagingId, { status: 'success', resultIds: [auditedData.id || auditedData.invoiceId || ''] });
                                             success = true;
@@ -1333,11 +1335,13 @@ async function checkAndRunFlagTasks() {
     }
 }
 
-// Start the process immediately with overlap-proof async loops
-checkAndRunFlagTasks().then(() => {
-    pollLoop();
-    auditLoop();
-});
+// Start the process only when run directly (not when imported as a module)
+if (require.main === module) {
+    checkAndRunFlagTasks().then(() => {
+        pollLoop();
+        auditLoop();
+    });
+}
 
 // Overlap-safe IMAP polling daemon
 console.log('Automated Invoice Processor Started. Checking every 5 minutes...');
