@@ -155,8 +155,38 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
         throw new Error("BANK_STATEMENT_RECONCILIATION_COMPLETE");
     }
 
+    // --- 0.5. NON-INVOICE DOCUMENT FILTER ---
+    // Reject documents that are not invoices: CMR, waybills, packing lists, delivery notes, etc.
+    {
+        const filename = String(fileUrl || '').toLowerCase();
+        const invId = String(docAiPayload.invoiceId || '').toLowerCase();
+        const desc = String(docAiPayload.description || '').toLowerCase();
+        const vendor = String(docAiPayload.vendorName || '').toLowerCase();
+        const allText = `${filename} ${invId} ${desc} ${vendor}`;
+
+        const NON_INVOICE_PATTERNS = [
+            /\bcmr\b/, /\bwaybill\b/, /\bsaateleht\b/, /\bpacking\s*list\b/,
+            /\bdelivery\s*note\b/, /\bpro\s*forma\b/, /\bquotation\b/, /\boffer\b/,
+            /\bpakkuda\b/, /\bhinnapakkumine\b/,
+        ];
+
+        const isNonInvoice = NON_INVOICE_PATTERNS.some(p => p.test(allText));
+
+        // Additional heuristic: if invoiceId looks like "CMR", "PS38 dd.", or contains no digits
+        const idLooksWrong = invId && (
+            /^cmr/i.test(invId) ||
+            /\bdd\.?\s*$/i.test(invId) ||
+            !/\d/.test(invId)
+        );
+
+        if (isNonInvoice || (idLooksWrong && filename.includes('cmr'))) {
+            console.error(`[Accountant Agent] 🛑 NON-INVOICE FILTER: Document rejected — not an invoice (file: ${filename}, id: ${invId})`);
+            return null;
+        }
+    }
+
     console.log(`\n[Accountant Agent] 🚀 Beginning Audit for ${docAiPayload.vendorName} (Inv: ${docAiPayload.invoiceId})`);
-    
+
     let systemStatus = docAiPayload.status || 'Pending';
     let warnings = docAiPayload.validationWarnings || [];
 
