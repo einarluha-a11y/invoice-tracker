@@ -9,6 +9,7 @@
  *   --mode full       (default) Find all anomalies + re-extract from original file
  *   --mode skeletons  Find records without fileUrl
  *   --mode statuses   Find records with problematic statuses
+ *   --mode audit      Sweep ALL invoices: fix statuses (Pending→Overdue, check Paid), normalize vendor names
  *
  * Options:
  *   --fix             Execute repairs (default is dry-run)
@@ -298,6 +299,13 @@ async function repairInvoice(invoiceId, invoiceData) {
         }
     }
 
+    // Normalize vendor name
+    const rawVendor = updates.vendorName || invoiceData.vendorName;
+    const cleanVendor = normalizeVendorName(rawVendor);
+    if (cleanVendor !== rawVendor) {
+        updates.vendorName = cleanVendor;
+    }
+
     // Always update metadata
     updates.repairedAt = admin.firestore.FieldValue.serverTimestamp();
     updates.repairHistory = admin.firestore.FieldValue.arrayUnion({
@@ -305,20 +313,26 @@ async function repairInvoice(invoiceId, invoiceData) {
         corrections: teacherResult.corrections,
     });
 
-    // Set status based on Teacher approval
+    // Set status using unified status rules
     if (!isManual) {
-        updates.status = teacherResult.approved ? 'Pending' : 'Needs Action';
-    }
-
-    // ── Check bank_transactions archive for payment status ──────────
-    try {
-        const paymentStatus = await checkBankTransactions(invoiceId, invoiceData, newData);
-        if (paymentStatus === 'Paid') {
-            updates.status = 'Paid';
-            console.log(`  [Repairman] 🏦 Payment found in bank_transactions archive → status = Paid`);
+        if (!teacherResult.approved) {
+            updates.status = 'Needs Action';
+        } else {
+            // Check bank_transactions for payment
+            let isPaid = false;
+            try {
+                const paymentStatus = await checkBankTransactions(invoiceId, invoiceData, newData);
+                if (paymentStatus === 'Paid') {
+                    isPaid = true;
+                    console.log(`  [Repairman] 🏦 Payment found in bank_transactions archive`);
+                }
+            } catch (btErr) {
+                console.warn(`  [Repairman] bank_transactions check failed: ${btErr.message}`);
+            }
+            const dueDate = newData.dueDate || invoiceData.dueDate;
+            updates.status = determineStatus('Pending', dueDate, isPaid);
+            console.log(`  [Repairman] Status → ${updates.status} (dueDate: ${dueDate || 'none'})`);
         }
-    } catch (btErr) {
-        console.warn(`  [Repairman] bank_transactions check failed: ${btErr.message}`);
     }
 
     // Teacher corrections metadata
@@ -379,6 +393,186 @@ function printReport(invoices, label) {
     }
 }
 
+// ─── Vendor Name Normalization ───────────────────────────────────────────────
+
+const VENDOR_CANONICAL = {
+    'pronto sp. z o. o.':         'PRONTO Sp. z o.o.',
+    'pronto sp. z o.o.':          'PRONTO Sp. z o.o.',
+    'täisteenusliisingu as':      'Täisteenusliisingu AS',
+    'global technics oü':         'Global Technics OÜ',
+    'sia citadele leasing eesti filiaal': 'SIA Citadele Leasing Eesti filiaal',
+    'konica minolta':             'Konica Minolta',
+    'tele2 eesti as':             'Tele2 Eesti AS',
+    'estma terminaali oü':        'ESTMA Terminaali OÜ',
+    'memi varustaja oü':          'Memi Varustaja OÜ',
+    'as alexela':                 'Alexela AS',
+    'allstore assets oü':         'Allstore Assets OÜ',
+    'hydroscand as':              'Hydroscand AS',
+    'zone media oü':              'Zone Media OÜ',
+    'omega laen as':              'Omega Laen AS',
+    'lhv':                        'LHV',
+    'accounting resources oü':    'Accounting Resources OÜ',
+};
+
+function normalizeVendorName(name) {
+    if (!name) return name;
+    // Fix broken multiline names (e.g. "BMEMI\nVARUSTAJA")
+    let clean = name.replace(/[\r\n]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+    const key = clean.toLowerCase();
+    return VENDOR_CANONICAL[key] || clean;
+}
+
+// ─── Status Determination Rules ─────────────────────────────────────────────
+//
+//  STATUS RULES (priority order):
+//
+//  1. Paid    — payment found in bank_transactions (amount + vendor match)
+//  2. Overdue — dueDate exists AND dueDate < today AND not Paid
+//  3. Pending — dueDate does not exist, OR dueDate >= today, AND not Paid
+//
+//  Immutable statuses (never overwrite): Paid, Duplicate, UNREPAIRABLE, Needs Action
+//
+
+const IMMUTABLE_STATUSES = ['Paid', 'Duplicate', 'UNREPAIRABLE', 'Needs Action'];
+
+function determineStatus(currentStatus, dueDate, isPaidInBank) {
+    // Rule 1: bank payment found → always Paid
+    if (isPaidInBank) return 'Paid';
+
+    // Rule 2: immutable statuses → don't touch
+    if (IMMUTABLE_STATUSES.includes(currentStatus)) return currentStatus;
+
+    // Rule 3: check if overdue
+    if (dueDate) {
+        const today = new Date().toISOString().slice(0, 10);
+        if (dueDate < today) return 'Overdue';
+    }
+
+    // Rule 4: default → Pending
+    return 'Pending';
+}
+
+// ─── Audit Mode: sweep all invoices ─────────────────────────────────────────
+
+async function runAudit() {
+    console.log('\n══════════════════════════════════════════════════');
+    console.log('AUDIT MODE: Status correction + Vendor normalization');
+    console.log('══════════════════════════════════════════════════\n');
+
+    // Load all invoices
+    let q = db.collection('invoices');
+    if (companyFilter) q = q.where('companyId', '==', companyFilter);
+    const snap = await q.get();
+    console.log(`Loaded ${snap.size} invoices.\n`);
+
+    // Load all bank transactions (grouped by company)
+    const bankTxByCompany = {};
+    const bankSnap = await db.collection('bank_transactions').get();
+    for (const doc of bankSnap.docs) {
+        const tx = doc.data();
+        if (!bankTxByCompany[tx.companyId]) bankTxByCompany[tx.companyId] = [];
+        bankTxByCompany[tx.companyId].push(tx);
+    }
+    console.log(`Loaded ${bankSnap.size} bank transactions.\n`);
+
+    let statusFixed = 0, vendorFixed = 0, paidFound = 0, overdueFound = 0, skipped = 0;
+    const changes = [];
+
+    for (const doc of snap.docs) {
+        const data = doc.data();
+        const updates = {};
+
+        // ── Vendor name normalization ──
+        const oldVendor = data.vendorName || '';
+        const newVendor = normalizeVendorName(oldVendor);
+        if (newVendor !== oldVendor) {
+            updates.vendorName = newVendor;
+            updates.previousVendorName = oldVendor;
+        }
+
+        // ── Status determination ──
+        const oldStatus = data.status;
+
+        // Check bank transactions for payment
+        let isPaidInBank = false;
+        const companyTxs = bankTxByCompany[data.companyId] || [];
+        const invoiceAmount = parseFloat(data.amount) || 0;
+        if (invoiceAmount > 0 && companyTxs.length > 0) {
+            const vendorClean = (newVendor || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+            const invoiceNum = (data.invoiceId || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+            for (const tx of companyTxs) {
+                const txAmount = parseFloat(tx.amount) || 0;
+                if (Math.abs(txAmount - invoiceAmount) > 0.50) continue;
+
+                const txVendor = (tx.counterparty || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                const txRef = (tx.reference || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+                const vendorMatch = vendorClean.length > 3 && txVendor.length > 3 &&
+                    (vendorClean.includes(txVendor) || txVendor.includes(vendorClean));
+                const refMatch = invoiceNum.length > 3 &&
+                    (txRef.includes(invoiceNum) || invoiceNum.includes(txRef));
+
+                if (vendorMatch || refMatch) {
+                    isPaidInBank = true;
+                    break;
+                }
+            }
+        }
+
+        const newStatus = determineStatus(oldStatus, data.dueDate, isPaidInBank);
+
+        if (newStatus !== oldStatus) {
+            updates.status = newStatus;
+            updates.previousStatus = oldStatus;
+            updates.statusFixedAt = admin.firestore.FieldValue.serverTimestamp();
+            if (newStatus === 'Paid') paidFound++;
+            if (newStatus === 'Overdue') overdueFound++;
+        }
+
+        // ── Apply updates ──
+        if (Object.keys(updates).length === 0) {
+            skipped++;
+            continue;
+        }
+
+        const changeDesc = [];
+        if (updates.status) changeDesc.push(`${oldStatus} → ${updates.status}`);
+        if (updates.vendorName) changeDesc.push(`vendor: "${oldVendor}" → "${updates.vendorName}"`);
+
+        changes.push({ id: doc.id, vendor: newVendor || oldVendor, change: changeDesc.join(' | ') });
+
+        if (!dryRun) {
+            await db.collection('invoices').doc(doc.id).update(updates);
+        }
+
+        if (updates.status) statusFixed++;
+        if (updates.vendorName) vendorFixed++;
+    }
+
+    // ── Report ──
+    console.log('─── CHANGES ───\n');
+    if (changes.length === 0) {
+        console.log('No changes needed.');
+    } else {
+        console.log(`${'ID'.padEnd(22)} ${'Vendor'.padEnd(35)} Change`);
+        console.log('─'.repeat(100));
+        for (const c of changes) {
+            console.log(`${c.id.slice(0, 21).padEnd(22)} ${c.vendor.slice(0, 33).padEnd(35)} ${c.change}`);
+        }
+    }
+
+    console.log('\n══════════════════════════════════════════════════');
+    console.log(`${dryRun ? '[DRY RUN] Would apply' : 'Applied'}:`);
+    console.log(`  Status fixes:  ${statusFixed} (${paidFound} → Paid, ${overdueFound} → Overdue)`);
+    console.log(`  Vendor fixes:  ${vendorFixed}`);
+    console.log(`  Skipped:       ${skipped} (no changes needed)`);
+    if (dryRun && changes.length > 0) console.log('\nRun with --fix to execute.');
+    console.log('══════════════════════════════════════════════════');
+
+    process.exit(0);
+}
+
 // ─── Main Orchestrator ───────────────────────────────────────────────────────
 
 async function main() {
@@ -389,6 +583,9 @@ async function main() {
     if (companyFilter) console.log(`Company: ${companyFilter}`);
     console.log(dryRun ? 'DRY RUN (pass --fix to execute)' : 'LIVE EXECUTION');
     console.log('─────────────────────────────────────────────────\n');
+
+    // ── Audit mode: separate flow ──────────────────────────────────────────
+    if (mode === 'audit') return runAudit();
 
     // ── Step 1: Find problems ────────────────────────────────────────────────
     console.log('Step 1: Scanning Firestore...');
