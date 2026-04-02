@@ -479,7 +479,9 @@ async function runAudit() {
     const snap = await q.get();
     console.log(`Loaded ${snap.size} invoices.\n`);
 
-    // Load all bank transactions (grouped by company)
+    const today = new Date().toISOString().slice(0, 10);
+
+    // Load bank transactions for payment verification (second line after Scout)
     const bankTxByCompany = {};
     const bankSnap = await db.collection('bank_transactions').get();
     for (const doc of bankSnap.docs) {
@@ -505,52 +507,50 @@ async function runAudit() {
         }
 
         // ── Status determination ──
+        // 1. Scout (reconcilePayment) is the first line — matches payments on bank statement arrival
+        // 2. Repairman audit is the second line — catches what Scout missed
+        // 3. Manual edit (pencil) is the last resort
         const oldStatus = data.status;
 
-        // Check bank transactions for payment
-        let isPaidInBank = false;
-        const companyTxs = bankTxByCompany[data.companyId] || [];
-        const invoiceAmount = parseFloat(data.amount) || 0;
-        if (invoiceAmount > 0 && companyTxs.length > 0) {
-            const vendorClean = (newVendor || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-            const invoiceNum = (data.invoiceId || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (oldStatus !== 'Paid' && oldStatus !== 'Duplicate') {
+            // Check bank transactions for payment (second line after Scout)
+            let isPaidInBank = false;
+            const companyTxs = bankTxByCompany[data.companyId] || [];
+            const invoiceAmount = parseFloat(data.amount) || 0;
+            if (invoiceAmount > 0 && companyTxs.length > 0) {
+                const vendorClean = (newVendor || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                const invoiceNum = (data.invoiceId || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                const invoiceDate = data.dateCreated || '';
 
-            const invoiceDate = data.dateCreated || '';
+                for (const tx of companyTxs) {
+                    const txAmount = parseFloat(tx.amount) || 0;
+                    if (Math.abs(txAmount - invoiceAmount) > 0.50) continue;
+                    if (invoiceDate && tx.date && tx.date < invoiceDate) continue;
 
-            for (const tx of companyTxs) {
-                const txAmount = parseFloat(tx.amount) || 0;
-                if (Math.abs(txAmount - invoiceAmount) > 0.50) continue;
+                    const txVendor = (tx.counterparty || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                    const txRef = (tx.reference || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
-                // Date guard: payment cannot be before invoice was created
-                if (invoiceDate && tx.date && tx.date < invoiceDate) continue;
+                    const refMatch = invoiceNum.length > 3 &&
+                        (txRef.includes(invoiceNum) || invoiceNum.includes(txRef));
+                    const vendorMatch = vendorClean.length > 3 && txVendor.length > 3 &&
+                        (vendorClean.includes(txVendor) || txVendor.includes(vendorClean));
 
-                const txVendor = (tx.counterparty || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-                const txRef = (tx.reference || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-
-                const refMatch = invoiceNum.length > 3 &&
-                    (txRef.includes(invoiceNum) || invoiceNum.includes(txRef));
-
-                const vendorMatch = vendorClean.length > 3 && txVendor.length > 3 &&
-                    (vendorClean.includes(txVendor) || txVendor.includes(vendorClean));
-
-                // If bank tx has a reference with a different invoice number, skip
-                if (vendorMatch && !refMatch && txRef.length > 3) continue;
-
-                if (vendorMatch || refMatch) {
-                    isPaidInBank = true;
-                    break;
+                    if (vendorMatch && !refMatch && txRef.length > 3) continue;
+                    if (vendorMatch || refMatch) { isPaidInBank = true; break; }
                 }
             }
-        }
 
-        const newStatus = determineStatus(oldStatus, data.dueDate, isPaidInBank);
-
-        if (newStatus !== oldStatus) {
-            updates.status = newStatus;
-            updates.previousStatus = oldStatus;
-            updates.statusFixedAt = admin.firestore.FieldValue.serverTimestamp();
-            if (newStatus === 'Paid') paidFound++;
-            if (newStatus === 'Overdue') overdueFound++;
+            if (isPaidInBank) {
+                updates.status = 'Paid';
+                updates.previousStatus = oldStatus;
+                updates.statusFixedAt = admin.firestore.FieldValue.serverTimestamp();
+                paidFound++;
+            } else if (oldStatus === 'Pending' && data.dueDate && data.dueDate < today) {
+                updates.status = 'Overdue';
+                updates.previousStatus = oldStatus;
+                updates.statusFixedAt = admin.firestore.FieldValue.serverTimestamp();
+                overdueFound++;
+            }
         }
 
         // ── Apply updates ──
