@@ -1314,24 +1314,84 @@ async function pollLoop() {
 }
 
 // ─── Automatic Status Sweep ─────────────────────────────────────────────────
-// Runs every 2 hours. Checks all Pending invoices — if dueDate < today → Overdue.
-// Invoice statuses: Pending (due date not passed), Overdue (due date passed), Paid (payment confirmed).
+// Runs every 2 hours. Two jobs:
+//   1. Pending + Overdue → check bank_transactions → Paid
+//   2. Pending → if dueDate < today → Overdue
+//
+// STATUS RULES (3 statuses only):
+//   Paid    — payment found in bank_transactions (amount + vendor/reference match)
+//   Overdue — dueDate < today, not paid
+//   Pending — dueDate >= today or no dueDate, not paid
+//
 async function sweepStatuses() {
     const today = new Date().toISOString().slice(0, 10);
-    const snap = await db.collection('invoices').where('status', '==', 'Pending').get();
-    let fixed = 0;
-    for (const doc of snap.docs) {
+
+    // Load all non-Paid invoices (Pending + Overdue)
+    const [pendingSnap, overdueSnap] = await Promise.all([
+        db.collection('invoices').where('status', '==', 'Pending').get(),
+        db.collection('invoices').where('status', '==', 'Overdue').get(),
+    ]);
+    const allDocs = [...pendingSnap.docs, ...overdueSnap.docs];
+    if (allDocs.length === 0) return;
+
+    // Load bank transactions grouped by company
+    const bankTxByCompany = {};
+    const bankSnap = await db.collection('bank_transactions').get();
+    for (const d of bankSnap.docs) {
+        const tx = d.data();
+        if (!bankTxByCompany[tx.companyId]) bankTxByCompany[tx.companyId] = [];
+        bankTxByCompany[tx.companyId].push(tx);
+    }
+
+    let toPaid = 0, toOverdue = 0;
+
+    for (const doc of allDocs) {
         const data = doc.data();
-        if (data.dueDate && data.dueDate < today) {
+        const invoiceAmount = parseFloat(data.amount) || 0;
+        const invoiceNum = (data.invoiceId || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        const vendorClean = (data.vendorName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        const invoiceDate = data.dateCreated || '';
+        const companyTxs = bankTxByCompany[data.companyId] || [];
+
+        // Check bank transactions for payment
+        let isPaid = false;
+        if (invoiceAmount > 0) {
+            for (const tx of companyTxs) {
+                const txAmount = parseFloat(tx.amount) || 0;
+                if (Math.abs(txAmount - invoiceAmount) > 0.50) continue;
+                if (invoiceDate && tx.date && tx.date < invoiceDate) continue;
+
+                const txVendor = (tx.counterparty || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                const txRef = (tx.reference || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+                const refMatch = invoiceNum.length > 3 &&
+                    (txRef.includes(invoiceNum) || invoiceNum.includes(txRef));
+                const vendorMatch = vendorClean.length > 3 && txVendor.length > 3 &&
+                    (vendorClean.includes(txVendor) || txVendor.includes(vendorClean));
+
+                if (vendorMatch && !refMatch && txRef.length > 3) continue;
+                if (vendorMatch || refMatch) { isPaid = true; break; }
+            }
+        }
+
+        if (isPaid && data.status !== 'Paid') {
             await db.collection('invoices').doc(doc.id).update({
-                status: 'Overdue',
-                previousStatus: 'Pending',
+                status: 'Paid', previousStatus: data.status,
                 statusFixedAt: admin.firestore.FieldValue.serverTimestamp(),
             });
-            fixed++;
+            toPaid++;
+        } else if (!isPaid && data.status === 'Pending' && data.dueDate && data.dueDate < today) {
+            await db.collection('invoices').doc(doc.id).update({
+                status: 'Overdue', previousStatus: 'Pending',
+                statusFixedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+            toOverdue++;
         }
     }
-    if (fixed > 0) console.log(`[Status Sweep] ${fixed} invoice(s) moved Pending → Overdue.`);
+
+    if (toPaid > 0 || toOverdue > 0) {
+        console.log(`[Status Sweep] ${toPaid} → Paid, ${toOverdue} → Overdue.`);
+    }
 }
 
 // Overlap-safe Post-Flight Auditor daemon
