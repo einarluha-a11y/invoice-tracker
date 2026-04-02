@@ -139,7 +139,6 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
             case 'Paid': return 'status-paid';
             case 'Pending': return 'status-pending';
             case 'Overdue': return 'status-overdue';
-            case 'Error': return 'status-needs-review';
             default: return '';
         }
     };
@@ -173,7 +172,7 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
             inv.dateCreated,
             inv.dueDate,
             inv.amount,
-            inv.status === 'Paid' ? t('filters.paid') : inv.status === 'Pending' ? t('filters.pending') : inv.status === 'Error' ? 'Error' : t('filters.overdue')
+            inv.status === 'Paid' ? t('filters.paid') : inv.status === 'Pending' ? t('filters.pending') : t('filters.overdue')
         ]);
 
         const csvContent = [
@@ -253,7 +252,7 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                     inv.dateCreated,
                     inv.dueDate,
                     `${inv.amount} ${inv.currency}`,
-                    inv.status === 'Paid' ? t('filters.paid') : inv.status === 'Pending' ? t('filters.pending') : inv.status === 'Error' ? 'Error' : t('filters.overdue')
+                    inv.status === 'Paid' ? t('filters.paid') : inv.status === 'Pending' ? t('filters.pending') : t('filters.overdue')
                 ];
                 tableRows.push(rowData);
             });
@@ -387,7 +386,7 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                                 <td data-label={t('table.status')} style={{ minWidth: '150px' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                         <span style={{ whiteSpace: 'nowrap' }} className={`status-badge ${getStatusClass(invoice.status)}`}>
-                                            {invoice.status === 'Paid' ? t('filters.paid') : invoice.status === 'Pending' ? t('filters.pending') : invoice.status === 'Error' ? 'Error' : t('filters.overdue')}
+                                            {invoice.status === 'Paid' ? t('filters.paid') : invoice.status === 'Pending' ? t('filters.pending') : t('filters.overdue')}
                                         </span>
                                         {invoice.validationWarnings && invoice.validationWarnings.length > 0 && (
                                             <span className="warning-icon" title={invoice.validationWarnings.join('\n')}>⚠️</span>

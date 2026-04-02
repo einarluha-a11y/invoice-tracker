@@ -165,7 +165,7 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
             if (score < 4) {
                 console.error(`[Accountant Agent] 🛑 BODY-TEXT COMPLETENESS GATE: Rejected — score ${score}/4 (vendor:${hasVendor} amount:${hasAmount} invoiceId:${hasInvoiceId} vat/reg:${hasVat||hasReg})`);
                 warnings.push(`COMPLETENESS_GATE: Body-text record rejected (score ${score}/4). ALL required: vendor name, positive amount, invoice number, and VAT or registration number. Forward the original PDF instead.`);
-                return { ...docAiPayload, fileUrl: null, status: 'Error', validationWarnings: warnings };
+                return null; // Don't save incomplete body-text records
             }
 
             warnings.push("NOTE: Invoice extracted from email body text — no PDF attachment. Passed completeness gate.");
@@ -173,7 +173,7 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
         } else {
             console.error(`[Accountant Agent] 🛑 CRITICAL REJECTION: PDF File URL is missing.`);
             warnings.push("CRITICAL: Original PDF document was lost or failed to upload.");
-            return { ...docAiPayload, fileUrl: null, status: 'Error', validationWarnings: warnings };
+            return null; // Don't save records without files
         }
     }
 
@@ -199,7 +199,7 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
         if (!matchedSomething) {
             console.error(`[Accountant Agent] 🛑 CRITICAL REJECTION: Receiver name '${docAiPayload.receiverName}' does not map to any registered corporate entity in the local matrix. Rejected as SPAM. (Rule 10)`);
             warnings.push("CRITICAL SPAM FILTER: Target Receiver name bears no relation to internal registered companies. Document rejected.");
-            return { ...docAiPayload, fileUrl, status: 'Error', validationWarnings: warnings };
+            return null; // Don't save spam/misrouted records
         } else if (bestMatchedCompanyId && bestMatchedCompanyId !== companyId) {
             console.log(`[Accountant Agent] 🔄 CROSS-COMPANY REROUTING: Document mathematically designated for target ${bestMatchedCompanyId}, overriding incorrect inbound SMTP matrix payload ${companyId}!`);
             companyId = bestMatchedCompanyId; 
@@ -216,7 +216,7 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
     if (isNaN(numericAmount) || numericAmount === 0 || !docAiPayload.vendorName || docAiPayload.vendorName === 'Unknown') {
         console.error(`[Accountant Agent] 🛑 CRITICAL REJECTION: Non-compliant payload (Amount: ${numericAmount}, Vendor: ${docAiPayload.vendorName}). System blocks junk interpretations.`);
         warnings.push("CRITICAL: Extracted amount is zero or Vendor missing. Interpreted as Junk image.");
-        return { ...docAiPayload, fileUrl, status: 'Error', validationWarnings: warnings };
+        return null; // Don't save junk records
     }
 
     const { isPrivatePerson } = require('./core/business_rules.cjs');

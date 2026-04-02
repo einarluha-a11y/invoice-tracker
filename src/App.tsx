@@ -48,7 +48,7 @@ function App() {
     const handleApplyAiFilters = (filters: { searchTerm?: string, status?: string, dateFrom?: string, dateTo?: string, dateFilterType?: 'created' | 'due' }) => {
         if (filters.searchTerm !== undefined) setSearchTerm(filters.searchTerm);
         if (filters.status !== undefined) {
-            const validStatus = ['All', 'Unpaid', 'Pending', 'Paid', 'Overdue', 'Error'].includes(filters.status) ? filters.status : 'All';
+            const validStatus = ['All', 'Unpaid', 'Pending', 'Paid', 'Overdue'].includes(filters.status) ? filters.status : 'All';
             setStatusFilter(validStatus as InvoiceStatus | 'All' | 'Unpaid');
         }
         if (filters.dateFilterType !== undefined && ['created', 'due'].includes(filters.dateFilterType)) {

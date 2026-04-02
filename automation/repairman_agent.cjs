@@ -51,7 +51,7 @@ if (dateArg) { sinceArg = dateArg; untilArg = dateArg; }
 const PROBLEM_STATUSES = [
     'NEEDS_REVIEW', 'Needs Action', 'needs action',
     'OOTEL', 'KARANTIIN', 'Karantine', 'Karantiin', 'Карантин',
-    'ANOMALY_DETECTED', 'Error',
+    'ANOMALY_DETECTED',
 ];
 
 const MAX_REPAIR_ATTEMPTS = 2;

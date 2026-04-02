@@ -935,21 +935,13 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                     // Orchestrator Pre-flight & Audit (Phase 3)
                                     const auditedData = await auditAndProcessInvoice(inv, fileUrl, companyId);
                                     
-                                    if (auditedData.status === 'Duplicate') {
+                                    if (!auditedData) {
+                                        console.warn(`[Accountant Agent] 🛑 Invoice rejected (record not saved). Email stays unseen.`);
+                                        await markStagingResult(stagingId, { status: 'rejected', error: 'Accountant rejected record' });
+                                        // success stays false → email stays UNSEEN for retry
+                                    } else if (auditedData.status === 'Duplicate') {
                                         console.log(`[Accountant Agent] ℹ️ Duplicate detected — skipping.`);
                                         await markStagingResult(stagingId, { status: 'duplicate', resultIds: [] });
-                                        success = true;
-                                    } else if (auditedData.status === 'Error') {
-                                        console.error(`[Accountant Agent] 🛑 Invoice rejected with Error status.`);
-                                        // Safety Net: save as DRAFT instead of discarding
-                                        const warnings = auditedData.validationWarnings || [];
-                                        await safetyNetSave(
-                                            auditedData,
-                                            warnings.join('; ') || 'Accountant Agent returned Error status',
-                                            companyId,
-                                            fileUrl
-                                        ).catch(() => {});
-                                        await markStagingResult(stagingId, { status: 'error', error: warnings.join('; ') || 'Accountant Agent returned Error status' });
                                         success = true;
                                     } else {
                                         try {
@@ -1141,7 +1133,12 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                 // Step B: Completeness Gate (score 4/4) + Cross-company routing
                                 // 'BODY_TEXT_NO_ATTACHMENT' triggers the Completeness Gate in accountant_agent.cjs
                                 const auditedData = await auditAndProcessInvoice(inv, inv.fileUrl || 'BODY_TEXT_NO_ATTACHMENT', companyId);
-                                if (auditedData.status !== 'Duplicate' && auditedData.status !== 'Error') {
+                                if (!auditedData) {
+                                    console.warn(`[Email] Body-text invoice rejected by Accountant.`);
+                                    await saveUid('body_text_rejected');
+                                } else if (auditedData.status === 'Duplicate') {
+                                    await saveUid('body_text_duplicate');
+                                } else {
                                     try {
                                         await writeToFirestore([auditedData]);
                                         console.log(`[Email] Body-text invoice saved: ${auditedData.vendorName} / ${auditedData.invoiceId}`);
@@ -1154,11 +1151,6 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                             throw writeErr;
                                         }
                                     }
-                                } else if (auditedData.status === 'Error') {
-                                    console.warn(`[Email] Body-text invoice rejected by Completeness Gate: ${(auditedData.validationWarnings || []).join('; ')}`);
-                                    await saveUid('body_text_rejected');
-                                } else if (auditedData.status === 'Duplicate') {
-                                    await saveUid('body_text_duplicate');
                                 }
                             } catch (auditErr) {
                                 if (auditErr.message !== 'BANK_STATEMENT_RECONCILIATION_COMPLETE') {
