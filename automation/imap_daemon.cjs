@@ -226,7 +226,7 @@ async function writeToFirestore(dataArray) {
                 return; // CRITICAL: This bypasses both Firestore creation AND Webhook scheduling below 
             }
 
-            let finalStatus = data.status && data.status !== 'Pending' ? data.status : (data.isPaid ? 'Paid' : 'Unpaid');
+            let finalStatus = data.status && data.status !== 'Pending' ? data.status : (data.isPaid ? 'Paid' : 'Pending');
 
             // --- CREDIT INVOICE OFFSET LOGIC ---
             if (numAmount < 0) {

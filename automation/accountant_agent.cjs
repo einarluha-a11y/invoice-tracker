@@ -89,7 +89,7 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
                                 const freshDoc = await t.get(doc.ref);
                                 if (!freshDoc.exists || freshDoc.data().status === 'Paid') return;
                                 t.update(doc.ref, {
-                                    status: 'Unpaid',
+                                    status: 'Pending',
                                     remainingAmount: newRemaining,
                                     payments: admin.firestore.FieldValue.arrayUnion({
                                         amount: payAmt,
