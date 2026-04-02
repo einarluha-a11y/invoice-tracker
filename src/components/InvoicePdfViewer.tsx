@@ -24,11 +24,17 @@ export const InvoicePdfViewer: React.FC<InvoicePdfViewerProps> = ({ url }) => {
 
         const loadFile = async () => {
             try {
-                // Always route through backend proxy — works for all companies, all file types.
-                // Proxy uses Firebase Admin SDK so tokens never expire from the browser's perspective.
-                const apiBase = import.meta.env.VITE_API_URL || '';
-                const proxyUrl = `${apiBase}/api/pdf-proxy?url=${encodeURIComponent(url)}`;
-                const response = await fetch(proxyUrl);
+                // Strategy: try direct Firebase URL first (instant), fall back to proxy if CORS blocks
+                let response: Response;
+                try {
+                    response = await fetch(url, { mode: 'cors' });
+                    if (!response.ok) throw new Error('direct-failed');
+                } catch {
+                    // CORS or network error — use backend proxy
+                    const apiBase = import.meta.env.VITE_API_URL || '';
+                    const proxyUrl = `${apiBase}/api/pdf-proxy?url=${encodeURIComponent(url)}`;
+                    response = await fetch(proxyUrl);
+                }
 
                 if (!response.ok) throw new Error(`Failed to download file (${response.status}).`);
 
