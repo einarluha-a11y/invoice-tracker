@@ -232,6 +232,48 @@ async function validateAndTeach(invoiceData, companyId) {
         }
     }
 
+    // ── 1b. Load vendor profile (auto-learned defaults) ───────────────────
+    let vendorProfile = null;
+    if (invoice.vendorName && !isEmpty(invoice.vendorName) && db) {
+        try {
+            const profileKey = invoice.vendorName.replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 60);
+            const profileDoc = await db.collection('vendor_profiles').doc(profileKey).get();
+            if (profileDoc.exists) {
+                vendorProfile = profileDoc.data();
+            } else {
+                // Try searching by VAT in all profiles
+                const allProfiles = await db.collection('vendor_profiles').get();
+                const invoiceVat = (invoice.supplierVat || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+                for (const p of allProfiles.docs) {
+                    const pd = p.data();
+                    const vatList = (pd.vatNumbers || []).map(v => v.replace(/[^a-zA-Z0-9]/g, '').toLowerCase());
+                    if (invoiceVat.length > 5 && vatList.includes(invoiceVat)) {
+                        vendorProfile = pd;
+                        break;
+                    }
+                }
+            }
+        } catch { /* no profile — that's fine */ }
+    }
+
+    // Apply vendor profile defaults (high confidence — from 2+ manual corrections)
+    if (vendorProfile && vendorProfile.corrections) {
+        const corr = vendorProfile.corrections;
+        if (corr.currency && corr.currency.count >= 2 && invoice.currency !== corr.currency.value) {
+            corrections.push(`Profile: corrected currency ${invoice.currency} → ${corr.currency.value} (${corr.currency.count} edits)`);
+            invoice.currency = corr.currency.value;
+        }
+        if (corr.description && corr.description.count >= 2 && isEmpty(invoice.description)) {
+            corrections.push(`Profile: filled description from vendor profile: ${corr.description.value}`);
+            invoice.description = corr.description.value;
+        }
+        // Vendor name from profile (if Unknown Vendor)
+        if (isEmpty(invoice.vendorName) && vendorProfile.vendorName) {
+            invoice.vendorName = vendorProfile.vendorName;
+            corrections.push(`Profile: filled vendorName from vendor profile: ${vendorProfile.vendorName}`);
+        }
+    }
+
     // ── 2. Load matching examples from invoice_examples ─────────────────────
     let examples = [];
     if (invoice.vendorName && !isEmpty(invoice.vendorName)) {
