@@ -165,9 +165,26 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
         const allText = `${filename} ${invId} ${desc} ${vendor}`;
 
         const NON_INVOICE_PATTERNS = [
+            // Transport documents
             /\bcmr\b/, /\bwaybill\b/, /\bsaateleht\b/, /\bpacking\s*list\b/,
-            /\bdelivery\s*note\b/, /\bpro\s*forma\b/, /\bquotation\b/, /\boffer\b/,
+            /\bdelivery\s*note\b/, /\btransport\s*doc/,
+            // Contracts & agreements
+            /\bcontract\b/, /\bagreement\b/, /\bleping\b/, /\bдоговор\b/, /\bumowa\b/,
+            // Appendices & annexes
+            /\bappendix\b/, /\bannex\b/, /\blisa\b/, /\bприложение\b/, /\bzałącznik\b/,
+            // Insurance
+            /\binsurance\b/, /\bkindlustus\b/, /\bстрахов/,  /\bubezpieczeni/,
+            // Vehicle documents
+            /\btech\s*passport\b/, /\bregistration\s*cert/, /\btehniline\s*pass/,
+            /\bтех\s*паспорт\b/, /\bсвидетельство\s*о\s*рег/,
+            // Driver documents
+            /\bdriver.?licen[sc]e\b/, /\bpassport\b/, /\bpass\b/, /\bjuhilub/,
+            /\bпаспорт\b/, /\bводительск/, /\bprawo\s*jazdy/,
+            // Quotes & offers (not invoices)
+            /\bpro\s*forma\b/, /\bquotation\b/, /\boffer\b/,
             /\bpakkuda\b/, /\bhinnapakkumine\b/,
+            // Power of attorney
+            /\bpower\s*of\s*attorney\b/, /\bvolikiri\b/, /\bдоверенность\b/,
         ];
 
         const isNonInvoice = NON_INVOICE_PATTERNS.some(p => p.test(allText));
