@@ -388,9 +388,6 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                                         <span style={{ whiteSpace: 'nowrap' }} className={`status-badge ${getStatusClass(invoice.status)}`}>
                                             {invoice.status === 'Paid' ? t('filters.paid') : invoice.status === 'Pending' ? t('filters.pending') : t('filters.overdue')}
                                         </span>
-                                        {invoice.validationWarnings && invoice.validationWarnings.length > 0 && (
-                                            <span className="warning-icon" title={invoice.validationWarnings.join('\n')}>⚠️</span>
-                                        )}
                                     </div>
                                 </td>
                                 <td data-label={t('table.actions')}>
