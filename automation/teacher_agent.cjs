@@ -392,48 +392,69 @@ async function validateAndTeach(invoiceData, companyId) {
  *
  * Supported patterns:
  *   'If you see "X", the correct name is "Y".'  → vendor name normalization
- *   'Vendor "X": net-30'  → dueDate = dateCreated + 30
- *   'Vendor "X": description = "Y"'  → default description
+ *   'Vendor "X": net-30'                         → dueDate = dateCreated + N days
+ *   'Vendor "X": description = "Y"'              → default description
+ *   'Vendor "X": currency = "EUR"'               → force currency
  */
 function applyCharterRules(invoice, rulesText) {
     const applied = [];
     const rules = rulesText.split('\n').filter(r => r.trim());
 
+    // Helper: check if this rule's vendor matches the current invoice
+    function vendorMatch(ruleVendor) {
+        if (!invoice.vendorName) return false;
+        return invoice.vendorName.toLowerCase().includes(ruleVendor.toLowerCase());
+    }
+
     for (const rule of rules) {
         // Vendor name correction: If you see "OLD", the correct name is "NEW".
-        const nameMatch = rule.match(/If you see [""](.+?)[""],?\s*the correct name is [""](.+?)[""]/i);
+        const nameMatch = rule.match(/If you see [""\u201c\u201d](.+?)[""\u201c\u201d],?\s*the correct (?:official )?name is [""\u201c\u201d](.+?)[""\u201c\u201d]/i);
         if (nameMatch) {
             const [, oldName, newName] = nameMatch;
-            if (invoice.vendorName && invoice.vendorName.toLowerCase().includes(oldName.toLowerCase())) {
+            if (vendorMatch(oldName)) {
                 invoice.vendorName = newName;
                 applied.push(`Charter: renamed vendor "${oldName}" → "${newName}"`);
             }
+            continue;
         }
 
         // Due date rule: Vendor "X": net-30
-        const dueDateMatch = rule.match(/[Vv]endor\s*[""](.+?)[""]:\s*net-?(\d+)/i);
+        const dueDateMatch = rule.match(/[Vv]endor\s*[""\u201c\u201d](.+?)[""\u201c\u201d]:\s*net-?(\d+)/i);
         if (dueDateMatch) {
             const [, vendor, days] = dueDateMatch;
-            if (invoice.vendorName && invoice.vendorName.toLowerCase().includes(vendor.toLowerCase())) {
-                if (invoice.dateCreated && (!invoice.dueDate || isEmpty(invoice.dueDate))) {
+            if (vendorMatch(vendor) && invoice.dateCreated) {
+                // Apply if dueDate is empty OR equals dateCreated (= not parsed correctly)
+                const dueDateSuspicious = !invoice.dueDate || isEmpty(invoice.dueDate) || invoice.dueDate === invoice.dateCreated;
+                if (dueDateSuspicious) {
                     const d = new Date(invoice.dateCreated);
                     d.setDate(d.getDate() + parseInt(days));
                     invoice.dueDate = d.toISOString().split('T')[0];
                     applied.push(`Charter: set dueDate = dateCreated + ${days} days for "${vendor}"`);
                 }
             }
+            continue;
+        }
+
+        // Currency rule: Vendor "X": currency = "EUR"
+        const currMatch = rule.match(/[Vv]endor\s*[""\u201c\u201d](.+?)[""\u201c\u201d]:\s*currency\s*=\s*[""\u201c\u201d](.+?)[""\u201c\u201d]/i);
+        if (currMatch) {
+            const [, vendor, curr] = currMatch;
+            if (vendorMatch(vendor) && invoice.currency !== curr) {
+                applied.push(`Charter: corrected currency ${invoice.currency} → ${curr} for "${vendor}"`);
+                invoice.currency = curr;
+            }
+            continue;
         }
 
         // Default description: Vendor "X": description = "Y"
-        const descMatch = rule.match(/[Vv]endor\s*[""](.+?)[""]:\s*description\s*=\s*[""](.+?)[""]/i);
+        const descMatch = rule.match(/[Vv]endor\s*[""\u201c\u201d](.+?)[""\u201c\u201d]:\s*description\s*=\s*[""\u201c\u201d](.+?)[""\u201c\u201d]/i);
         if (descMatch) {
             const [, vendor, desc] = descMatch;
-            if (invoice.vendorName && invoice.vendorName.toLowerCase().includes(vendor.toLowerCase())) {
-                if (isEmpty(invoice.description)) {
-                    invoice.description = desc;
-                    applied.push(`Charter: set description = "${desc}" for "${vendor}"`);
-                }
+            if (vendorMatch(vendor) && isEmpty(invoice.description)) {
+                invoice.description = desc;
+                applied.push(`Charter: set description = "${desc}" for "${vendor}"`);
             }
+            continue;
         }
     }
 
