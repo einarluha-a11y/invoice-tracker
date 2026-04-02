@@ -91,7 +91,8 @@ function detectProblems(d) {
                               (!d.supplierRegistration || d.supplierRegistration === 'Not_Found');
     const isStuck = (d.status === 'NEEDS_REVIEW' || d.status === 'DRAFT') && hasMissingFile;
 
-    // Date quality checks
+    // Data quality checks
+    const hasUnknownVendor = isEmpty(d.vendorName);
     const hasSameDates = d.dateCreated && d.dueDate && d.dateCreated === d.dueDate;
     const hasMissingDescription = isEmpty(d.description);
     const hasZeroTaxOnTaxableAmount = Number(d.amount) > 0 && Number(d.subtotalAmount) > 0
@@ -104,6 +105,7 @@ function detectProblems(d) {
     }
     if (hasMissingFile)                      reasons.push('Missing File');
     if (hasZeroAmount)                       reasons.push('Zero Amount');
+    if (hasUnknownVendor)                    reasons.push('Unknown Vendor');
     if (isMissingIdentity && hasMissingFile) reasons.push('Missing VAT & RegNo');
     if (isStuck)                             reasons.push(`Stuck in ${d.status}`);
     if (hasSameDates)                        reasons.push('dueDate = dateCreated (suspicious)');
