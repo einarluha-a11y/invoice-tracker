@@ -207,6 +207,8 @@ async function checkBankTransactions(invoiceId, oldData, newData) {
     const vendorName = (newData.vendorName || oldData.vendorName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
     const invoiceNum = (newData.invoiceId || oldData.invoiceId || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
+    const invoiceDate = newData.dateCreated || oldData.dateCreated || '';
+
     for (const doc of snap.docs) {
         const tx = doc.data();
         const txAmount = parseFloat(tx.amount) || 0;
@@ -214,17 +216,29 @@ async function checkBankTransactions(invoiceId, oldData, newData) {
         // Amount match (±0.50 for bank fees)
         if (Math.abs(txAmount - amount) > 0.50) continue;
 
-        // Vendor name match (fuzzy)
+        // Date guard: payment cannot be before invoice was created
+        if (invoiceDate && tx.date && tx.date < invoiceDate) continue;
+
         const txVendor = (tx.counterparty || '').toLowerCase().replace(/[^a-z0-9]/g, '');
         const txRef = (tx.reference || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
-        const vendorMatch = vendorName.length > 3 && txVendor.length > 3 &&
-            (vendorName.includes(txVendor) || txVendor.includes(vendorName));
+        // Reference match: invoice number appears in bank reference
         const refMatch = invoiceNum.length > 3 &&
             (txRef.includes(invoiceNum) || invoiceNum.includes(txRef));
 
+        // Vendor-only match: amount + vendor match, BUT bank reference must not
+        // contain a DIFFERENT invoice number (prevents matching recurring invoices)
+        const vendorMatch = vendorName.length > 3 && txVendor.length > 3 &&
+            (vendorName.includes(txVendor) || txVendor.includes(vendorName));
+
+        // If bank tx has a reference with a different invoice-like number, skip
+        if (vendorMatch && !refMatch && txRef.length > 3) {
+            // Bank reference contains some ID that is NOT our invoice → different invoice
+            continue;
+        }
+
         if (vendorMatch || refMatch) {
-            console.log(`  [Repairman] 🏦 Found matching bank transaction: €${txAmount} to "${tx.counterparty}" on ${tx.date}`);
+            console.log(`  [Repairman] 🏦 Found matching bank transaction: €${txAmount} to "${tx.counterparty}" ref="${tx.reference}" on ${tx.date}`);
             return 'Paid';
         }
     }
@@ -501,17 +515,26 @@ async function runAudit() {
             const vendorClean = (newVendor || '').toLowerCase().replace(/[^a-z0-9]/g, '');
             const invoiceNum = (data.invoiceId || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
+            const invoiceDate = data.dateCreated || '';
+
             for (const tx of companyTxs) {
                 const txAmount = parseFloat(tx.amount) || 0;
                 if (Math.abs(txAmount - invoiceAmount) > 0.50) continue;
 
+                // Date guard: payment cannot be before invoice was created
+                if (invoiceDate && tx.date && tx.date < invoiceDate) continue;
+
                 const txVendor = (tx.counterparty || '').toLowerCase().replace(/[^a-z0-9]/g, '');
                 const txRef = (tx.reference || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
-                const vendorMatch = vendorClean.length > 3 && txVendor.length > 3 &&
-                    (vendorClean.includes(txVendor) || txVendor.includes(vendorClean));
                 const refMatch = invoiceNum.length > 3 &&
                     (txRef.includes(invoiceNum) || invoiceNum.includes(txRef));
+
+                const vendorMatch = vendorClean.length > 3 && txVendor.length > 3 &&
+                    (vendorClean.includes(txVendor) || txVendor.includes(vendorClean));
+
+                // If bank tx has a reference with a different invoice number, skip
+                if (vendorMatch && !refMatch && txRef.length > 3) continue;
 
                 if (vendorMatch || refMatch) {
                     isPaidInBank = true;
