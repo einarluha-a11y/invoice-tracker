@@ -359,6 +359,90 @@ export const updateInvoice = async (invoiceId: string, data: Partial<Invoice>): 
                 } catch (profileErr) {
                     console.warn(`[Teacher Agent] ⚠️  Vendor profile update failed: ${profileErr}`);
                 }
+
+                // ── Global Learning: extract universal patterns from corrections ──
+                // These patterns apply to ALL invoices, not just this vendor.
+                // Example: "VAT prefix EE → currency EUR" helps every Estonian vendor.
+                try {
+                    const vatPrefix = (d.supplierVat || '').replace(/[^A-Z]/gi, '').slice(0, 2).toUpperCase();
+                    const globalRulesRef = collection(db!, 'teacher_global_rules');
+
+                    // Pattern 1: VAT country → currency mapping
+                    if (vatPrefix.length === 2 && d.currency) {
+                        const ruleId = `vat_${vatPrefix}_currency`;
+                        const ruleRef = doc(db!, 'teacher_global_rules', ruleId);
+                        const ruleSnap = await getDoc(ruleRef);
+                        const existing = ruleSnap.exists() ? ruleSnap.data() : null;
+
+                        if (existing && existing.value === d.currency) {
+                            await setDoc(ruleRef, { count: (existing.count || 1) + 1, updatedAt: serverTimestamp() }, { merge: true });
+                        } else if (!existing) {
+                            await setDoc(ruleRef, {
+                                type: 'vat_country_currency',
+                                condition: vatPrefix,
+                                field: 'currency',
+                                value: d.currency,
+                                count: 1,
+                                createdAt: serverTimestamp(),
+                                updatedAt: serverTimestamp(),
+                            });
+                        }
+                    }
+
+                    // Pattern 2: dueDate calculation pattern (net-N days) — universal
+                    if (d.dateCreated && d.dueDate && d.dateCreated !== d.dueDate) {
+                        try {
+                            const created = new Date(d.dateCreated);
+                            const due = new Date(d.dueDate);
+                            const diffDays = Math.round((due.getTime() - created.getTime()) / (1000 * 60 * 60 * 24));
+                            // Track common payment terms globally
+                            if ([7, 10, 14, 15, 21, 30, 45, 60, 90].includes(diffDays)) {
+                                const ruleId = `payment_term_net${diffDays}`;
+                                const ruleRef = doc(db!, 'teacher_global_rules', ruleId);
+                                const ruleSnap = await getDoc(ruleRef);
+                                const existing = ruleSnap.exists() ? ruleSnap.data() : null;
+                                await setDoc(ruleRef, {
+                                    type: 'common_payment_term',
+                                    field: 'dueDate',
+                                    value: `net-${diffDays}`,
+                                    count: (existing?.count || 0) + 1,
+                                    updatedAt: serverTimestamp(),
+                                }, { merge: true });
+                            }
+                        } catch { /* date parse error */ }
+                    }
+
+                    // Pattern 3: amount vs subtotal relationship (tax rate pattern)
+                    if (d.amount && d.subtotalAmount && d.taxAmount !== undefined) {
+                        const taxRate = d.subtotalAmount > 0
+                            ? Math.round((d.taxAmount / d.subtotalAmount) * 100)
+                            : 0;
+                        if ([0, 5, 9, 10, 13, 20, 21, 22, 25].includes(taxRate)) {
+                            const ruleId = vatPrefix.length === 2
+                                ? `vat_${vatPrefix}_taxrate`
+                                : `taxrate_${taxRate}`;
+                            const ruleRef = doc(db!, 'teacher_global_rules', ruleId);
+                            const ruleSnap = await getDoc(ruleRef);
+                            const existing = ruleSnap.exists() ? ruleSnap.data() : null;
+
+                            if (existing && existing.value === taxRate) {
+                                await setDoc(ruleRef, { count: (existing.count || 1) + 1, updatedAt: serverTimestamp() }, { merge: true });
+                            } else if (!existing) {
+                                await setDoc(ruleRef, {
+                                    type: 'vat_country_taxrate',
+                                    condition: vatPrefix || 'unknown',
+                                    field: 'taxRate',
+                                    value: taxRate,
+                                    count: 1,
+                                    createdAt: serverTimestamp(),
+                                    updatedAt: serverTimestamp(),
+                                });
+                            }
+                        }
+                    }
+                } catch (globalErr) {
+                    console.warn(`[Teacher Agent] ⚠️  Global pattern update failed: ${globalErr}`);
+                }
             }
         }
     } catch (teachErr) {

@@ -232,7 +232,77 @@ async function validateAndTeach(invoiceData, companyId) {
         }
     }
 
-    // ── 1b. Load vendor profile (auto-learned defaults) ───────────────────
+    // ── 1b. Apply global rules (universal patterns learned from ALL corrections) ──
+    if (db) {
+        try {
+            const vatPrefix = (invoice.supplierVat || '').replace(/[^A-Z]/gi, '').slice(0, 2).toUpperCase();
+
+            // Global rule: VAT country → currency
+            if (vatPrefix.length === 2) {
+                const ruleDoc = await db.collection('teacher_global_rules').doc(`vat_${vatPrefix}_currency`).get();
+                if (ruleDoc.exists) {
+                    const rule = ruleDoc.data();
+                    if (rule.count >= 2 && rule.value && invoice.currency !== rule.value) {
+                        corrections.push(`Global rule: VAT ${vatPrefix} → currency ${invoice.currency} → ${rule.value} (${rule.count} edits)`);
+                        invoice.currency = rule.value;
+                    }
+                }
+            }
+
+            // Global rule: most common payment term (fallback when dueDate is missing/wrong)
+            if (invoice.dateCreated && (!invoice.dueDate || isEmpty(invoice.dueDate) || invoice.dueDate === invoice.dateCreated)) {
+                // Find the most popular payment term
+                const termsSnap = await db.collection('teacher_global_rules')
+                    .where('type', '==', 'common_payment_term')
+                    .get();
+                if (!termsSnap.empty) {
+                    let bestTerm = null;
+                    let bestCount = 0;
+                    termsSnap.forEach(d => {
+                        const data = d.data();
+                        if (data.count > bestCount) { bestCount = data.count; bestTerm = data; }
+                    });
+                    // Only apply if enough evidence (5+ occurrences) and no vendor-specific rule
+                    if (bestTerm && bestCount >= 5) {
+                        const days = parseInt(bestTerm.value.replace('net-', ''));
+                        if (days > 0) {
+                            const d = new Date(invoice.dateCreated);
+                            d.setDate(d.getDate() + days);
+                            invoice.dueDate = d.toISOString().split('T')[0];
+                            corrections.push(`Global rule: fallback dueDate = dateCreated + ${days} days (most common term, ${bestCount} invoices)`);
+                        }
+                    }
+                }
+            }
+
+            // Global rule: VAT country → expected tax rate (validation, not override)
+            if (vatPrefix.length === 2 && invoice.amount > 0 && invoice.subtotalAmount > 0) {
+                const taxRuleDoc = await db.collection('teacher_global_rules').doc(`vat_${vatPrefix}_taxrate`).get();
+                if (taxRuleDoc.exists) {
+                    const rule = taxRuleDoc.data();
+                    if (rule.count >= 3 && rule.value > 0) {
+                        const actualRate = invoice.subtotalAmount > 0
+                            ? Math.round((invoice.taxAmount / invoice.subtotalAmount) * 100)
+                            : 0;
+                        if (actualRate === 0 && rule.value > 0 && invoice.taxAmount === 0) {
+                            // DocAI missed the tax — calculate from expected rate
+                            const expectedTax = parseFloat((invoice.subtotalAmount * rule.value / 100).toFixed(2));
+                            const expectedTotal = parseFloat((invoice.subtotalAmount + expectedTax).toFixed(2));
+                            // Only apply if calculated total matches actual amount
+                            if (Math.abs(expectedTotal - invoice.amount) < 0.10) {
+                                invoice.taxAmount = expectedTax;
+                                corrections.push(`Global rule: calculated tax ${expectedTax} (${rule.value}% for ${vatPrefix}, ${rule.count} samples)`);
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (globalErr) {
+            console.warn(`[Teacher] Global rules error: ${globalErr.message}`);
+        }
+    }
+
+    // ── 1c. Load vendor profile (auto-learned defaults) ─────────────────────
     let vendorProfile = null;
     if (invoice.vendorName && !isEmpty(invoice.vendorName) && db) {
         try {
