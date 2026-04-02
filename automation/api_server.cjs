@@ -17,6 +17,10 @@ app.get('/', (req, res) => {
     res.send('🤖 Invoice Automation Bot is Active & Running!');
 });
 
+app.get('/health', (req, res) => {
+    res.json({ status: 'ok', uptime: Math.floor(process.uptime()), timestamp: new Date().toISOString() });
+});
+
 app.listen(PORT, () => {
     console.log(`[Web] Express server listening on port ${PORT} (Webhook API & Chat & Healthchecks).`);
 });
