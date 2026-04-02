@@ -11,6 +11,7 @@ interface InvoiceModalProps {
 export function InvoiceModal({ invoice, onClose, onSave }: InvoiceModalProps) {
     const { t } = useTranslation();
     const [vendor, setVendor] = useState(invoice?.vendor || '');
+    const [invoiceNumber, setInvoiceNumber] = useState(invoice?.invoiceId || '');
     const [description, setDescription] = useState(invoice?.description || '');
     const [amount, setAmount] = useState(invoice?.amount?.toString() || '');
     const [currency, setCurrency] = useState(invoice?.currency || 'EUR');
@@ -32,6 +33,7 @@ export function InvoiceModal({ invoice, onClose, onSave }: InvoiceModalProps) {
         try {
             await onSave(invoice.id, {
                 vendor,
+                invoiceId: invoiceNumber,
                 description,
                 amount: parseFloat(amount) || 0,
                 currency,
@@ -93,6 +95,14 @@ export function InvoiceModal({ invoice, onClose, onSave }: InvoiceModalProps) {
                             <label style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
                                 <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>{t('modal.vendor')}</span>
                                 <input type="text" value={vendor} onChange={e => setVendor(e.target.value)} required
+                                    className="settings-input"
+                                    style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 'var(--radius-md)', padding: '0.8rem 1rem', color: '#fff', transition: 'all 0.2s', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.1)' }}
+                                />
+                            </label>
+
+                            <label style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>Arve nr</span>
+                                <input type="text" value={invoiceNumber} onChange={e => setInvoiceNumber(e.target.value)}
                                     className="settings-input"
                                     style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 'var(--radius-md)', padding: '0.8rem 1rem', color: '#fff', transition: 'all 0.2s', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.1)' }}
                                 />

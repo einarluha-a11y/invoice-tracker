@@ -295,11 +295,10 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
             }
         }
 
-        // Final state after enrichment attempt
+        // Final state after enrichment attempt — missing VAT/Reg is NOT an error, leave empty for manual fill
         if (!docAiPayload.supplierRegistration || docAiPayload.supplierRegistration === "Not_Found" || docAiPayload.supplierRegistration === "NOT_FOUND_ON_INVOICE" || String(docAiPayload.supplierRegistration).trim() === "") {
-            docAiPayload.supplierRegistration = "Not_Found";
-            warnings.push("CRITICAL: Supplier Registration Number is missing from the physical document and could not be found in official sources.");
-            systemStatus = 'Needs Action';
+            docAiPayload.supplierRegistration = "";
+            warnings.push("INFO: Supplier Registration Number not found — can be filled manually.");
         }
 
         // Missing VAT is only a CRITICAL issue if the invoice actually charges VAT (taxAmount > 0).
@@ -307,15 +306,8 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
         // legitimately have no VAT number — do not quarantine them for this.
         const invoiceChargesVat = docAiPayload.taxAmount && parseFloat(docAiPayload.taxAmount) > 0;
         if (!docAiPayload.supplierVat || docAiPayload.supplierVat === "Not_Found" || docAiPayload.supplierVat === "NOT_FOUND_ON_INVOICE" || String(docAiPayload.supplierVat).trim() === "") {
-            docAiPayload.supplierVat = "Not_Found";
-            if (invoiceChargesVat) {
-                // Charging VAT but no VAT registration number → genuine compliance issue
-                warnings.push("CRITICAL: Supplier VAT Number is missing but invoice charges VAT. Could not be found in official sources.");
-                systemStatus = 'Needs Action';
-            } else {
-                // No VAT on invoice — supplier may be VAT-exempt. Log as INFO only.
-                warnings.push("INFO: Supplier VAT not found (invoice appears to be VAT-exempt — no tax amount charged).");
-            }
+            docAiPayload.supplierVat = "";
+            warnings.push("INFO: Supplier VAT not found — can be filled manually.");
         }
     }
 

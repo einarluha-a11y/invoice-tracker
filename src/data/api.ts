@@ -173,6 +173,7 @@ export const updateInvoice = async (invoiceId: string, data: Partial<Invoice>): 
     // Map frontend Invoice fields back to DB fields
     const updateData: any = {};
     if (data.vendor !== undefined) updateData.vendorName = data.vendor;
+    if (data.invoiceId !== undefined) updateData.invoiceId = data.invoiceId;
     if (data.amount !== undefined) updateData.amount = data.amount;
     if (data.currency !== undefined) updateData.currency = data.currency;
     if (data.dateCreated !== undefined) updateData.dateCreated = data.dateCreated;
