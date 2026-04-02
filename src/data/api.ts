@@ -19,9 +19,9 @@ export const parseStatus = (rawStatus: string, parsedDueDate?: string): InvoiceS
     const normalized = rawStatus.toLowerCase().trim();
     // Error/NEEDS_REVIEW → Pending (Error status removed from system)
     if (normalized === 'needs_review' || rawStatus === 'NEEDS_REVIEW' || normalized === 'needs action' || normalized === 'error') return 'Pending';
-    if (normalized === 'paid' || normalized === 'оплачен') return 'Paid';
-    if (normalized === 'overdue' || normalized === 'просрочен') return 'Overdue';
-    // 'ootel' (Estonian for "waiting") is treated as Pending, not quarantine
+    if (normalized === 'paid' || normalized === 'оплачен' || normalized === 'makstud') return 'Paid';
+    if (normalized === 'overdue' || normalized === 'просрочен' || normalized.includes('maksetähtaja') || normalized.includes('ületanud')) return 'Overdue';
+    if (normalized === 'ootel' || normalized === 'pending') return 'Pending';
 
     // Auto-infer status based on due date if not explicitly paid or overdue
     if (parsedDueDate) {

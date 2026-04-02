@@ -266,9 +266,9 @@ app.post('/api/reprocess-invoice', rateLimit(10, 60_000), async (req, res) => {
         if (Array.isArray(fresh.lineItems) && fresh.lineItems.length > 0)   patch.lineItems = fresh.lineItems;
         if (fresh.validationWarnings) patch.validationWarnings = fresh.validationWarnings;
 
-        // Fix status: if record was stuck as Error, promote to OOTEL
+        // Fix status: if record was stuck as Error, promote to Pending
         if (existing.status === 'Error' || existing.status === 'NEEDS_REVIEW') {
-            patch.status = 'OOTEL';
+            patch.status = 'Pending';
         }
 
         patch.reprocessedAt = admin.firestore.FieldValue.serverTimestamp();

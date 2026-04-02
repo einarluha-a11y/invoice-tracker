@@ -397,8 +397,8 @@ async function processInvoiceWithDocAI(buffer, mimeType = 'application/pdf', sup
             partial.subtotalAmount = partial.amount;
         }
 
-        // Determine status — default OOTEL (pending)
-        const status = 'OOTEL';
+        // Determine status — default Pending (Ootel)
+        const status = 'Pending';
 
         // --- Validation warnings ---
         const validationWarnings = [];
