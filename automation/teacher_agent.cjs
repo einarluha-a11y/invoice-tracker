@@ -87,6 +87,58 @@ async function loadExamples(vendorFilter = null) {
     return docs;
 }
 
+/**
+ * Smart example lookup: search by VAT number, vendor patterns, or registration code.
+ * Used when vendorName is "Unknown Vendor" or empty — the name-based search won't help,
+ * but the VAT/RegNo from the PDF can identify the vendor via saved examples.
+ *
+ * @param {object} invoice - Invoice data with supplierVat, supplierRegistration, etc.
+ * @returns {Promise<object[]>} Matching examples
+ */
+async function findExamplesByIdentifiers(invoice) {
+    if (!db) return [];
+    const snap = await db.collection(COLLECTION).get();
+    const allExamples = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const matches = [];
+
+    const invoiceVat = (invoice.supplierVat || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+    const invoiceReg = (invoice.supplierRegistration || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+
+    for (const ex of allExamples) {
+        const gt = ex.groundTruth || {};
+
+        // Match by VAT number
+        if (invoiceVat.length > 5) {
+            const exVat = (gt.supplierVat || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+            if (exVat.length > 5 && exVat === invoiceVat) {
+                matches.push(ex);
+                continue;
+            }
+        }
+
+        // Match by registration code
+        if (invoiceReg.length > 4) {
+            const exReg = (gt.supplierRegistration || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+            if (exReg.length > 4 && exReg === invoiceReg) {
+                matches.push(ex);
+                continue;
+            }
+        }
+
+        // Match by vendorPatterns (saved from manual edits on dashboard)
+        if (ex.vendorPatterns && Array.isArray(ex.vendorPatterns) && !isEmpty(invoice.vendorName)) {
+            const invName = invoice.vendorName.toLowerCase();
+            for (const pattern of ex.vendorPatterns) {
+                if (pattern && invName.includes(pattern.toLowerCase())) {
+                    matches.push(ex);
+                    break;
+                }
+            }
+        }
+    }
+    return matches;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 //  MODE 3 — FEW-SHOT EXAMPLES (exported for document_ai_service.cjs)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -188,6 +240,16 @@ async function validateAndTeach(invoiceData, companyId) {
         } catch { /* no examples — that's fine */ }
     }
 
+    // ── 2b. Smart fallback: search by VAT/RegNo if name search found nothing ──
+    if (examples.length === 0) {
+        try {
+            examples = await findExamplesByIdentifiers(invoice);
+            if (examples.length > 0) {
+                console.log(`[Teacher] 🔍 Found ${examples.length} example(s) by VAT/RegNo/patterns match`);
+            }
+        } catch { /* no match — proceed without examples */ }
+    }
+
     // ── 3. Fill missing fields from examples ────────────────────────────────
     if (examples.length > 0) {
         // Use the most recent example for this vendor
@@ -198,6 +260,12 @@ async function validateAndTeach(invoiceData, companyId) {
         })[0];
 
         const gt = best.groundTruth || {};
+
+        // Vendor name: if Scout returned "Unknown Vendor" but example knows the name, use it
+        if (isEmpty(invoice.vendorName) && gt.vendorName && !isEmpty(gt.vendorName)) {
+            invoice.vendorName = gt.vendorName;
+            corrections.push(`Filled vendorName from example (matched by VAT/RegNo): ${gt.vendorName}`);
+        }
 
         // Static vendor fields — always copy from example if Scout missed them
         const STATIC_FIELDS = ['supplierVat', 'supplierRegistration', 'currency'];
@@ -215,7 +283,7 @@ async function validateAndTeach(invoiceData, companyId) {
         }
 
         // Vendor name normalization: if example has the canonical name, use it
-        if (invoice.vendorName && gt.vendorName) {
+        if (invoice.vendorName && gt.vendorName && !isEmpty(invoice.vendorName)) {
             const scoutNorm = invoice.vendorName.toLowerCase().replace(/[^a-z0-9]/g, '');
             const exNorm = gt.vendorName.toLowerCase().replace(/[^a-z0-9]/g, '');
             if (scoutNorm.includes(exNorm) || exNorm.includes(scoutNorm)) {
@@ -642,4 +710,4 @@ if (require.main === module) {
 }
 
 // Exports: pipeline function + few-shot helper + example management
-module.exports = { validateAndTeach, getFewShotExamples, loadExamples, saveExample };
+module.exports = { validateAndTeach, getFewShotExamples, loadExamples, saveExample, findExamplesByIdentifiers };
