@@ -136,6 +136,22 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
         } catch(err) {
             console.error(err);
         }
+        // ── Save transaction to bank_transactions archive ──────────────
+        try {
+            await db.collection('bank_transactions').add({
+                companyId,
+                date: docAiPayload.dateCreated || null,
+                amount: payAmt,
+                reference: docAiPayload.paymentReference || '',
+                counterparty: docAiPayload.vendorName || '',
+                matchedInvoiceId: matched ? 'matched_inline' : null,
+                source: 'accountant_interceptor',
+                savedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+        } catch (archiveErr) {
+            console.warn(`[Accountant] Failed to archive bank transaction: ${archiveErr.message}`);
+        }
+
         throw new Error("BANK_STATEMENT_RECONCILIATION_COMPLETE");
     }
 

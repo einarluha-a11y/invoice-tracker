@@ -182,6 +182,55 @@ async function getOriginalFile(invoiceData) {
     return null;
 }
 
+// ─── Bank Transaction Check ─────────────────────────────────────────────────
+
+/**
+ * Check bank_transactions archive for a matching payment.
+ * Matches by: amount (±0.50), vendor name (fuzzy), date range (±60 days from invoice date).
+ * Returns 'Paid' if found, null otherwise.
+ */
+async function checkBankTransactions(invoiceId, oldData, newData) {
+    const amount = parseFloat(newData.amount || oldData.amount) || 0;
+    if (amount <= 0) return null;
+
+    const companyId = oldData.companyId;
+    if (!companyId) return null;
+
+    // Query transactions for this company
+    const snap = await db.collection('bank_transactions')
+        .where('companyId', '==', companyId)
+        .get();
+
+    if (snap.empty) return null;
+
+    const vendorName = (newData.vendorName || oldData.vendorName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const invoiceNum = (newData.invoiceId || oldData.invoiceId || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+    for (const doc of snap.docs) {
+        const tx = doc.data();
+        const txAmount = parseFloat(tx.amount) || 0;
+
+        // Amount match (±0.50 for bank fees)
+        if (Math.abs(txAmount - amount) > 0.50) continue;
+
+        // Vendor name match (fuzzy)
+        const txVendor = (tx.counterparty || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        const txRef = (tx.reference || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+        const vendorMatch = vendorName.length > 3 && txVendor.length > 3 &&
+            (vendorName.includes(txVendor) || txVendor.includes(vendorName));
+        const refMatch = invoiceNum.length > 3 &&
+            (txRef.includes(invoiceNum) || invoiceNum.includes(txRef));
+
+        if (vendorMatch || refMatch) {
+            console.log(`  [Repairman] 🏦 Found matching bank transaction: €${txAmount} to "${tx.counterparty}" on ${tx.date}`);
+            return 'Paid';
+        }
+    }
+
+    return null;
+}
+
 // ─── Core Repair Function ───────────────────────────────────────────────────
 
 /**
@@ -259,6 +308,17 @@ async function repairInvoice(invoiceId, invoiceData) {
     // Set status based on Teacher approval
     if (!isManual) {
         updates.status = teacherResult.approved ? 'Pending' : 'Needs Action';
+    }
+
+    // ── Check bank_transactions archive for payment status ──────────
+    try {
+        const paymentStatus = await checkBankTransactions(invoiceId, invoiceData, newData);
+        if (paymentStatus === 'Paid') {
+            updates.status = 'Paid';
+            console.log(`  [Repairman] 🏦 Payment found in bank_transactions archive → status = Paid`);
+        }
+    } catch (btErr) {
+        console.warn(`  [Repairman] bank_transactions check failed: ${btErr.message}`);
     }
 
     // Teacher corrections metadata

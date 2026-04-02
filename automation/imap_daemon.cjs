@@ -678,6 +678,26 @@ async function reconcilePayment(reference, description, paidAmount, totalBankDra
             console.log(`[Reconciliation] No pending invoice match for payment €${paidAmount} (Ref: ${reference}, Desc: ${description})`);
         }
 
+        // ── Save transaction to bank_transactions archive ──────────────
+        try {
+            await db.collection('bank_transactions').add({
+                companyId: companyId || null,
+                date: paymentDateStr || null,
+                amount: paidAmount,
+                totalBankDrain: totalBankDrain || paidAmount,
+                bankFee: bankFee || 0,
+                reference: reference || '',
+                counterparty: description || '',
+                foreignAmount: foreignAmount || null,
+                foreignCurrency: foreignCurrency || null,
+                matchedInvoiceId: matchedDoc ? matchedDoc.id : null,
+                matchedInvoiceNumber: matchedDoc ? matchedDoc.data().invoiceId : null,
+                savedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+        } catch (archiveErr) {
+            console.warn(`[Reconciliation] Failed to archive transaction: ${archiveErr.message}`);
+        }
+
     } catch (err) {
         console.error('[Reconciliation Error]', err);
     }
