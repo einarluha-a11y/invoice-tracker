@@ -1313,14 +1313,36 @@ async function pollLoop() {
     }
 }
 
+// ─── Automatic Status Sweep ─────────────────────────────────────────────────
+// Runs every 2 hours. Checks all Pending invoices — if dueDate < today → Overdue.
+// Invoice statuses: Pending (due date not passed), Overdue (due date passed), Paid (payment confirmed).
+async function sweepStatuses() {
+    const today = new Date().toISOString().slice(0, 10);
+    const snap = await db.collection('invoices').where('status', '==', 'Pending').get();
+    let fixed = 0;
+    for (const doc of snap.docs) {
+        const data = doc.data();
+        if (data.dueDate && data.dueDate < today) {
+            await db.collection('invoices').doc(doc.id).update({
+                status: 'Overdue',
+                previousStatus: 'Pending',
+                statusFixedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+            fixed++;
+        }
+    }
+    if (fixed > 0) console.log(`[Status Sweep] ${fixed} invoice(s) moved Pending → Overdue.`);
+}
+
 // Overlap-safe Post-Flight Auditor daemon
 console.log('Dashboard Auditor Scheduled. Sweeping database every 2 hours...');
 async function auditLoop() {
     // Initial delay so it doesn't run concurrently with the first IMAP poll
-    await new Promise(resolve => setTimeout(resolve, 60000)); 
+    await new Promise(resolve => setTimeout(resolve, 60000));
     while (true) {
         try {
             await runDashboardAudit();
+            await sweepStatuses();
         } catch (err) {
             console.error('[Audit Loop Error] Critical failure in Auditor daemon:', err.message);
         }
