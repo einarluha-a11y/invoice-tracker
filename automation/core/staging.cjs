@@ -107,4 +107,78 @@ async function listStagedDocuments({ companyId = null, status = null, limit = 50
     return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
-module.exports = { stageDocument, markStagingResult, getStagedDocument, listStagedDocuments };
+// ─── Repair helpers ──────────────────────────────────────────────────────────
+
+const REPAIR_LOG_COLLECTION = 'repair_log';
+
+/**
+ * Write a repair action to the repair_log collection for audit trail.
+ */
+async function logRepair({ deletedDocId, invoiceId, vendorName, reason, stagingId, messageUid, mode }) {
+    try {
+        await db.collection(REPAIR_LOG_COLLECTION).add({
+            deletedDocId:  deletedDocId || null,
+            invoiceId:     invoiceId || null,
+            vendorName:    vendorName || null,
+            reason:        reason || '',
+            stagingId:     stagingId || null,
+            messageUid:    messageUid || null,
+            mode:          mode || 'full',
+            timestamp:     admin.firestore.FieldValue.serverTimestamp(),
+        });
+    } catch (err) {
+        console.warn(`[RepairLog] ⚠️  Could not write repair log: ${err.message}`);
+    }
+}
+
+/**
+ * Increment repairAttempts counter on a staging document.
+ * Returns the new count, or null if stagingId is missing/invalid.
+ */
+async function incrementRepairAttempts(stagingId) {
+    if (!stagingId) return null;
+    try {
+        const ref = db.collection(COLLECTION).doc(stagingId);
+        await ref.update({
+            repairAttempts: admin.firestore.FieldValue.increment(1),
+        });
+        const snap = await ref.get();
+        return snap.exists ? (snap.data().repairAttempts || 1) : null;
+    } catch (err) {
+        console.warn(`[Staging] ⚠️  Could not increment repairAttempts for ${stagingId}: ${err.message}`);
+        return null;
+    }
+}
+
+/**
+ * Get current repairAttempts for a staging document (0 if not set).
+ */
+async function getRepairAttempts(stagingId) {
+    if (!stagingId) return 0;
+    try {
+        const doc = await db.collection(COLLECTION).doc(stagingId).get();
+        return doc.exists ? (doc.data().repairAttempts || 0) : 0;
+    } catch {
+        return 0;
+    }
+}
+
+/**
+ * Mark a staging document as pending repair (so imap_daemon knows re-processing is expected).
+ */
+async function markRepairPending(stagingId) {
+    if (!stagingId) return;
+    try {
+        await db.collection(COLLECTION).doc(stagingId).update({
+            processingStatus: 'repair_pending',
+            processedAt:      admin.firestore.FieldValue.serverTimestamp(),
+        });
+    } catch (err) {
+        console.warn(`[Staging] ⚠️  Could not mark repair_pending for ${stagingId}: ${err.message}`);
+    }
+}
+
+module.exports = {
+    stageDocument, markStagingResult, getStagedDocument, listStagedDocuments,
+    logRepair, incrementRepairAttempts, getRepairAttempts, markRepairPending,
+};

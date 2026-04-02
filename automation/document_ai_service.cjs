@@ -1,4 +1,4 @@
-// document_ai_service.cjs — Google Document AI + Claude fallback extraction engine
+// document_ai_service.cjs — СЛЕДОПЫТ (Scout Agent)
 //
 // =============================================================================
 // ОБЯЗАТЕЛЬНЫЕ ПОЛЯ ИНВОЙСА (11 штук) — все должны быть заполнены перед записью
@@ -19,14 +19,12 @@
 //
 // ЭТАПЫ ИЗВЛЕЧЕНИЯ:
 //   Шаг 1: Google Document AI — быстрый, бесплатный, хорошо для стандартных полей
-//   Шаг 2: Regex по тексту DocAI — добирает эстонские метки (KMKR nr, Rg-kood и т.д.)
-//   Шаг 3: Claude fallback — если после шагов 1-2 ещё есть пустые поля,
-//           Claude читает PDF + customAiRules (Устав) и добирает остаток
+//   Шаг 2: Regex по тексту DocAI — добирает эстонские/англ./нем./рус. метки
+//   Пустые поля после шагов 1-2 остаются как есть — Учитель (teacher_agent) их подхватит
 // =============================================================================
 
 const { DocumentProcessorServiceClient } = require('@google-cloud/documentai').v1;
 const { serviceAccount } = require('./core/firebase.cjs');
-const Anthropic = require('@anthropic-ai/sdk');
 
 // --- Google Document AI Setup ---
 const docaiClient = new DocumentProcessorServiceClient({
@@ -37,10 +35,6 @@ const PROJECT_ID = 'invoice-tracker-xyz';
 const LOCATION = 'eu';
 const PROCESSOR_ID = '8087614a36686ed4'; // Invoice Parser
 const PROCESSOR_NAME = `projects/${PROJECT_ID}/locations/${LOCATION}/processors/${PROCESSOR_ID}`;
-
-// --- Anthropic Setup ---
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-const AI_MODEL = process.env.AI_MODEL_EXTRACTION || 'claude-sonnet-4-6';
 
 /**
  * Parse a numeric string into a float, handling European formats (1.200,50 or 1,200.50)
@@ -163,129 +157,88 @@ function applyEstonianRegexFallback(rawText, result) {
 }
 
 /**
- * ШАГ 3: Claude fallback — вызывается только если после DocAI + regex ещё есть пустые поля.
- * Передаёт PDF + Устав (customRules) в Claude и добирает недостающее.
- *
- * @param {Buffer} buffer       — raw file bytes
- * @param {string} mimeType     — MIME type
- * @param {object} result       — частично заполненный объект из DocAI+regex
- * @param {string} customRules  — Устав главного бухгалтера из Firestore (customAiRules)
+ * ШАГ 2b: Расширенный regex — многоязычные паттерны (EN/DE/RU/PL).
+ * Заполняет поля, которые DocAI и эстонский regex не нашли.
  */
-async function fillMissingFieldsWithClaude(buffer, mimeType, result, customRules) {
-    const missing = [];
-    if (!result.description || result.description.trim() === '') missing.push('description (product/service from line items)');
-    if (!result.supplierVat || result.supplierVat === 'Not_Found' || result.supplierVat === '') missing.push('supplierVat (KMKR nr or VAT number)');
-    if (!result.supplierRegistration || result.supplierRegistration === 'Not_Found' || result.supplierRegistration === '') missing.push('supplierRegistration (Rg-kood or company reg. code, digits only)');
-    if (!result.subtotalAmount || result.subtotalAmount === 0) missing.push('subtotalAmount (Summa km-ta / net amount excl. VAT)');
-    if (!result.taxAmount || result.taxAmount === 0) missing.push('taxAmount (Käibemaks / VAT amount)');
-    if (!result.dateCreated) missing.push('dateCreated (YYYY-MM-DD)');
-    if (!result.dueDate) missing.push('dueDate (YYYY-MM-DD)');
+function applyMultiLanguageRegexFallback(rawText, result) {
+    const t = rawText || '';
+    const filled = [];
 
-    if (missing.length === 0) {
-        console.log('[Claude Fallback] All fields present — skipping Claude call.');
-        return result;
+    // description: первая позиция из line items в тексте
+    if (!result.description || result.description.trim() === '') {
+        // Ищем паттерны типа "1. Some product description" или "1 Some product 12.50"
+        const m = t.match(/(?:^|\n)\s*1[.)]\s+(.{5,80})/m)
+               || t.match(/(?:Kirjeldus|Description|Beschreibung|Описание|Opis)[:\s]+(.{5,80})/i);
+        if (m) { result.description = m[1].replace(/\s+/g, ' ').trim(); filled.push('description'); }
     }
 
-    console.log(`[Claude Fallback] 🤖 DocAI+Regex missed ${missing.length} fields: ${missing.join('; ')}. Calling Claude...`);
-
-    try {
-        const base64 = buffer.toString('base64');
-        const isPdf = (mimeType || '').includes('pdf');
-        const contentBlock = isPdf
-            ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } }
-            : { type: 'image',    source: { type: 'base64', media_type: mimeType || 'image/jpeg', data: base64 } };
-
-        const rulesSection = customRules
-            ? `\n\nУСТАВ ГЛАВНОГО БУХГАЛТЕРА (обязательные правила обработки):\n${customRules}\n`
-            : '';
-
-        const response = await anthropic.messages.create({
-            model: AI_MODEL,
-            max_tokens: 1024,
-            messages: [{
-                role: 'user',
-                content: [
-                    contentBlock,
-                    {
-                        type: 'text',
-                        text: `Из этого инвойса нужно извлечь ТОЛЬКО следующие пропущенные поля:
-${missing.map(f => `- ${f}`).join('\n')}
-${rulesSection}
-Верни ТОЛЬКО валидный JSON без комментариев. Пример:
-{
-  "description": "PEV-1/4-WD-LED-24 NURKPISTIK -FESTO-",
-  "supplierVat": "EE102076039",
-  "supplierRegistration": "14499687",
-  "subtotalAmount": 33.24,
-  "taxAmount": 7.98,
-  "dateCreated": "2026-04-01",
-  "dueDate": "2026-04-15"
-}
-
-Правила:
-- description: товар/услуга из первой строки позиции инвойса
-- supplierVat: KMKR nr или VAT number поставщика (формат EE + цифры)
-- supplierRegistration: Rg-kood или registration code (только цифры)
-- subtotalAmount: сумма БЕЗ НДС (Summa km-ta / Net amount)
-- taxAmount: сумма НДС (Käibemaks / Tax amount)
-- dateCreated: дата выставления счета (строго формат YYYY-MM-DD)
-- dueDate: дата оплаты/срока счета (строго формат YYYY-MM-DD)
-- Если поле не найдено с уверенностью — верни null для этого поля`
-                    }
-                ]
-            }]
-        });
-
-        const text = (response.content[0].text || '').trim()
-            .replace(/^```json\s*/i, '').replace(/\s*```$/, '');
-        const json = JSON.parse(text);
-
-        // Merge: перезаписываем только пустые/Not_Found поля
-        const merged = [];
-        if (json.description && (!result.description || result.description.trim() === '')) {
-            result.description = json.description; merged.push('description');
-        }
-        if (json.supplierVat && (!result.supplierVat || result.supplierVat === 'Not_Found' || result.supplierVat === '')) {
-            result.supplierVat = json.supplierVat; merged.push('supplierVat');
-        }
-        if (json.supplierRegistration && (!result.supplierRegistration || result.supplierRegistration === 'Not_Found' || result.supplierRegistration === '')) {
-            result.supplierRegistration = json.supplierRegistration; merged.push('supplierRegistration');
-        }
-        if (json.subtotalAmount && (!result.subtotalAmount || result.subtotalAmount === 0)) {
-            result.subtotalAmount = json.subtotalAmount; merged.push('subtotalAmount');
-        }
-        if (json.taxAmount && (!result.taxAmount || result.taxAmount === 0)) {
-            result.taxAmount = json.taxAmount; merged.push('taxAmount');
-        }
-        if (json.dateCreated && !result.dateCreated) {
-            result.dateCreated = json.dateCreated; merged.push('dateCreated');
-        }
-        if (json.dueDate && !result.dueDate) {
-            result.dueDate = json.dueDate; merged.push('dueDate');
-        }
-
-        if (merged.length > 0) {
-            console.log(`[Claude Fallback] ✅ Filled from Claude: ${merged.join(', ')}`);
-        } else {
-            console.log('[Claude Fallback] Claude found nothing new for the missing fields.');
-        }
-
-    } catch (err) {
-        console.warn(`[Claude Fallback] ⚠️  Claude extraction failed: ${err.message}`);
+    // vendorName: fallback from common headers
+    if (!result.vendorName || result.vendorName === 'Unknown Vendor') {
+        const m = t.match(/(?:Tarnija|Müüja|Supplier|Lieferant|Поставщик|Dostawca)[:\s]+(.{3,60})/i);
+        if (m) { result.vendorName = m[1].trim(); filled.push('vendorName'); }
     }
 
+    // currency: extract from text near amounts
+    if (!result.currency || result.currency === 'EUR') {
+        const m = t.match(/\b(USD|GBP|PLN|SEK|NOK|DKK|CHF|CZK|RUB)\b/);
+        if (m) { result.currency = m[1]; filled.push('currency'); }
+    }
+
+    // supplierVat: international formats (LT, LV, PL, DE, FI)
+    if (!result.supplierVat || result.supplierVat === 'Not_Found' || result.supplierVat === '') {
+        const m = t.match(/(?:VAT|PVM|PVN|NIP|USt-?Id|ИНН|IČO)[.\s:№]*\s*([A-Z]{2}\d{6,12})/i)
+               || t.match(/\b([A-Z]{2}\d{8,12})\b/);
+        if (m) { result.supplierVat = m[1]; filled.push('supplierVat'); }
+    }
+
+    // supplierRegistration: international reg. codes
+    if (!result.supplierRegistration || result.supplierRegistration === 'Not_Found' || result.supplierRegistration === '') {
+        const m = t.match(/(?:Reg\.?\s*(?:nr|code|kood|код)|Įmonės\s+kodas|Reģ\.?\s*Nr)[.:\s]+(\d{6,12})/i);
+        if (m) { result.supplierRegistration = m[1]; filled.push('supplierRegistration'); }
+    }
+
+    // dateCreated: international date labels
+    if (!result.dateCreated) {
+        const m = t.match(/(?:Invoice\s+date|Rechnungsdatum|Дата\s+счета|Data\s+faktury)[:\s]+(\d{1,2}[.\/-]\d{1,2}[.\/-]\d{4})/i)
+               || t.match(/(?:Date)[:\s]+(\d{4}-\d{2}-\d{2})/i);
+        if (m) { result.dateCreated = parseDocAiDate(m[1]); if (result.dateCreated) filled.push('dateCreated'); }
+    }
+
+    // dueDate: international labels
+    if (!result.dueDate) {
+        const m = t.match(/(?:Due\s+date|Fällig|Срок\s+оплаты|Termin\s+płatności|Payment\s+due)[:\s]+(\d{1,2}[.\/-]\d{1,2}[.\/-]\d{4})/i)
+               || t.match(/(?:Due|Fällig)[:\s]+(\d{4}-\d{2}-\d{2})/i);
+        if (m) { result.dueDate = parseDocAiDate(m[1]); if (result.dueDate) filled.push('dueDate'); }
+    }
+
+    // subtotalAmount: international labels
+    if (!result.subtotalAmount || result.subtotalAmount === 0) {
+        const m = t.match(/(?:Subtotal|Net\s+amount|Nettosumme|Сумма\s+без\s+НДС|Netto)[:\s]+([\d\s,.]+)/i);
+        if (m) { const v = cleanNum(m[1]); if (v > 0) { result.subtotalAmount = v; filled.push('subtotalAmount'); } }
+    }
+
+    // taxAmount: international labels
+    if (!result.taxAmount || result.taxAmount === 0) {
+        const m = t.match(/(?:VAT\s+amount|Tax|MwSt|НДС|Podatek\s+VAT)[:\s]+(?:\d+%\s+)?([\d\s,.]+)/i);
+        if (m) { const v = cleanNum(m[1]); if (v > 0) { result.taxAmount = v; filled.push('taxAmount'); } }
+    }
+
+    if (filled.length > 0) {
+        console.log(`[Regex Multilang] ✅ Filled from multilingual text: ${filled.join(', ')}`);
+    }
     return result;
 }
 
 /**
- * Main extraction function.
- * Шаг 1: DocAI → Шаг 2: Regex (эстонские метки) → Шаг 3: Claude fallback (с Уставом)
+ * Main extraction function — СЛЕДОПЫТ (Scout Agent).
+ * Шаг 1: DocAI → Шаг 2: Regex (эстонские метки) → Шаг 2b: Regex (многоязычный)
+ * Пустые поля остаются как есть — Учитель (teacher_agent) заполнит из образцов.
  *
  * @param {Buffer} buffer            Raw file bytes (PDF or image)
  * @param {string} mimeType          MIME type, e.g. 'application/pdf'
- * @param {string|null} supervisorCritique  Passed to Claude if present (supervisor retry context)
- * @param {string|null} customRules  Устав главного бухгалтера из Firestore (customAiRules)
- * @param {string|null} vendorHint   Ignored — kept for API compat
+ * @param {string|null} supervisorCritique  Deprecated — kept for API compat
+ * @param {string|null} customRules  Deprecated — kept for API compat
+ * @param {string|null} vendorHint   Deprecated — kept for API compat
  * @returns {Promise<Array>} Array of invoice objects or []
  */
 async function processInvoiceWithDocAI(buffer, mimeType = 'application/pdf', supervisorCritique = null, customRules = null, vendorHint = null) {
@@ -426,8 +379,8 @@ async function processInvoiceWithDocAI(buffer, mimeType = 'application/pdf', sup
         const rawDocText = document.text || '';
         partial = applyEstonianRegexFallback(rawDocText, partial);
 
-        // --- ШАГ 3: Claude fallback for still-missing fields (uses Устав) ---
-        partial = await fillMissingFieldsWithClaude(buffer, mimeType, partial, customRules || supervisorCritique || null);
+        // --- ШАГ 2b: Multilingual regex fallback (EN/DE/RU/PL) ---
+        partial = applyMultiLanguageRegexFallback(rawDocText, partial);
 
         // --- Final fallbacks ---
         // NOTE: Do NOT default dates to today — leave blank if not found, so UI shows "—" instead of wrong date.
@@ -489,4 +442,4 @@ async function processInvoiceWithDocAI(buffer, mimeType = 'application/pdf', sup
     }
 }
 
-module.exports = { processInvoiceWithDocAI };
+module.exports = { processInvoiceWithDocAI, cleanNum, parseDocAiDate, inferDescription };

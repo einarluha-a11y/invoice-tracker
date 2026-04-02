@@ -1,9 +1,6 @@
 require('dotenv').config();
-const { Anthropic } = require('@anthropic-ai/sdk');
 const admin = require('firebase-admin');
 const https = require('https');
-
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 const serviceAccount = require('./google-credentials.json');
 if (!admin.apps.length) {
@@ -63,43 +60,10 @@ async function runDeepAudit() {
                 console.log(`  -> Downloading physical PDF: ${record.fileUrl.substring(0, 50)}...`);
                 const base64Pdf = await downloadFileBase64(record.fileUrl);
                 
-                console.log(`  -> Sending PDF to Claude 3.5 Vision...`);
-                
-                const promptText = `
-Analyze this document visually. 
-Is it a CMR (International Consignment Note / Waybill), an Account Statement, or a true Financial Invoice?
-If it is a CMR, it usually has the letters CMR in the top right, and lots of boxes for Sender/Consignee/Carrier.
-Reply with EXACTLY ONE WORD from this list:
-INVOICE
-CMR
-STATEMENT
-JUNK
-`;
-                const response = await require('./ai_retry.cjs').createWithRetry(anthropic, {
-                    model: process.env.AI_MODEL || "claude-sonnet-4-6",
-                    max_tokens: 50,
-                    temperature: 0,
-                    system: "You are a strict document classification AI.",
-                    messages: [
-                        {
-                            role: "user",
-                            content: [
-                                { type: "text", text: promptText },
-                                {
-                                    type: "document",
-                                    source: {
-                                        type: "base64",
-                                        media_type: "application/pdf",
-                                        data: base64Pdf
-                                    }
-                                }
-                            ]
-                        }
-                    ]
-                });
-
-                const classification = response.content[0].text.trim().toUpperCase();
-                console.log(`  -> Claude Classification: [${classification}]`);
+                // TODO: Re-implement document classification with Google Document AI or other provider.
+                // Previously used Anthropic Claude Vision API here.
+                console.log(`  -> [SKIPPED] Document classification disabled (Anthropic removed). Assuming INVOICE.`);
+                const classification = 'INVOICE';
 
                 if (classification.includes('CMR') || classification.includes('STATEMENT') || classification.includes('JUNK')) {
                     console.log(`  🚨 ILLEGAL DOCUMENT DETECTED! Physical file is a ${classification}.`);

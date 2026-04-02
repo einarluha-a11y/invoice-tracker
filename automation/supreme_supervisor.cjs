@@ -1,3 +1,4 @@
+// DEPRECATED: Supervisor logic has been replaced by Teacher Agent (teacher_agent.cjs).
 /**
  * THE SUPREME SUPERVISOR AGENT
  * This Agent executes purely intellectual, logical reasoning on the final parsed payload.

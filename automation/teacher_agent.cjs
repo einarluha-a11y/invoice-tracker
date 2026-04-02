@@ -87,6 +87,58 @@ async function loadExamples(vendorFilter = null) {
     return docs;
 }
 
+/**
+ * Smart example lookup: search by VAT number, vendor patterns, or registration code.
+ * Used when vendorName is "Unknown Vendor" or empty — the name-based search won't help,
+ * but the VAT/RegNo from the PDF can identify the vendor via saved examples.
+ *
+ * @param {object} invoice - Invoice data with supplierVat, supplierRegistration, etc.
+ * @returns {Promise<object[]>} Matching examples
+ */
+async function findExamplesByIdentifiers(invoice) {
+    if (!db) return [];
+    const snap = await db.collection(COLLECTION).get();
+    const allExamples = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const matches = [];
+
+    const invoiceVat = (invoice.supplierVat || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+    const invoiceReg = (invoice.supplierRegistration || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+
+    for (const ex of allExamples) {
+        const gt = ex.groundTruth || {};
+
+        // Match by VAT number
+        if (invoiceVat.length > 5) {
+            const exVat = (gt.supplierVat || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+            if (exVat.length > 5 && exVat === invoiceVat) {
+                matches.push(ex);
+                continue;
+            }
+        }
+
+        // Match by registration code
+        if (invoiceReg.length > 4) {
+            const exReg = (gt.supplierRegistration || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+            if (exReg.length > 4 && exReg === invoiceReg) {
+                matches.push(ex);
+                continue;
+            }
+        }
+
+        // Match by vendorPatterns (saved from manual edits on dashboard)
+        if (ex.vendorPatterns && Array.isArray(ex.vendorPatterns) && !isEmpty(invoice.vendorName)) {
+            const invName = invoice.vendorName.toLowerCase();
+            for (const pattern of ex.vendorPatterns) {
+                if (pattern && invName.includes(pattern.toLowerCase())) {
+                    matches.push(ex);
+                    break;
+                }
+            }
+        }
+    }
+    return matches;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 //  MODE 3 — FEW-SHOT EXAMPLES (exported for document_ai_service.cjs)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -133,6 +185,350 @@ async function getFewShotExamples(vendorHint = null, maxExamples = 2) {
         console.warn(`[TeacherAgent] ⚠️  Could not load few-shot examples: ${err.message}`);
         return null;
     }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  PIPELINE MODE — validateAndTeach (called by imap_daemon after Scout)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const MANDATORY_FIELDS = [
+    'vendorName', 'invoiceId', 'description', 'amount', 'currency',
+    'dateCreated', 'dueDate', 'supplierVat', 'supplierRegistration',
+    'subtotalAmount', 'taxAmount',
+];
+
+const EMPTY_VALUES = ['', 'Not_Found', 'Unknown Vendor', 'UNKNOWN VENDOR', 'Unknown', null, undefined];
+
+function isEmpty(val) {
+    if (EMPTY_VALUES.includes(val)) return true;
+    if (typeof val === 'number' && val === 0) return true;
+    if (typeof val === 'string' && val.startsWith('Auto-')) return true;
+    return false;
+}
+
+/**
+ * Validates and enriches an invoice extracted by the Scout (DocAI).
+ * Reads the company Charter (customAiRules) and ground-truth examples,
+ * fills missing fields, and applies business rules.
+ *
+ * @param {object} invoiceData - Raw extraction result from processInvoiceWithDocAI()[0]
+ * @param {string} companyId   - Firestore company doc ID
+ * @returns {Promise<{approved: boolean, invoice: object, corrections: string[]}>}
+ */
+async function validateAndTeach(invoiceData, companyId) {
+    const invoice = { ...invoiceData };
+    const corrections = [];
+
+    // ── 1. Load Charter (customAiRules) ──────────────────────────────────────
+    let charterRules = '';
+    if (companyId && db) {
+        try {
+            const companyDoc = await db.collection('companies').doc(companyId).get();
+            if (companyDoc.exists) {
+                charterRules = companyDoc.data().customAiRules || '';
+            }
+        } catch (err) {
+            console.warn(`[Teacher] Could not load Charter: ${err.message}`);
+        }
+    }
+
+    // ── 1b. Apply global rules (universal patterns learned from ALL corrections) ──
+    if (db) {
+        try {
+            const vatPrefix = (invoice.supplierVat || '').replace(/[^A-Z]/gi, '').slice(0, 2).toUpperCase();
+
+            // Global rule: VAT country → currency
+            if (vatPrefix.length === 2) {
+                const ruleDoc = await db.collection('teacher_global_rules').doc(`vat_${vatPrefix}_currency`).get();
+                if (ruleDoc.exists) {
+                    const rule = ruleDoc.data();
+                    if (rule.count >= 2 && rule.value && invoice.currency !== rule.value) {
+                        corrections.push(`Global rule: VAT ${vatPrefix} → currency ${invoice.currency} → ${rule.value} (${rule.count} edits)`);
+                        invoice.currency = rule.value;
+                    }
+                }
+            }
+
+            // Global rule: most common payment term (fallback when dueDate is missing/wrong)
+            if (invoice.dateCreated && (!invoice.dueDate || isEmpty(invoice.dueDate) || invoice.dueDate === invoice.dateCreated)) {
+                // Find the most popular payment term
+                const termsSnap = await db.collection('teacher_global_rules')
+                    .where('type', '==', 'common_payment_term')
+                    .get();
+                if (!termsSnap.empty) {
+                    let bestTerm = null;
+                    let bestCount = 0;
+                    termsSnap.forEach(d => {
+                        const data = d.data();
+                        if (data.count > bestCount) { bestCount = data.count; bestTerm = data; }
+                    });
+                    // Only apply if enough evidence (5+ occurrences) and no vendor-specific rule
+                    if (bestTerm && bestCount >= 5) {
+                        const days = parseInt(bestTerm.value.replace('net-', ''));
+                        if (days > 0) {
+                            const d = new Date(invoice.dateCreated);
+                            d.setDate(d.getDate() + days);
+                            invoice.dueDate = d.toISOString().split('T')[0];
+                            corrections.push(`Global rule: fallback dueDate = dateCreated + ${days} days (most common term, ${bestCount} invoices)`);
+                        }
+                    }
+                }
+            }
+
+            // Global rule: VAT country → expected tax rate (validation, not override)
+            if (vatPrefix.length === 2 && invoice.amount > 0 && invoice.subtotalAmount > 0) {
+                const taxRuleDoc = await db.collection('teacher_global_rules').doc(`vat_${vatPrefix}_taxrate`).get();
+                if (taxRuleDoc.exists) {
+                    const rule = taxRuleDoc.data();
+                    if (rule.count >= 3 && rule.value > 0) {
+                        const actualRate = invoice.subtotalAmount > 0
+                            ? Math.round((invoice.taxAmount / invoice.subtotalAmount) * 100)
+                            : 0;
+                        if (actualRate === 0 && rule.value > 0 && invoice.taxAmount === 0) {
+                            // DocAI missed the tax — calculate from expected rate
+                            const expectedTax = parseFloat((invoice.subtotalAmount * rule.value / 100).toFixed(2));
+                            const expectedTotal = parseFloat((invoice.subtotalAmount + expectedTax).toFixed(2));
+                            // Only apply if calculated total matches actual amount
+                            if (Math.abs(expectedTotal - invoice.amount) < 0.10) {
+                                invoice.taxAmount = expectedTax;
+                                corrections.push(`Global rule: calculated tax ${expectedTax} (${rule.value}% for ${vatPrefix}, ${rule.count} samples)`);
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (globalErr) {
+            console.warn(`[Teacher] Global rules error: ${globalErr.message}`);
+        }
+    }
+
+    // ── 1c. Load vendor profile (auto-learned defaults) ─────────────────────
+    let vendorProfile = null;
+    if (invoice.vendorName && !isEmpty(invoice.vendorName) && db) {
+        try {
+            const profileKey = invoice.vendorName.replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 60);
+            const profileDoc = await db.collection('vendor_profiles').doc(profileKey).get();
+            if (profileDoc.exists) {
+                vendorProfile = profileDoc.data();
+            } else {
+                // Try searching by VAT in all profiles
+                const allProfiles = await db.collection('vendor_profiles').get();
+                const invoiceVat = (invoice.supplierVat || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+                for (const p of allProfiles.docs) {
+                    const pd = p.data();
+                    const vatList = (pd.vatNumbers || []).map(v => v.replace(/[^a-zA-Z0-9]/g, '').toLowerCase());
+                    if (invoiceVat.length > 5 && vatList.includes(invoiceVat)) {
+                        vendorProfile = pd;
+                        break;
+                    }
+                }
+            }
+        } catch { /* no profile — that's fine */ }
+    }
+
+    // Apply vendor profile defaults (high confidence — from 2+ manual corrections)
+    if (vendorProfile && vendorProfile.corrections) {
+        const corr = vendorProfile.corrections;
+        if (corr.currency && corr.currency.count >= 2 && invoice.currency !== corr.currency.value) {
+            corrections.push(`Profile: corrected currency ${invoice.currency} → ${corr.currency.value} (${corr.currency.count} edits)`);
+            invoice.currency = corr.currency.value;
+        }
+        if (corr.description && corr.description.count >= 2 && isEmpty(invoice.description)) {
+            corrections.push(`Profile: filled description from vendor profile: ${corr.description.value}`);
+            invoice.description = corr.description.value;
+        }
+        // Vendor name from profile (if Unknown Vendor)
+        if (isEmpty(invoice.vendorName) && vendorProfile.vendorName) {
+            invoice.vendorName = vendorProfile.vendorName;
+            corrections.push(`Profile: filled vendorName from vendor profile: ${vendorProfile.vendorName}`);
+        }
+    }
+
+    // ── 2. Load matching examples from invoice_examples ─────────────────────
+    let examples = [];
+    if (invoice.vendorName && !isEmpty(invoice.vendorName)) {
+        try {
+            examples = await loadExamples(invoice.vendorName);
+        } catch { /* no examples — that's fine */ }
+    }
+
+    // ── 2b. Smart fallback: search by VAT/RegNo if name search found nothing ──
+    //   When matched by identifiers, we have high confidence this is the same vendor,
+    //   so we trust the example's static fields (currency, VAT, etc.) over DocAI output.
+    let matchedByIdentifiers = false;
+    if (examples.length === 0) {
+        try {
+            examples = await findExamplesByIdentifiers(invoice);
+            if (examples.length > 0) {
+                matchedByIdentifiers = true;
+                console.log(`[Teacher] 🔍 Found ${examples.length} example(s) by VAT/RegNo/patterns match`);
+            }
+        } catch { /* no match — proceed without examples */ }
+    }
+
+    // ── 3. Fill/correct fields from examples ────────────────────────────────
+    if (examples.length > 0) {
+        // Use the most recent example for this vendor
+        const best = examples.sort((a, b) => {
+            const tA = a.updatedAt?._seconds || a.createdAt?._seconds || 0;
+            const tB = b.updatedAt?._seconds || b.createdAt?._seconds || 0;
+            return tB - tA;
+        })[0];
+
+        const gt = best.groundTruth || {};
+
+        // Vendor name: if Scout returned "Unknown Vendor" but example knows the name, use it
+        if (isEmpty(invoice.vendorName) && gt.vendorName && !isEmpty(gt.vendorName)) {
+            invoice.vendorName = gt.vendorName;
+            corrections.push(`Filled vendorName from example (matched by VAT/RegNo): ${gt.vendorName}`);
+        }
+
+        // Static vendor fields: supplierVat, supplierRegistration, currency
+        // - If empty → always fill from example
+        // - If filled but example matched by identifiers → overwrite (example is from manual correction = trusted)
+        const STATIC_FIELDS = ['supplierVat', 'supplierRegistration', 'currency'];
+        for (const field of STATIC_FIELDS) {
+            if (!gt[field] || isEmpty(gt[field])) continue; // example has no value for this field
+
+            if (isEmpty(invoice[field])) {
+                invoice[field] = gt[field];
+                corrections.push(`Filled ${field} from example: ${gt[field]}`);
+            } else if (matchedByIdentifiers && invoice[field] !== gt[field]) {
+                // High-confidence match: example comes from manual correction, trust it
+                corrections.push(`Corrected ${field}: ${invoice[field]} → ${gt[field]} (from verified example)`);
+                invoice[field] = gt[field];
+            }
+        }
+
+        // Description: copy pattern from example if Scout returned empty
+        if (isEmpty(invoice.description) && gt.description && !isEmpty(gt.description)) {
+            invoice.description = gt.description;
+            corrections.push(`Filled description from example: ${gt.description}`);
+        }
+
+        // Vendor name normalization: if example has the canonical name, use it
+        if (invoice.vendorName && gt.vendorName && !isEmpty(invoice.vendorName)) {
+            const scoutNorm = invoice.vendorName.toLowerCase().replace(/[^a-z0-9]/g, '');
+            const exNorm = gt.vendorName.toLowerCase().replace(/[^a-z0-9]/g, '');
+            if (scoutNorm.includes(exNorm) || exNorm.includes(scoutNorm)) {
+                if (invoice.vendorName !== gt.vendorName) {
+                    invoice.vendorName = gt.vendorName;
+                    corrections.push(`Normalized vendorName to: ${gt.vendorName}`);
+                }
+            }
+        }
+
+        // Apply teachingNotes if available (vendor-specific rules)
+        if (best.teachingNotes) {
+            console.log(`[Teacher] Applying teaching notes for ${best.vendorName}: ${best.teachingNotes}`);
+        }
+    }
+
+    // ── 4. Apply Charter rules ──────────────────────────────────────────────
+    if (charterRules) {
+        const rulesApplied = applyCharterRules(invoice, charterRules);
+        corrections.push(...rulesApplied);
+    }
+
+    // ── 5. Math validation: subtotal + tax ≈ amount ─────────────────────────
+    if (invoice.amount > 0 && invoice.subtotalAmount > 0 && invoice.taxAmount >= 0) {
+        const computed = parseFloat((invoice.subtotalAmount + invoice.taxAmount).toFixed(2));
+        if (Math.abs(computed - invoice.amount) > 0.05) {
+            corrections.push(`WARNING: Math mismatch: ${invoice.subtotalAmount} + ${invoice.taxAmount} = ${computed} ≠ ${invoice.amount}`);
+        }
+    }
+
+    // ── 6. Completeness check ───────────────────────────────────────────────
+    const missing = MANDATORY_FIELDS.filter(f => isEmpty(invoice[f]));
+
+    const approved = missing.length === 0;
+
+    if (!approved) {
+        console.log(`[Teacher] ⚠ Missing fields after validation: ${missing.join(', ')}`);
+    }
+    if (corrections.length > 0) {
+        console.log(`[Teacher] ✅ Applied ${corrections.length} correction(s): ${corrections.join('; ')}`);
+    }
+
+    // Attach teacher corrections as metadata
+    invoice.teacherCorrections = corrections;
+
+    return { approved, invoice, corrections };
+}
+
+/**
+ * Apply company-specific rules from customAiRules text.
+ * Rules are stored as free-text in Firestore; we parse known patterns.
+ *
+ * Supported patterns:
+ *   'If you see "X", the correct name is "Y".'  → vendor name normalization
+ *   'Vendor "X": net-30'                         → dueDate = dateCreated + N days
+ *   'Vendor "X": description = "Y"'              → default description
+ *   'Vendor "X": currency = "EUR"'               → force currency
+ */
+function applyCharterRules(invoice, rulesText) {
+    const applied = [];
+    const rules = rulesText.split('\n').filter(r => r.trim());
+
+    // Helper: check if this rule's vendor matches the current invoice
+    function vendorMatch(ruleVendor) {
+        if (!invoice.vendorName) return false;
+        return invoice.vendorName.toLowerCase().includes(ruleVendor.toLowerCase());
+    }
+
+    for (const rule of rules) {
+        // Vendor name correction: If you see "OLD", the correct name is "NEW".
+        const nameMatch = rule.match(/If you see [""\u201c\u201d](.+?)[""\u201c\u201d],?\s*the correct (?:official )?name is [""\u201c\u201d](.+?)[""\u201c\u201d]/i);
+        if (nameMatch) {
+            const [, oldName, newName] = nameMatch;
+            if (vendorMatch(oldName)) {
+                invoice.vendorName = newName;
+                applied.push(`Charter: renamed vendor "${oldName}" → "${newName}"`);
+            }
+            continue;
+        }
+
+        // Due date rule: Vendor "X": net-30
+        const dueDateMatch = rule.match(/[Vv]endor\s*[""\u201c\u201d](.+?)[""\u201c\u201d]:\s*net-?(\d+)/i);
+        if (dueDateMatch) {
+            const [, vendor, days] = dueDateMatch;
+            if (vendorMatch(vendor) && invoice.dateCreated) {
+                // Apply if dueDate is empty OR equals dateCreated (= not parsed correctly)
+                const dueDateSuspicious = !invoice.dueDate || isEmpty(invoice.dueDate) || invoice.dueDate === invoice.dateCreated;
+                if (dueDateSuspicious) {
+                    const d = new Date(invoice.dateCreated);
+                    d.setDate(d.getDate() + parseInt(days));
+                    invoice.dueDate = d.toISOString().split('T')[0];
+                    applied.push(`Charter: set dueDate = dateCreated + ${days} days for "${vendor}"`);
+                }
+            }
+            continue;
+        }
+
+        // Currency rule: Vendor "X": currency = "EUR"
+        const currMatch = rule.match(/[Vv]endor\s*[""\u201c\u201d](.+?)[""\u201c\u201d]:\s*currency\s*=\s*[""\u201c\u201d](.+?)[""\u201c\u201d]/i);
+        if (currMatch) {
+            const [, vendor, curr] = currMatch;
+            if (vendorMatch(vendor) && invoice.currency !== curr) {
+                applied.push(`Charter: corrected currency ${invoice.currency} → ${curr} for "${vendor}"`);
+                invoice.currency = curr;
+            }
+            continue;
+        }
+
+        // Default description: Vendor "X": description = "Y"
+        const descMatch = rule.match(/[Vv]endor\s*[""\u201c\u201d](.+?)[""\u201c\u201d]:\s*description\s*=\s*[""\u201c\u201d](.+?)[""\u201c\u201d]/i);
+        if (descMatch) {
+            const [, vendor, desc] = descMatch;
+            if (vendorMatch(vendor) && isEmpty(invoice.description)) {
+                invoice.description = desc;
+                applied.push(`Charter: set description = "${desc}" for "${vendor}"`);
+            }
+            continue;
+        }
+    }
+
+    return applied;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -458,5 +854,5 @@ if (require.main === module) {
     });
 }
 
-// Export for Mode 3 (document_ai_service.cjs imports this)
-module.exports = { getFewShotExamples };
+// Exports: pipeline function + few-shot helper + example management
+module.exports = { validateAndTeach, getFewShotExamples, loadExamples, saveExample, findExamplesByIdentifiers };

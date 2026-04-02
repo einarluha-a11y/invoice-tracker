@@ -17,7 +17,8 @@ export interface RawInvoiceRow {
 
 export const parseStatus = (rawStatus: string, parsedDueDate?: string): InvoiceStatus => {
     const normalized = rawStatus.toLowerCase().trim();
-    if (normalized === 'needs_review' || rawStatus === 'NEEDS_REVIEW' || normalized === 'needs action' || normalized === 'error') return 'Error';
+    // Error/NEEDS_REVIEW → Pending (Error status removed from system)
+    if (normalized === 'needs_review' || rawStatus === 'NEEDS_REVIEW' || normalized === 'needs action' || normalized === 'error') return 'Pending';
     if (normalized === 'paid' || normalized === 'оплачен') return 'Paid';
     if (normalized === 'overdue' || normalized === 'просрочен') return 'Overdue';
     // 'ootel' (Estonian for "waiting") is treated as Pending, not quarantine
@@ -211,7 +212,7 @@ export const updateInvoice = async (invoiceId: string, data: Partial<Invoice>): 
 
     // ── Teacher Agent: save corrected invoice as ground-truth example ──────────
     // Every manual save via the pencil icon is treated as a verified correction.
-    // This feeds the few-shot learning system in document_ai_service.cjs.
+    // This feeds the few-shot learning system in teacher_agent.cjs.
     // Runs unconditionally — even if no fields were changed — so the Teacher
     // always has an up-to-date record of the human-verified correct state.
     try {
@@ -260,6 +261,189 @@ export const updateInvoice = async (invoiceId: string, data: Partial<Invoice>): 
                 }, { merge: true });
 
                 console.log(`[Teacher Agent] ✅ Ground-truth saved for: ${vendorName} (${safeKey})`);
+
+                // ── Vendor Profile: track correction stats + auto-generate Charter rules ──
+                // After 2+ corrections with the same value → write rule to Charter automatically
+                const AUTO_RULE_THRESHOLD = 2;
+                const profileKey = vendorName.replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 60);
+                const profileRef = doc(db!, 'vendor_profiles', profileKey);
+
+                try {
+                    const profileSnap = await getDoc(profileRef);
+                    const profile = profileSnap.exists() ? profileSnap.data() : {};
+                    const corrections: Record<string, any> = profile.corrections || {};
+                    const vatNumbers: string[] = profile.vatNumbers || [];
+
+                    // Track VAT numbers for this vendor
+                    const currentVat = d.supplierVat || '';
+                    if (currentVat && !vatNumbers.includes(currentVat)) {
+                        vatNumbers.push(currentVat);
+                    }
+
+                    // Track field corrections: {fieldName: {value: "EUR", count: 3}}
+                    const TRACKABLE_FIELDS: Record<string, string> = {
+                        currency:             d.currency ?? '',
+                        description:          d.description ?? '',
+                        supplierVat:          d.supplierVat ?? '',
+                        supplierRegistration: d.supplierRegistration ?? '',
+                    };
+
+                    for (const [field, value] of Object.entries(TRACKABLE_FIELDS)) {
+                        if (!value) continue;
+                        const prev = corrections[field];
+                        if (prev && prev.value === value) {
+                            corrections[field] = { value, count: (prev.count || 1) + 1 };
+                        } else {
+                            corrections[field] = { value, count: 1 };
+                        }
+                    }
+
+                    // Calculate dueDate rule from dateCreated → dueDate pattern
+                    if (d.dateCreated && d.dueDate && d.dateCreated !== d.dueDate) {
+                        try {
+                            const created = new Date(d.dateCreated);
+                            const due = new Date(d.dueDate);
+                            const diffDays = Math.round((due.getTime() - created.getTime()) / (1000 * 60 * 60 * 24));
+                            if (diffDays > 0 && diffDays <= 120) {
+                                const prev = corrections['dueDateRule'];
+                                const ruleVal = `net-${diffDays}`;
+                                if (prev && prev.value === ruleVal) {
+                                    corrections['dueDateRule'] = { value: ruleVal, count: (prev.count || 1) + 1 };
+                                } else {
+                                    corrections['dueDateRule'] = { value: ruleVal, count: 1 };
+                                }
+                            }
+                        } catch { /* date parse error — skip */ }
+                    }
+
+                    // Save updated profile
+                    await setDoc(profileRef, {
+                        vendorName,
+                        vatNumbers,
+                        corrections,
+                        totalEdits:  (profile.totalEdits || 0) + 1,
+                        updatedAt:   serverTimestamp(),
+                    }, { merge: true });
+
+                    // ── Auto-generate Charter rules when threshold reached ──
+                    if (d.companyId) {
+                        const companyRef2 = doc(db!, 'companies', d.companyId);
+                        const compSnap2 = await getDoc(companyRef2);
+                        const currentRules = compSnap2.exists() ? (compSnap2.data().customAiRules || '') : '';
+                        const newRules: string[] = [];
+
+                        for (const [field, stats] of Object.entries(corrections) as [string, any][]) {
+                            if (stats.count < AUTO_RULE_THRESHOLD) continue;
+
+                            let rule = '';
+                            if (field === 'currency') {
+                                rule = `Vendor "${vendorName}": currency = "${stats.value}"`;
+                            } else if (field === 'description') {
+                                rule = `Vendor "${vendorName}": description = "${stats.value}"`;
+                            } else if (field === 'dueDateRule') {
+                                rule = `Vendor "${vendorName}": ${stats.value}`;
+                            }
+
+                            if (rule && !currentRules.includes(rule)) {
+                                newRules.push(rule);
+                            }
+                        }
+
+                        if (newRules.length > 0) {
+                            const updatedRules = currentRules
+                                ? `${currentRules}\n${newRules.join('\n')}`
+                                : newRules.join('\n');
+                            await updateDoc(companyRef2, { customAiRules: updatedRules });
+                            console.log(`[Teacher Agent] 📜 Auto-generated ${newRules.length} Charter rule(s): ${newRules.join(' | ')}`);
+                        }
+                    }
+                } catch (profileErr) {
+                    console.warn(`[Teacher Agent] ⚠️  Vendor profile update failed: ${profileErr}`);
+                }
+
+                // ── Global Learning: extract universal patterns from corrections ──
+                // These patterns apply to ALL invoices, not just this vendor.
+                // Example: "VAT prefix EE → currency EUR" helps every Estonian vendor.
+                try {
+                    const vatPrefix = (d.supplierVat || '').replace(/[^A-Z]/gi, '').slice(0, 2).toUpperCase();
+                    const globalRulesRef = collection(db!, 'teacher_global_rules');
+
+                    // Pattern 1: VAT country → currency mapping
+                    if (vatPrefix.length === 2 && d.currency) {
+                        const ruleId = `vat_${vatPrefix}_currency`;
+                        const ruleRef = doc(db!, 'teacher_global_rules', ruleId);
+                        const ruleSnap = await getDoc(ruleRef);
+                        const existing = ruleSnap.exists() ? ruleSnap.data() : null;
+
+                        if (existing && existing.value === d.currency) {
+                            await setDoc(ruleRef, { count: (existing.count || 1) + 1, updatedAt: serverTimestamp() }, { merge: true });
+                        } else if (!existing) {
+                            await setDoc(ruleRef, {
+                                type: 'vat_country_currency',
+                                condition: vatPrefix,
+                                field: 'currency',
+                                value: d.currency,
+                                count: 1,
+                                createdAt: serverTimestamp(),
+                                updatedAt: serverTimestamp(),
+                            });
+                        }
+                    }
+
+                    // Pattern 2: dueDate calculation pattern (net-N days) — universal
+                    if (d.dateCreated && d.dueDate && d.dateCreated !== d.dueDate) {
+                        try {
+                            const created = new Date(d.dateCreated);
+                            const due = new Date(d.dueDate);
+                            const diffDays = Math.round((due.getTime() - created.getTime()) / (1000 * 60 * 60 * 24));
+                            // Track common payment terms globally
+                            if ([7, 10, 14, 15, 21, 30, 45, 60, 90].includes(diffDays)) {
+                                const ruleId = `payment_term_net${diffDays}`;
+                                const ruleRef = doc(db!, 'teacher_global_rules', ruleId);
+                                const ruleSnap = await getDoc(ruleRef);
+                                const existing = ruleSnap.exists() ? ruleSnap.data() : null;
+                                await setDoc(ruleRef, {
+                                    type: 'common_payment_term',
+                                    field: 'dueDate',
+                                    value: `net-${diffDays}`,
+                                    count: (existing?.count || 0) + 1,
+                                    updatedAt: serverTimestamp(),
+                                }, { merge: true });
+                            }
+                        } catch { /* date parse error */ }
+                    }
+
+                    // Pattern 3: amount vs subtotal relationship (tax rate pattern)
+                    if (d.amount && d.subtotalAmount && d.taxAmount !== undefined) {
+                        const taxRate = d.subtotalAmount > 0
+                            ? Math.round((d.taxAmount / d.subtotalAmount) * 100)
+                            : 0;
+                        if ([0, 5, 9, 10, 13, 20, 21, 22, 25].includes(taxRate)) {
+                            const ruleId = vatPrefix.length === 2
+                                ? `vat_${vatPrefix}_taxrate`
+                                : `taxrate_${taxRate}`;
+                            const ruleRef = doc(db!, 'teacher_global_rules', ruleId);
+                            const ruleSnap = await getDoc(ruleRef);
+                            const existing = ruleSnap.exists() ? ruleSnap.data() : null;
+
+                            if (existing && existing.value === taxRate) {
+                                await setDoc(ruleRef, { count: (existing.count || 1) + 1, updatedAt: serverTimestamp() }, { merge: true });
+                            } else if (!existing) {
+                                await setDoc(ruleRef, {
+                                    type: 'vat_country_taxrate',
+                                    condition: vatPrefix || 'unknown',
+                                    field: 'taxRate',
+                                    value: taxRate,
+                                    count: 1,
+                                    createdAt: serverTimestamp(),
+                                    updatedAt: serverTimestamp(),
+                                });
+                            }
+                        }
+                    }
+                } catch (globalErr) {
+                    console.warn(`[Teacher Agent] ⚠️  Global pattern update failed: ${globalErr}`);
+                }
             }
         }
     } catch (teachErr) {

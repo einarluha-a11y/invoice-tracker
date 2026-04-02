@@ -1,11 +1,9 @@
 const readline = require('readline');
 const imaps = require('imap-simple');
 const pdfParse = require('pdf-parse');
-const { Anthropic } = require('@anthropic-ai/sdk');
-require('dotenv').config({ path: __dirname + '/.env' }); 
+require('dotenv').config({ path: __dirname + '/.env' });
 
 const { db } = require('./core/firebase.cjs');
-const { createWithRetry } = require('./ai_retry.cjs');
 
 const rl = readline.createInterface({
     input: process.stdin,
@@ -43,7 +41,6 @@ const configs = {
     }
 };
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 async function askQuestion(query) {
     return new Promise(resolve => rl.question(query, resolve));
@@ -296,51 +293,13 @@ async function run() {
              console.log(`✅ Extracted ${rawText.length} characters of text.`);
         }
 
-        console.log(`🤖 Sending to Claude 3.5 Sonnet to extract ALL transactions (Bypassing Rule 5 limits)...`);
-
-        const prompt = `
-You are an expert accountant system. 
-You are given the raw text of a Bank Statement PDF for the company "${config.name}".
-CRITICAL: Unlike standard invoice parsing, this is a BANK STATEMENT containing MULTIPLE transactions.
-You must extract EVERY SINGLE OUTBOUND PAYMENT transaction mathematically present in the text.
-Do not stop at the first one. Read the entire document text.
-
-Ignore incoming transfers (positive amounts).
-Ignore internal account transfers if they are just moving money between the same company's accounts.
-Focus on external supplier outbound payments.
-
-Return EXACTLY a JSON array of objects with NO markdown wrapping, NO extra text.
-Each object MUST have:
-- "vendorName": The payee company name.
-- "amount": The payment amount (positive number).
-- "paymentReference": The reference number or payment description.
-- "dateCreated": The transaction date in YYYY-MM-DD.
-
-Raw Text:
-${rawText.slice(0, 15000)}
-`;
-
-        const response = await createWithRetry(anthropic, {
-            model: process.env.AI_MODEL || "claude-sonnet-4-6",
-            max_tokens: 3000,
-            temperature: 0.1,
-            system: "You are an expert accountant system.",
-            messages: [{ role: "user", content: prompt }]
-        });
-
-        const jsonString = response.content[0].text.trim();
-        const match = jsonString.match(/\[[\s\S]*\]/);
-        const cleanJson = match ? match[0] : '[]';
+        // TODO: Re-implement transaction extraction with a new AI provider.
+        // Previously used Anthropic Claude API to extract transactions from bank statement text.
+        console.error(`🚨 Transaction extraction disabled (Anthropic removed). Cannot parse bank statement automatically.`);
+        console.log(`ℹ️  Raw text length: ${rawText.length} characters. Manual processing required.`);
 
         let transactions = [];
-        try {
-            transactions = JSON.parse(cleanJson);
-        } catch (e) {
-            console.error('Failed to parse Claude JSON response:', cleanJson);
-            process.exit(1);
-        }
-
-        console.log(`🎉 Claude extracted ${transactions.length} outbound transactions!`);
+        console.log(`Extracted ${transactions.length} transactions (AI disabled).`);
         console.log(transactions);
 
         for (const tx of transactions) {
