@@ -136,6 +136,189 @@ async function getFewShotExamples(vendorHint = null, maxExamples = 2) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  PIPELINE MODE — validateAndTeach (called by imap_daemon after Scout)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const MANDATORY_FIELDS = [
+    'vendorName', 'invoiceId', 'description', 'amount', 'currency',
+    'dateCreated', 'dueDate', 'supplierVat', 'supplierRegistration',
+    'subtotalAmount', 'taxAmount',
+];
+
+const EMPTY_VALUES = ['', 'Not_Found', 'Unknown Vendor', 'UNKNOWN VENDOR', 'Unknown', null, undefined];
+
+function isEmpty(val) {
+    if (EMPTY_VALUES.includes(val)) return true;
+    if (typeof val === 'number' && val === 0) return true;
+    if (typeof val === 'string' && val.startsWith('Auto-')) return true;
+    return false;
+}
+
+/**
+ * Validates and enriches an invoice extracted by the Scout (DocAI).
+ * Reads the company Charter (customAiRules) and ground-truth examples,
+ * fills missing fields, and applies business rules.
+ *
+ * @param {object} invoiceData - Raw extraction result from processInvoiceWithDocAI()[0]
+ * @param {string} companyId   - Firestore company doc ID
+ * @returns {Promise<{approved: boolean, invoice: object, corrections: string[]}>}
+ */
+async function validateAndTeach(invoiceData, companyId) {
+    const invoice = { ...invoiceData };
+    const corrections = [];
+
+    // ── 1. Load Charter (customAiRules) ──────────────────────────────────────
+    let charterRules = '';
+    if (companyId && db) {
+        try {
+            const companyDoc = await db.collection('companies').doc(companyId).get();
+            if (companyDoc.exists) {
+                charterRules = companyDoc.data().customAiRules || '';
+            }
+        } catch (err) {
+            console.warn(`[Teacher] Could not load Charter: ${err.message}`);
+        }
+    }
+
+    // ── 2. Load matching examples from invoice_examples ─────────────────────
+    let examples = [];
+    if (invoice.vendorName && !isEmpty(invoice.vendorName)) {
+        try {
+            examples = await loadExamples(invoice.vendorName);
+        } catch { /* no examples — that's fine */ }
+    }
+
+    // ── 3. Fill missing fields from examples ────────────────────────────────
+    if (examples.length > 0) {
+        // Use the most recent example for this vendor
+        const best = examples.sort((a, b) => {
+            const tA = a.updatedAt?._seconds || a.createdAt?._seconds || 0;
+            const tB = b.updatedAt?._seconds || b.createdAt?._seconds || 0;
+            return tB - tA;
+        })[0];
+
+        const gt = best.groundTruth || {};
+
+        // Static vendor fields — always copy from example if Scout missed them
+        const STATIC_FIELDS = ['supplierVat', 'supplierRegistration', 'currency'];
+        for (const field of STATIC_FIELDS) {
+            if (isEmpty(invoice[field]) && gt[field] && !isEmpty(gt[field])) {
+                invoice[field] = gt[field];
+                corrections.push(`Filled ${field} from example: ${gt[field]}`);
+            }
+        }
+
+        // Description: copy pattern from example if Scout returned empty
+        if (isEmpty(invoice.description) && gt.description && !isEmpty(gt.description)) {
+            invoice.description = gt.description;
+            corrections.push(`Filled description from example: ${gt.description}`);
+        }
+
+        // Vendor name normalization: if example has the canonical name, use it
+        if (invoice.vendorName && gt.vendorName) {
+            const scoutNorm = invoice.vendorName.toLowerCase().replace(/[^a-z0-9]/g, '');
+            const exNorm = gt.vendorName.toLowerCase().replace(/[^a-z0-9]/g, '');
+            if (scoutNorm.includes(exNorm) || exNorm.includes(scoutNorm)) {
+                if (invoice.vendorName !== gt.vendorName) {
+                    invoice.vendorName = gt.vendorName;
+                    corrections.push(`Normalized vendorName to: ${gt.vendorName}`);
+                }
+            }
+        }
+
+        // Apply teachingNotes if available (vendor-specific rules)
+        if (best.teachingNotes) {
+            console.log(`[Teacher] Applying teaching notes for ${best.vendorName}: ${best.teachingNotes}`);
+        }
+    }
+
+    // ── 4. Apply Charter rules ──────────────────────────────────────────────
+    if (charterRules) {
+        const rulesApplied = applyCharterRules(invoice, charterRules);
+        corrections.push(...rulesApplied);
+    }
+
+    // ── 5. Math validation: subtotal + tax ≈ amount ─────────────────────────
+    if (invoice.amount > 0 && invoice.subtotalAmount > 0 && invoice.taxAmount >= 0) {
+        const computed = parseFloat((invoice.subtotalAmount + invoice.taxAmount).toFixed(2));
+        if (Math.abs(computed - invoice.amount) > 0.05) {
+            corrections.push(`WARNING: Math mismatch: ${invoice.subtotalAmount} + ${invoice.taxAmount} = ${computed} ≠ ${invoice.amount}`);
+        }
+    }
+
+    // ── 6. Completeness check ───────────────────────────────────────────────
+    const missing = MANDATORY_FIELDS.filter(f => isEmpty(invoice[f]));
+
+    const approved = missing.length === 0;
+
+    if (!approved) {
+        console.log(`[Teacher] ⚠ Missing fields after validation: ${missing.join(', ')}`);
+    }
+    if (corrections.length > 0) {
+        console.log(`[Teacher] ✅ Applied ${corrections.length} correction(s): ${corrections.join('; ')}`);
+    }
+
+    // Attach teacher corrections as metadata
+    invoice.teacherCorrections = corrections;
+
+    return { approved, invoice, corrections };
+}
+
+/**
+ * Apply company-specific rules from customAiRules text.
+ * Rules are stored as free-text in Firestore; we parse known patterns.
+ *
+ * Supported patterns:
+ *   'If you see "X", the correct name is "Y".'  → vendor name normalization
+ *   'Vendor "X": net-30'  → dueDate = dateCreated + 30
+ *   'Vendor "X": description = "Y"'  → default description
+ */
+function applyCharterRules(invoice, rulesText) {
+    const applied = [];
+    const rules = rulesText.split('\n').filter(r => r.trim());
+
+    for (const rule of rules) {
+        // Vendor name correction: If you see "OLD", the correct name is "NEW".
+        const nameMatch = rule.match(/If you see [""](.+?)[""],?\s*the correct name is [""](.+?)[""]/i);
+        if (nameMatch) {
+            const [, oldName, newName] = nameMatch;
+            if (invoice.vendorName && invoice.vendorName.toLowerCase().includes(oldName.toLowerCase())) {
+                invoice.vendorName = newName;
+                applied.push(`Charter: renamed vendor "${oldName}" → "${newName}"`);
+            }
+        }
+
+        // Due date rule: Vendor "X": net-30
+        const dueDateMatch = rule.match(/[Vv]endor\s*[""](.+?)[""]:\s*net-?(\d+)/i);
+        if (dueDateMatch) {
+            const [, vendor, days] = dueDateMatch;
+            if (invoice.vendorName && invoice.vendorName.toLowerCase().includes(vendor.toLowerCase())) {
+                if (invoice.dateCreated && (!invoice.dueDate || isEmpty(invoice.dueDate))) {
+                    const d = new Date(invoice.dateCreated);
+                    d.setDate(d.getDate() + parseInt(days));
+                    invoice.dueDate = d.toISOString().split('T')[0];
+                    applied.push(`Charter: set dueDate = dateCreated + ${days} days for "${vendor}"`);
+                }
+            }
+        }
+
+        // Default description: Vendor "X": description = "Y"
+        const descMatch = rule.match(/[Vv]endor\s*[""](.+?)[""]:\s*description\s*=\s*[""](.+?)[""]/i);
+        if (descMatch) {
+            const [, vendor, desc] = descMatch;
+            if (invoice.vendorName && invoice.vendorName.toLowerCase().includes(vendor.toLowerCase())) {
+                if (isEmpty(invoice.description)) {
+                    invoice.description = desc;
+                    applied.push(`Charter: set description = "${desc}" for "${vendor}"`);
+                }
+            }
+        }
+    }
+
+    return applied;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  MODE 1 — --teach
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -458,5 +641,5 @@ if (require.main === module) {
     });
 }
 
-// Export for Mode 3 (document_ai_service.cjs imports this)
-module.exports = { getFewShotExamples };
+// Exports: pipeline function + few-shot helper + example management
+module.exports = { validateAndTeach, getFewShotExamples, loadExamples, saveExample };

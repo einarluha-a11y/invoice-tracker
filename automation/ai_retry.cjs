@@ -1,3 +1,4 @@
+// DEPRECATED: This module is no longer used. Invoice extraction uses Scout → Teacher pipeline.
 /**
  * Intercepts Anthropic API calls and applies Exponential Backoff for 429 and 529 errors.
  * Ensures the invoice parser doesn't fatally crash during temporary LLM capacity outages.

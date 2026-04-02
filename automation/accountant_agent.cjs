@@ -1,4 +1,6 @@
-const { Anthropic } = require('@anthropic-ai/sdk');
+// accountant_agent.cjs — ГЛАВНЫЙ БУХГАЛТЕР (Chief Accountant Agent)
+// No external AI dependencies — pure rule-based logic.
+
 const { validateVat } = require('./vies_validator.cjs');
 const { admin, db } = require('./core/firebase.cjs');
 const { enrichCompanyData } = require('./company_enrichment.cjs');
@@ -16,44 +18,85 @@ const parseAmount = (val) => {
     return parseFloat(s) || 0;
 };
 
-const anthropic = new Anthropic({
-    apiKey: process.env.ANTHROPIC_API_KEY
-});
+/**
+ * Fuzzy vendor name match — checks if either name contains the other.
+ */
+function vendorMatches(invData, paymentData) {
+    const vName = String(invData.vendorName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const bName = String(paymentData.vendorName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const ref = String(paymentData.paymentReference || '').toLowerCase();
+    const invId = String(invData.invoiceId || '').toLowerCase();
+    return (vName.length > 3 && bName.length > 3 && (vName.includes(bName) || bName.includes(vName))) ||
+           (invId.length > 3 && ref.includes(invId));
+}
 
 /**
- * Acts as the Chief Accountant Orchestrator.
- * Enforces Zero-Defect Guarantee (Pre-flight checks) + VIES + LLM Compliance Audit.
+ * ГЛАВНЫЙ БУХГАЛТЕР (Chief Accountant Agent).
+ * Enforces Zero-Defect Guarantee: Pre-flight checks, VIES validation,
+ * rule-based compliance audit, partial payments, credit note offset.
+ * No AI dependencies — pure business logic.
  */
 async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
-    // --- 0. BANK STATEMENT INTERCEPTOR ---
+    // --- 0. BANK STATEMENT INTERCEPTOR (with partial payment support) ---
     if (docAiPayload.type === 'BANK_STATEMENT') {
         console.log(`\n[Accountant Agent] 🏦 Bank Statement Detected! Initiating Auto-Reconciliation for: ${docAiPayload.vendorName} [Amount: ${docAiPayload.amount}]`);
         try {
             const invoicesRef = db.collection('invoices');
             const snap = await invoicesRef.where('companyId', '==', companyId)
-                                          .where('status', 'in', ['Unpaid', 'Pending', 'OOTEL', 'NEEDS_REVIEW', 'Needs Action', 'Overdue', 'Duplicate'])
+                                          .where('status', 'in', ['Unpaid', 'Pending', 'OOTEL', 'NEEDS_REVIEW', 'Needs Action', 'Overdue'])
                                           .get();
             let matched = false;
+            const payAmt = Math.abs(parseAmount(docAiPayload.amount));
+
             if (!snap.empty) {
+                // Pass 1: Try exact match on remainingAmount (full payment of remaining)
                 for (const doc of snap.docs) {
                     const invData = doc.data();
-                    const invAmt = Math.abs(parseAmount(invData.amount));
-                    const payAmt = Math.abs(parseAmount(docAiPayload.amount));
+                    const remaining = invData.remainingAmount ?? Math.abs(parseAmount(invData.amount));
 
-                    // Tolerance of €0.50 covers Revolut's €0.20 bank transfer commission
-                    // and minor rounding differences between invoice and actual payment
-                    if (Math.abs(invAmt - payAmt) < 0.50) {
-                        const vName = String(invData.vendorName || '').toLowerCase();
-                        const bName = String(docAiPayload.vendorName || '').toLowerCase();
-                        const ref = String(docAiPayload.paymentReference || '').toLowerCase();
-                        const invId = String(invData.invoiceId || '').toLowerCase();
-                        
-                        if (vName.includes(bName) || bName.includes(vName) || (invId.length > 3 && ref.includes(invId))) {
-                            console.log(`[Accountant Agent] 🪙 MATCH FOUND! Reconciling Invoice ${invData.invoiceId} (${invData.vendorName}) as 'Paid' / Makstud!`);
+                    if (Math.abs(remaining - payAmt) < 0.50 && vendorMatches(invData, docAiPayload)) {
+                        console.log(`[Accountant Agent] 🪙 FULL PAYMENT MATCH! Reconciling Invoice ${invData.invoiceId} (${invData.vendorName}) as 'Paid'!`);
+                        await db.runTransaction(async (t) => {
+                            const freshDoc = await t.get(doc.ref);
+                            if (!freshDoc.exists || freshDoc.data().status === 'Paid') return;
+                            const origAmount = freshDoc.data().originalAmount || freshDoc.data().amount;
+                            t.update(doc.ref, {
+                                status: 'Paid',
+                                amount: origAmount,
+                                remainingAmount: 0,
+                                payments: admin.firestore.FieldValue.arrayUnion({
+                                    amount: payAmt,
+                                    date: docAiPayload.dateCreated || new Date().toISOString().split('T')[0],
+                                    reference: docAiPayload.paymentReference || '',
+                                }),
+                            });
+                        });
+                        matched = true;
+                        break;
+                    }
+                }
+
+                // Pass 2: Try partial payment (payAmt < remainingAmount)
+                if (!matched) {
+                    for (const doc of snap.docs) {
+                        const invData = doc.data();
+                        const remaining = invData.remainingAmount ?? Math.abs(parseAmount(invData.amount));
+
+                        if (payAmt > 0 && payAmt < remaining && vendorMatches(invData, docAiPayload)) {
+                            const newRemaining = parseFloat((remaining - payAmt).toFixed(2));
+                            console.log(`[Accountant Agent] 💰 PARTIAL PAYMENT: ${payAmt}/${remaining} for ${invData.invoiceId}. Remaining: ${newRemaining}`);
                             await db.runTransaction(async (t) => {
                                 const freshDoc = await t.get(doc.ref);
                                 if (!freshDoc.exists || freshDoc.data().status === 'Paid') return;
-                                t.update(doc.ref, { status: 'Paid' });
+                                t.update(doc.ref, {
+                                    status: 'Unpaid',
+                                    remainingAmount: newRemaining,
+                                    payments: admin.firestore.FieldValue.arrayUnion({
+                                        amount: payAmt,
+                                        date: docAiPayload.dateCreated || new Date().toISOString().split('T')[0],
+                                        reference: docAiPayload.paymentReference || '',
+                                    }),
+                                });
                             });
                             matched = true;
                             break;
@@ -61,11 +104,10 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
                     }
                 }
             }
+
             if (!matched) {
                 console.log(`[Accountant Agent] ⚠️ No unsettled invoice found for payment: ${docAiPayload.amount} to ${docAiPayload.vendorName}.`);
-                
-                // Search Agent is triggered for payments in the current year or later.
-                // Override via SEARCH_AGENT_CUTOFF_YEAR env variable if needed (e.g. "2027").
+
                 const paymentDate = new Date(docAiPayload.dateCreated || '2020-01-01');
                 const cutoffYear = parseInt(process.env.SEARCH_AGENT_CUTOFF_YEAR || new Date().getFullYear(), 10);
                 const cutoffDate = new Date(`${cutoffYear}-01-01`);
@@ -74,7 +116,7 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
                     console.log(`[Accountant Agent] 🚨 Payment falls within ${cutoffYear}+ window! Escalating to Search Agent...`);
                     const { findAndInjectMissingInvoice } = require('./search_agent.cjs');
                     const recovered = await findAndInjectMissingInvoice(docAiPayload.vendorName, docAiPayload.amount, companyId);
-                    
+
                     if (recovered) {
                         console.log(`[Accountant Agent] 🕵️‍♂️ Search Agent found the missing invoice! Reconciling it as 'Paid'...`);
                         await db.runTransaction(async (t) => {
@@ -88,13 +130,12 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
                         console.log(`[Accountant Agent] 📉 Search Agent could not locate the invoice in the email archives.`);
                     }
                 } else {
-                     console.log(`[Accountant Agent] ⏭️ Payment is prior to the 01.01.2026 strict boundary. Skipping Search Agent escalation.`);
+                    console.log(`[Accountant Agent] ⏭️ Payment is prior to ${cutoffYear} boundary. Skipping Search Agent.`);
                 }
             }
         } catch(err) {
             console.error(err);
         }
-        // Throw special error to gracefully abort the Invoice creation pipeline!
         throw new Error("BANK_STATEMENT_RECONCILIATION_COMPLETE");
     }
 
@@ -264,9 +305,54 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
 
     // --- 1.8. PRE-FLIGHT AUDIT: KREEDITARVE (CREDIT NOTE) PROTOCOL ---
     if (numericAmount < 0 || String(docAiPayload.amount).trim().startsWith('-')) {
-        console.log(`[Accountant Agent] 🟢 KREEDITARVE DETECTED: Amount bears a minus sign (${docAiPayload.amount}). Automatically settling as 'Paid' per Rule 9.`);
+        console.log(`[Accountant Agent] 🟢 KREEDITARVE DETECTED: Amount ${docAiPayload.amount}. Status → 'Paid'. Will offset matching invoice.`);
         systemStatus = 'Paid';
-        warnings.push("NOTE: Kreeditarve (Credit Note) detected via minus sign. System autonomously settled status to 'Paid'.");
+        warnings.push("NOTE: Kreeditarve (Credit Note) detected. Separate record with negative amount, status 'Paid'.");
+
+        // Try to find and offset the original invoice
+        const creditAmount = Math.abs(numericAmount);
+        try {
+            const pendingSnap = await db.collection('invoices')
+                .where('companyId', '==', companyId)
+                .where('status', 'in', ['Unpaid', 'Pending', 'OOTEL', 'Needs Action', 'Overdue'])
+                .limit(200)
+                .get();
+
+            let offsetApplied = false;
+            for (const pendingDoc of pendingSnap.docs) {
+                const pData = pendingDoc.data();
+                if (!vendorMatches(pData, docAiPayload)) continue;
+
+                const pRemaining = pData.remainingAmount ?? Math.abs(parseAmount(pData.amount));
+
+                if (Math.abs(pRemaining - creditAmount) <= 0.05) {
+                    // Exact match — mark original as Paid
+                    console.log(`[Accountant Agent] ⚖️ Credit note exactly offsets invoice ${pData.invoiceId}. Marking as Paid.`);
+                    await pendingDoc.ref.update({
+                        status: 'Paid',
+                        remainingAmount: 0,
+                        creditNoteId: docAiPayload.invoiceId || null,
+                    });
+                    offsetApplied = true;
+                    break;
+                } else if (creditAmount < pRemaining) {
+                    // Partial credit — reduce remaining
+                    const newRemaining = parseFloat((pRemaining - creditAmount).toFixed(2));
+                    console.log(`[Accountant Agent] ⚖️ Partial credit: ${creditAmount} off ${pRemaining}. New remaining: ${newRemaining}`);
+                    await pendingDoc.ref.update({
+                        remainingAmount: newRemaining,
+                        creditNoteId: docAiPayload.invoiceId || null,
+                    });
+                    offsetApplied = true;
+                    break;
+                }
+            }
+            if (!offsetApplied) {
+                console.log(`[Accountant Agent] ⚠️ No matching invoice found to offset with credit note.`);
+            }
+        } catch (creditErr) {
+            console.warn(`[Accountant Agent] Credit note offset failed: ${creditErr.message}`);
+        }
     }
 
     // --- 2. PRE-FLIGHT AUDIT: Deduplication ---
@@ -314,7 +400,7 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
                 const incomingIsBetter = (fileUrl && fileUrl !== 'BODY_TEXT_NO_ATTACHMENT') || docAiPayload.subtotalAmount !== undefined || docAiPayload.taxAmount !== undefined;
 
                 if (dbNoFile && incomingIsBetter) {
-                    console.log(`[Accountant Agent] ⚔️ ZAPIER GHOST ASSASSINATION: Destroying skeleton duplicate ${doc.id} in favor of full Claude 4.6 payload!`);
+                    console.log(`[Accountant Agent] ⚔️ GHOST ASSASSINATION: Destroying skeleton duplicate ${doc.id} in favor of full DocAI payload!`);
                     ghostDocIdToDestroy = doc.id;
                 } else {
                     isDuplicate = true;

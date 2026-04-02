@@ -1,12 +1,11 @@
 require('dotenv').config({ path: __dirname + '/.env' });
 const { reportError } = require('./error_reporter.cjs');
 const { safetyNetSave } = require('./safety_net.cjs');
-const { intellectualSupervisorGate } = require('./supreme_supervisor.cjs');
 const imaps = require('imap-simple');
 const simpleParser = require('mailparser').simpleParser;
 const pdfParse = require('pdf-parse');
 const { processInvoiceWithDocAI } = require('./document_ai_service.cjs');
-const { classifyDocumentWithVision } = require('./vision_auditor.cjs');
+const { validateAndTeach } = require('./teacher_agent.cjs');
 const { auditAndProcessInvoice } = require('./accountant_agent.cjs');
 const { runDashboardAudit } = require('./dashboard_auditor_agent.cjs');
 const { parse } = require('csv-parse/sync');
@@ -91,12 +90,10 @@ async function uploadToStorage(companyId, fileName, contentType, buffer) {
 
 
 /**
- * 1. AI Parsing: Sends raw text (or CSV string) to Claude to extract fields
+ * 1. Body-text parsing (DEPRECATED — DocAI requires PDF/image file)
  */
 async function parseInvoiceDataWithAI(rawText, companyName = "GLOBAL TECHNICS OÜ", customRules = "") {
-    // Body-text-only emails cannot be processed by Google Document AI (requires a PDF/image file).
-    // These emails will be skipped — please forward the original PDF attachment to the inbox.
-    console.warn(`[DocAI] ⚠️  Body-text email for "${companyName}" skipped — Google Document AI requires a PDF or image file. Please forward the original invoice PDF.`);
+    console.warn(`[DocAI] ⚠️  Body-text email for "${companyName}" skipped — Google Document AI requires a PDF or image file. Forward the original invoice PDF.`);
     return null;
 }
 
@@ -288,6 +285,9 @@ async function writeToFirestore(dataArray) {
                 validationWarnings: data.validationWarnings || [],
                 description: cleanDescription,
                 lineItems: data.lineItems || [],
+                originalAmount: numAmount,       // Never changes — original invoice total
+                remainingAmount: numAmount,      // Decreases with partial payments
+                payments: [],                    // Payment history: [{amount, date, reference}]
                 createdAt: admin.firestore.FieldValue.serverTimestamp(),
                 companyId: data.companyId || null,
                 fileUrl: data.fileUrl || null,
@@ -378,54 +378,39 @@ async function writeToFirestore(dataArray) {
 }
 
 /**
- * Runs the Maker-Checker AI extraction loop for a single document.
- * Shared by both PDF and Image processing paths.
+ * Scout → Teacher pipeline for a single document.
+ * Step 1 (Scout): DocAI + regex extraction
+ * Step 2 (Teacher): validation against Charter + ground-truth examples
  * @param {Buffer} content - Raw file content
  * @param {string} mimeType - MIME type (e.g. 'application/pdf', 'image/jpeg')
- * @param {Object} companyData - Company config including customAiRules
- * @param {number} maxAttempts - Max retry attempts (default 5)
+ * @param {string} companyId - Company ID for Teacher lookup
+ * @param {string} customRules - Company customAiRules text
  * @returns {Array|null} Parsed invoice data array, or null if extraction failed
  */
-async function runMakerCheckerLoop(content, mimeType, companyData, maxAttempts = 5) {
-    let parsedData = null;
-    let extractionAttempts = 0;
-    let critique = null;
+async function scoutTeacherPipeline(content, mimeType, companyId, customRules) {
+    // Step 1: Scout — DocAI + multilingual regex
+    const tempParsed = await processInvoiceWithDocAI(content, mimeType, null, customRules || '');
+    if (!tempParsed || tempParsed.length === 0) return null;
 
-    while (!parsedData && extractionAttempts < maxAttempts) {
-        extractionAttempts++;
-        const tempParsed = await processInvoiceWithDocAI(content, mimeType, critique, companyData.customAiRules);
+    // Step 2: Teacher — validate and fill from Charter + examples
+    try {
+        const teacherResult = await validateAndTeach(tempParsed[0], companyId);
+        tempParsed[0] = teacherResult.invoice;
 
-        if (!tempParsed || tempParsed.length === 0) break;
-
-        const supervisorVerdict = await intellectualSupervisorGate(tempParsed[0]);
-
-        if (!supervisorVerdict.passed && supervisorVerdict.needsReExtraction) {
-            console.log(`[Supervisor 🗣️ Engine] MISSING DATA! Rerunning extraction: ${supervisorVerdict.critique}`);
-            critique = supervisorVerdict.critique;
-
-            if (extractionAttempts >= maxAttempts) {
-                // After 5 failed attempts, do NOT force-accept with ANOMALY_DETECTED —
-                // that would create a skeleton/partial record on the dashboard.
-                // Instead: mark as Error so accountant_agent routes to Safety Net (which
-                // requires a fileUrl) or discards. The email stays UNSEEN for retry.
-                console.warn(`[Supervisor] ⛔ Max reflection attempts (${maxAttempts}) reached. Marking as Error — will NOT save partial record.`);
-                tempParsed[0].validationWarnings = tempParsed[0].validationWarnings || [];
-                tempParsed[0].validationWarnings.push(`SUPERVISOR: Rejected after ${maxAttempts} extraction attempts. Missing: ${supervisorVerdict.critique}`);
-                tempParsed[0].status = 'Error';
-                parsedData = tempParsed;
-            }
-        } else if (!supervisorVerdict.passed && !supervisorVerdict.needsReExtraction) {
-            console.log(`[Supervisor] 🚨 ANOMALY STRIKE: ${supervisorVerdict.reason}`);
-            tempParsed[0].status = 'ANOMALY_DETECTED';
-            tempParsed[0].validationWarnings = tempParsed[0].validationWarnings || [];
-            tempParsed[0].validationWarnings.push(`SUPERVISOR STRIKE: ${supervisorVerdict.reason}`);
-            parsedData = tempParsed;
-        } else {
-            parsedData = tempParsed;
+        if (teacherResult.corrections && teacherResult.corrections.length > 0) {
+            console.log(`[Teacher] Corrections applied: ${teacherResult.corrections.join('; ')}`);
         }
+
+        if (!teacherResult.approved) {
+            console.warn(`[Teacher] ⚠️  Invoice not fully approved — missing fields remain.`);
+            tempParsed[0].validationWarnings = tempParsed[0].validationWarnings || [];
+            tempParsed[0].validationWarnings.push('TEACHER: Not all 11 mandatory fields filled');
+        }
+    } catch (teacherErr) {
+        console.warn(`[Teacher] ⚠️  Validation error (proceeding with Scout data): ${teacherErr.message}`);
     }
 
-    return parsedData;
+    return tempParsed;
 }
 
 /**
@@ -1029,35 +1014,12 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                         await saveUid('bank_statement');
                                     }
                                 } else {
-                                    console.log('[Email] Detected Invoice PDF. Requesting Pre-Flight Vision Audit to check for CMRs...');
-                                    const visionClass = await classifyDocumentWithVision(attachment.content, mime || 'application/pdf');
-                                    if (visionClass === null) {
-                                        // Vision API failed — don't discard, proceed with extraction
-                                        console.warn(`[Vision Auditor] ⚠️  API failure on ${filename} — skipping classification, proceeding with extraction.`);
-                                    } else if (visionClass !== 'INVOICE') {
-                                        console.log(`[Vision Auditor] 🚨 Skipping attachment ${attachment.filename}. Classified as: ${visionClass}`);
-                                        await markStagingResult(stagingId, { status: 'skipped', error: `Vision classified as ${visionClass}` });
-                                        // Safety Net: if filename suggests invoice but Vision rejected it, save as DRAFT for review
-                                        const looksLikeInvoice = /inv|arve|faktur|rechnung|factura|facture/i.test(filename);
-                                        if (looksLikeInvoice) {
-                                            // File was already uploaded — pass fileUrl so Safety Net can attach it
-                                            const saved = await safetyNetSave(
-                                                { vendorName: 'UNKNOWN (Vision rejected)', invoiceId: `VISION-${filename}` },
-                                                `Vision Auditor classified as ${visionClass} but filename suggests invoice`,
-                                                companyId,
-                                                fileUrl
-                                            ).catch(() => null);
-                                            if (!saved) console.warn(`[Safety Net] Could not save DRAFT for Vision-rejected ${filename} (no file uploaded)`);
-                                        }
-                                        await saveUid('vision_rejected');
-                                        continue;
-                                    }
-                                    // visionClass === null (API failure) or visionClass === 'INVOICE' — proceed
-                                    console.log('[Email] Verified as INVOICE. Engaging Maker-Checker AI Loop...');
+                                    // Invoice PDF — Scout → Teacher pipeline
+                                    console.log('[Email] Detected Invoice PDF. Running Scout → Teacher pipeline...');
 
-                                    const parsedData = await runMakerCheckerLoop(attachment.content, mime || 'application/pdf', { customAiRules: customRules });
+                                    const parsedData = await scoutTeacherPipeline(attachment.content, mime || 'application/pdf', companyId, customRules);
                                     if (await saveParsedData(parsedData)) {
-                                        console.log(`[Email] Email UID ${id} successfully processed by Document AI!`);
+                                        console.log(`[Email] Email UID ${id} successfully processed by Scout → Teacher!`);
                                         try { connection.imap.addFlags(id, ['\\Seen'], () => {}); } catch(_) {}
                                         await saveUid('invoice_pdf');
                                     }
@@ -1080,32 +1042,12 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                     rawText:    null, // images have no raw text
                                 });
 
-                                const visionClass = await classifyDocumentWithVision(attachment.content, mime);
-                                if (visionClass === null) {
-                                    // Vision API failure for image — same policy as PDFs: proceed with extraction
-                                    console.warn(`[Vision Auditor] ⚠️  API failure on image ${filename} — skipping classification, proceeding with extraction.`);
-                                } else if (visionClass !== 'INVOICE') {
-                                    console.log(`[Vision Auditor] 🚨 Skipping image ${attachment.filename}. Classified as: ${visionClass}`);
-                                    await markStagingResult(stagingId, { status: 'skipped', error: `Vision classified as ${visionClass}` });
-                                    const looksLikeInvoice = /inv|arve|faktur|rechnung|factura|facture/i.test(filename);
-                                    if (looksLikeInvoice) {
-                                        const saved = await safetyNetSave(
-                                            { vendorName: 'UNKNOWN (Vision rejected)', invoiceId: `VISION-${filename}` },
-                                            `Vision Auditor classified as ${visionClass} but filename suggests invoice`,
-                                            companyId,
-                                            fileUrl
-                                        ).catch(() => null);
-                                        if (!saved) console.warn(`[Safety Net] Could not save DRAFT for Vision-rejected image ${filename} (no file uploaded)`);
-                                    }
-                                    await saveUid('vision_rejected');
-                                    continue;
-                                }
-                                // visionClass === null (API failure) or visionClass === 'INVOICE' — proceed
-                                console.log('[Image] Verified. Engaging Maker-Checker AI Loop for Image...');
+                                // Image invoice — Scout → Teacher pipeline
+                                console.log('[Image] Running Scout → Teacher pipeline for image...');
 
-                                const parsedData = await runMakerCheckerLoop(attachment.content, mime, { customAiRules: customRules });
+                                const parsedData = await scoutTeacherPipeline(attachment.content, mime, companyId, customRules);
                                 if (await saveParsedData(parsedData)) {
-                                    console.log(`[Email] Email UID ${id} successfully processed by Document AI from Image!`);
+                                    console.log(`[Email] Email UID ${id} successfully processed by Scout → Teacher from Image!`);
                                     try { connection.imap.addFlags(id, ['\\Seen'], () => {}); } catch(_) {}
                                     await saveUid('invoice_image');
                                 }
@@ -1185,12 +1127,15 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                         for (let inv of parsedData) {
                             inv.companyId = companyId;
                             try {
-                                // Step A: Supervisor gate — same data-quality check as the PDF path
-                                const supervisorVerdict = await intellectualSupervisorGate(inv);
-                                if (!supervisorVerdict.passed) {
-                                    console.warn(`[Email] Body-text invoice REJECTED by Supervisor: ${supervisorVerdict.critique}`);
-                                    console.warn(`[Email] → Forward the original PDF to the inbox instead of forwarding body text only.`);
-                                    continue; // Skip this record — do not save
+                                // Step A: Teacher validation for body-text invoices
+                                try {
+                                    const teacherResult = await validateAndTeach(inv, companyId);
+                                    Object.assign(inv, teacherResult.invoice);
+                                    if (!teacherResult.approved) {
+                                        console.warn(`[Email] Body-text invoice has missing fields after Teacher validation.`);
+                                    }
+                                } catch (teachErr) {
+                                    console.warn(`[Email] Teacher error on body-text: ${teachErr.message}`);
                                 }
 
                                 // Step B: Completeness Gate (score 4/4) + Cross-company routing
