@@ -241,16 +241,20 @@ async function validateAndTeach(invoiceData, companyId) {
     }
 
     // ── 2b. Smart fallback: search by VAT/RegNo if name search found nothing ──
+    //   When matched by identifiers, we have high confidence this is the same vendor,
+    //   so we trust the example's static fields (currency, VAT, etc.) over DocAI output.
+    let matchedByIdentifiers = false;
     if (examples.length === 0) {
         try {
             examples = await findExamplesByIdentifiers(invoice);
             if (examples.length > 0) {
+                matchedByIdentifiers = true;
                 console.log(`[Teacher] 🔍 Found ${examples.length} example(s) by VAT/RegNo/patterns match`);
             }
         } catch { /* no match — proceed without examples */ }
     }
 
-    // ── 3. Fill missing fields from examples ────────────────────────────────
+    // ── 3. Fill/correct fields from examples ────────────────────────────────
     if (examples.length > 0) {
         // Use the most recent example for this vendor
         const best = examples.sort((a, b) => {
@@ -267,12 +271,20 @@ async function validateAndTeach(invoiceData, companyId) {
             corrections.push(`Filled vendorName from example (matched by VAT/RegNo): ${gt.vendorName}`);
         }
 
-        // Static vendor fields — always copy from example if Scout missed them
+        // Static vendor fields: supplierVat, supplierRegistration, currency
+        // - If empty → always fill from example
+        // - If filled but example matched by identifiers → overwrite (example is from manual correction = trusted)
         const STATIC_FIELDS = ['supplierVat', 'supplierRegistration', 'currency'];
         for (const field of STATIC_FIELDS) {
-            if (isEmpty(invoice[field]) && gt[field] && !isEmpty(gt[field])) {
+            if (!gt[field] || isEmpty(gt[field])) continue; // example has no value for this field
+
+            if (isEmpty(invoice[field])) {
                 invoice[field] = gt[field];
                 corrections.push(`Filled ${field} from example: ${gt[field]}`);
+            } else if (matchedByIdentifiers && invoice[field] !== gt[field]) {
+                // High-confidence match: example comes from manual correction, trust it
+                corrections.push(`Corrected ${field}: ${invoice[field]} → ${gt[field]} (from verified example)`);
+                invoice[field] = gt[field];
             }
         }
 
