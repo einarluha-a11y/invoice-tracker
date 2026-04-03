@@ -393,43 +393,46 @@ async function repairInvoice(invoiceId, invoiceData) {
         qualityIssues.push('Missing vendor name');
     }
     // ── Teacher QC loop: Teacher checks, tells Repairman what to fix, max 2 retries ──
-    const MAX_QC_RETRIES = 3; // Round 0: arithmetic, Round 1: Claude, Round 2: verify Claude
-    for (let qcRound = 0; qcRound <= MAX_QC_RETRIES; qcRound++) {
+    // ── Teacher QC: detect issues → try fix → verify ──────────────────────
+    const OUR_COMPANIES = ['global technics', 'ideacom'];
+
+    function detectQcIssues() {
         const qcAmount = parseFloat(updates.amount ?? newData.amount ?? invoiceData.amount ?? 0);
         const qcSub = parseFloat(updates.subtotalAmount ?? newData.subtotalAmount ?? invoiceData.subtotalAmount ?? 0);
         const qcTax = parseFloat(updates.taxAmount ?? newData.taxAmount ?? invoiceData.taxAmount ?? 0);
-        const qcIssues = [];
-
-        if (qcAmount > 0 && qcSub > 0 && Math.abs(qcSub + qcTax - qcAmount) > 0.50) {
-            qcIssues.push(`sub(${qcSub}) + tax(${qcTax}) = ${(qcSub + qcTax).toFixed(2)} ≠ amount(${qcAmount})`);
-        }
-        if (!updates.vendorName && isEmpty(newData.vendorName) && isEmpty(invoiceData.vendorName)) {
-            qcIssues.push('Missing vendor name');
-        }
-        // Detect buyer/supplier confusion
-        const OUR_COMPANIES = ['global technics', 'ideacom'];
         const qcVendor = (updates.vendorName || newData.vendorName || invoiceData.vendorName || '').toLowerCase();
-        if (OUR_COMPANIES.some(c => qcVendor.includes(c))) {
-            qcIssues.push(`vendorName "${qcVendor}" is our company — buyer/supplier confused`);
+        const issues = [];
+        if (qcAmount > 0 && qcSub > 0 && Math.abs(qcSub + qcTax - qcAmount) > 0.50)
+            issues.push({ type: 'math', msg: `sub(${qcSub}) + tax(${qcTax}) = ${(qcSub + qcTax).toFixed(2)} ≠ amount(${qcAmount})` });
+        if (OUR_COMPANIES.some(c => qcVendor.includes(c)))
+            issues.push({ type: 'vendor', msg: `vendorName "${qcVendor}" is our company` });
+        if (!updates.vendorName && isEmpty(newData.vendorName) && isEmpty(invoiceData.vendorName))
+            issues.push({ type: 'vendor', msg: 'Missing vendor name' });
+        return { issues, qcAmount, qcSub, qcTax };
+    }
+
+    let { issues: qcIssues, qcAmount, qcSub, qcTax } = detectQcIssues();
+
+    if (qcIssues.length > 0) {
+        const hasMathOnly = qcIssues.every(i => i.type === 'math');
+        const issueMessages = qcIssues.map(i => i.msg);
+        console.log(`  [Teacher QC] Issues: ${issueMessages.join(' | ')}`);
+
+        // Step 1: Try arithmetic fix (only for math issues, skip for vendor issues)
+        if (hasMathOnly) {
+            if (qcAmount > 0 && qcTax > 0 && qcTax < qcAmount) {
+                updates.subtotalAmount = parseFloat((qcAmount - qcTax).toFixed(2));
+                console.log(`  [Repairman] Fixed sub: ${qcSub} → ${updates.subtotalAmount}`);
+            } else if (qcAmount > 0 && qcSub > 0 && qcSub < qcAmount) {
+                updates.taxAmount = parseFloat((qcAmount - qcSub).toFixed(2));
+                console.log(`  [Repairman] Fixed tax: ${qcTax} → ${updates.taxAmount}`);
+            }
+            // Re-check
+            ({ issues: qcIssues } = detectQcIssues());
         }
 
-        if (qcIssues.length === 0) break; // All good
-
-        console.log(`  [Teacher QC] Round ${qcRound + 1}: ${qcIssues.join(' | ')}`);
-
-        if (qcRound === 0) {
-            // Round 1: Repairman tries arithmetic fix
-            if (qcSub > 0 && qcTax > 0 && Math.abs(qcSub + qcTax - qcAmount) > 0.50) {
-                if (qcAmount > 0 && qcTax > 0 && qcTax < qcAmount) {
-                    updates.subtotalAmount = parseFloat((qcAmount - qcTax).toFixed(2));
-                    console.log(`  [Repairman] Fixed sub: ${qcSub} → ${updates.subtotalAmount} (amount - tax)`);
-                } else if (qcAmount > 0 && qcSub > 0 && qcSub < qcAmount) {
-                    updates.taxAmount = parseFloat((qcAmount - qcSub).toFixed(2));
-                    console.log(`  [Repairman] Fixed tax: ${qcTax} → ${updates.taxAmount} (amount - sub)`);
-                }
-            }
-        } else if (qcRound === 1 && !invoiceData.claudeFixAttempted) {
-            // Round 2: Ask Claude (once per invoice, rawText only, haiku model)
+        // Step 2: If still issues → Claude (once per invoice)
+        if (qcIssues.length > 0 && !invoiceData.claudeFixAttempted) {
             try {
                 const { askClaudeToFix } = require('./document_ai_service.cjs');
                 const rawText = scoutResult[0]?._rawText || '';
@@ -440,7 +443,7 @@ async function repairInvoice(invoiceId, invoiceData) {
                     currency: updates.currency || newData.currency || invoiceData.currency,
                     dateCreated: updates.dateCreated || newData.dateCreated || invoiceData.dateCreated,
                     dueDate: updates.dueDate || newData.dueDate || invoiceData.dueDate,
-                }, qcIssues);
+                }, qcIssues.map(i => i.msg));
 
                 if (fixes && Object.keys(fixes).length > 0) {
                     if (fixes.vendorName) updates.vendorName = fixes.vendorName;
@@ -458,12 +461,17 @@ async function repairInvoice(invoiceId, invoiceData) {
                 console.warn(`  [Claude QC] ⚠️ Error: ${claudeErr.message}`);
                 updates.claudeFixAttempted = true;
             }
-        } else {
-            // All attempts exhausted — save for manual correction
-            console.warn(`  [Teacher QC] ❌ Repair REJECTED: ${qcIssues.join(' | ')}`);
+
+            // Step 3: Final check after Claude
+            ({ issues: qcIssues } = detectQcIssues());
+        }
+
+        // Still broken → reject
+        if (qcIssues.length > 0) {
+            console.warn(`  [Teacher QC] ❌ REJECTED: ${qcIssues.map(i => i.msg).join(' | ')}`);
             await db.collection('invoices').doc(invoiceId).update({
                 status: 'Needs Action',
-                repairQualityWarnings: qcIssues,
+                repairQualityWarnings: qcIssues.map(i => i.msg),
                 claudeFixAttempted: true,
                 repairedAt: admin.firestore.FieldValue.serverTimestamp(),
             });
