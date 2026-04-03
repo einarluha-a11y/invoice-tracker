@@ -530,9 +530,8 @@ async function reconcilePayment(reference, description, paidAmount, totalBankDra
                     const fxRatio = paidAmount / originalAmount;
                     console.log(`[Reconciliation] 💱 FX OVERWRITE: Priority Winner matched foreign bank amount. Adjusting payload to ${paidAmount} EUR (Ratio: ${fxRatio.toFixed(3)})`);
                     
+                    // Replace amount with EUR, keep sub/tax in original currency
                     let payoutData = { amount: paidAmount, currency: 'EUR', status: 'Paid' };
-                    if (matchedDoc.data().subtotalAmount) payoutData.subtotalAmount = parseFloat((matchedDoc.data().subtotalAmount * fxRatio).toFixed(2));
-                    if (matchedDoc.data().taxAmount) payoutData.taxAmount = parseFloat((matchedDoc.data().taxAmount * fxRatio).toFixed(2));
                     payoutData.originalForeignAmount = originalAmount;
                     payoutData.originalForeignCurrency = matchedDoc.data().currency || foreignCurrency || 'UNKNOWN';
                     
@@ -581,7 +580,9 @@ async function reconcilePayment(reference, description, paidAmount, totalBankDra
                         if (!isNaN(nd)) dbDateIso = nd.toISOString().split('T')[0];
                     }
 
-                    if (dbDateIso === pDate) {
+                    // Allow ±14 days for card payments (processing delay)
+                    const daysDiff = dbDateIso && pDate ? Math.abs((new Date(pDate) - new Date(dbDateIso)) / 86400000) : 999;
+                    if (daysDiff <= 14) {
                         matchedDoc = doc;
                         isCrossCurrencyMatch = true;
                         const originalAmount = parseFloat(doc.data().amount) || 1;
@@ -589,9 +590,8 @@ async function reconcilePayment(reference, description, paidAmount, totalBankDra
 
                         console.log(`[Reconciliation] 💱 FX OVERWRITE by Date: ${data.vendorName} on ${pDate}. Adjusting from ${data.amount} ${data.currency} to ${paidAmount} EUR.`);
                         
+                        // Replace amount with EUR from bank, keep sub/tax in original currency
                         let crossCurrencyPayload = { amount: paidAmount, currency: 'EUR', status: 'Paid' };
-                        if (doc.data().subtotalAmount) crossCurrencyPayload.subtotalAmount = parseFloat((doc.data().subtotalAmount * fxRatio).toFixed(2));
-                        if (doc.data().taxAmount) crossCurrencyPayload.taxAmount = parseFloat((doc.data().taxAmount * fxRatio).toFixed(2));
                         crossCurrencyPayload.originalForeignAmount = originalAmount;
                         crossCurrencyPayload.originalForeignCurrency = doc.data().currency || foreignCurrency || 'UNKNOWN';
                         
