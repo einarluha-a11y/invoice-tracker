@@ -460,7 +460,7 @@ export const updateInvoice = async (invoiceId: string, data: Partial<Invoice>): 
         const freshSnap = await getDoc(invoiceRef);
         if (freshSnap.exists()) {
             const d = freshSnap.data();
-            if (d.status !== 'Paid' && d.companyId) {
+            if (d.companyId && (d.status !== 'Paid' || (d.currency && d.currency !== 'EUR'))) {
                 const invoiceAmount = parseFloat(d.amount) || 0;
                 const invoiceNum = (d.invoiceId || '').toLowerCase().replace(/[^a-z0-9]/g, '');
                 const vendorWords = (d.vendorName || '').toLowerCase().split(/[^a-zöäüõ0-9]+/).filter((w: string) => w.length >= 3);
