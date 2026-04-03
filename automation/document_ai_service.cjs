@@ -166,16 +166,33 @@ function applyEstonianRegexFallback(rawText, result) {
         filled.push('isPaid (Kaardimakse)');
     }
 
-    // subtotalAmount fallback: "Neto 8.27" or "Neto: 8.27"
+    // subtotalAmount/taxAmount fallback: look for Neto and KM values
+    // Pattern 1: inline "Neto 8.27" or "Neto: 8.27"
     if (!result.subtotalAmount || result.subtotalAmount === 0) {
-        const m = t.match(/\bNeto[:\s]+([\d\s,.]+)/i);
+        const m = t.match(/\bNeto[:\s]+([\d,.]+)/i);
         if (m) { const v = cleanNum(m[1]); if (v > 0) { result.subtotalAmount = v; filled.push('subtotalAmount (Neto)'); } }
     }
-
-    // taxAmount fallback: "KM 1.99" or "KM: 1.99" (but not "KM%" which is the rate)
     if (!result.taxAmount || result.taxAmount === 0) {
-        const m = t.match(/\bKM[:\s]+([\d\s,.]+)/i);
-        if (m && !t.match(/KM%/i)) { const v = cleanNum(m[1]); if (v > 0) { result.taxAmount = v; filled.push('taxAmount (KM)'); } }
+        const m = t.match(/(?:Käibemaks|K[äa]ibemaks)[:\s]+([\d,.]+)/i);
+        if (m) { const v = cleanNum(m[1]); if (v > 0) { result.taxAmount = v; filled.push('taxAmount (Käibemaks)'); } }
+    }
+
+    // Pattern 2: table format — headers and values on separate lines
+    // Look for "Neto\n...\nKM\n...\nKokku\n...\n{neto_val}\n{km_val}\n{kokku_val}"
+    if ((!result.subtotalAmount || result.subtotalAmount === result.amount) && result.amount > 0) {
+        // Find all decimal numbers in text
+        const allNums = [...t.matchAll(/([\d]+[.,]\d{2})/g)].map(m => cleanNum(m[1]));
+        // Look for a pair (sub, tax) where sub + tax = amount (±0.02)
+        for (let i = 0; i < allNums.length - 1; i++) {
+            const sub = allNums[i];
+            const tax = allNums[i + 1];
+            if (sub > 0 && tax > 0 && sub > tax && Math.abs(sub + tax - result.amount) <= 0.02) {
+                result.subtotalAmount = sub;
+                result.taxAmount = tax;
+                filled.push(`subtotalAmount+taxAmount (pair ${sub}+${tax}=${result.amount})`);
+                break;
+            }
+        }
     }
 
     if (filled.length > 0) {
