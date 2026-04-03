@@ -124,14 +124,33 @@ function applyEstonianRegexFallback(rawText, result) {
         if (m) { const v = cleanNum(m[1]); if (v > 0) { result.taxAmount = v; filled.push('taxAmount'); } }
     }
 
-    // amount: "Tasuda kokku" (actual payable) ALWAYS overrides Document AI amount.
-    // Tasuda kokku = what the bank statement shows (after Ettemaks/Võlgnevus adjustments).
-    const tasudaMatch = t.match(/Tasuda\s+kokku[:\s]+([\d\s,.]+)\s*(?:€|EUR)?/i);
-    if (tasudaMatch) {
-        const v = cleanNum(tasudaMatch[1]);
-        if (v > 0) {
+    // amount: "Tasuda kokku" (actual payable) overrides Document AI amount.
+    // If Tasuda kokku is negative (overpayment from previous period) → use Arve kokku as amount, mark as Paid.
+    // If Tasuda kokku is 0 → already paid (Kaardimakse etc.), use Arve/Kokku as amount, mark as Paid.
+    // If Tasuda kokku is positive → use it as amount.
+    const tasudaMatchFull = t.match(/Tasuda\s+kokku[:\s]+(-?[\d\s,.]+)\s*(?:€|EUR)?/i)
+                         || t.match(/Kokku\s+tasuda[:\s]+(-?[\d\s,.]+)\s*(?:€|EUR)?/i);
+    if (tasudaMatchFull) {
+        const raw = tasudaMatchFull[1].trim();
+        const v = cleanNum(raw.replace('-', ''));
+        const isNegative = raw.startsWith('-');
+        if (isNegative || v === 0) {
+            // Overpayment or zero balance — use Arve kokku, mark Paid
+            result.isPaid = true;
+            filled.push('isPaid (Tasuda kokku ≤ 0 — overpayment)');
+            // Don't override amount — let Arve kokku / Summa kokku stand
+        } else if (v > 0) {
             result.amount = v;
             filled.push('amount (Tasuda kokku override)');
+        }
+    }
+    // If amount is negative (DocAI picked up Tasuda kokku instead of Arve kokku), fix it
+    if (result.amount < 0) {
+        const arveKokkuMatch = t.match(/Arve\s+kokku[:\s]+([\d\s,.]+)/i)
+                            || t.match(/Summa\s+kokku\s+(?:\([A-Z]+\)\s+)?([\d\s,.]+)/i);
+        if (arveKokkuMatch) {
+            const v = cleanNum(arveKokkuMatch[1]);
+            if (v > 0) { result.amount = v; filled.push('amount (Arve kokku — replaced negative)'); }
         }
     }
     // amount fallback: "Summa kokku (EUR) 41,22"
@@ -177,19 +196,22 @@ function applyEstonianRegexFallback(rawText, result) {
         if (m) { const v = cleanNum(m[1]); if (v > 0) { result.taxAmount = v; filled.push('taxAmount (Käibemaks)'); } }
     }
 
-    // Pattern 2: table format — headers and values on separate lines
-    // Look for "Neto\n...\nKM\n...\nKokku\n...\n{neto_val}\n{km_val}\n{kokku_val}"
-    if ((!result.subtotalAmount || result.subtotalAmount === result.amount) && result.amount > 0) {
-        // Find all decimal numbers in text
+    // Pattern 2: table format — find pair (sub, tax) where sub + tax = total
+    // Target total: prefer Arve kokku from text, fallback to result.amount
+    let pairTarget = result.amount;
+    const arveKokkuM = t.match(/Arve\s+kokku[:\s]+([\d,.]+)/i);
+    if (arveKokkuM) { const ak = cleanNum(arveKokkuM[1]); if (ak > 0) pairTarget = ak; }
+
+    if (pairTarget > 0 && (!result.subtotalAmount || result.subtotalAmount === result.amount ||
+        Math.abs(result.subtotalAmount + result.taxAmount - pairTarget) > 0.50)) {
         const allNums = [...t.matchAll(/([\d]+[.,]\d{2})/g)].map(m => cleanNum(m[1]));
-        // Look for a pair (sub, tax) where sub + tax = amount (±0.02)
         for (let i = 0; i < allNums.length - 1; i++) {
             const sub = allNums[i];
             const tax = allNums[i + 1];
-            if (sub > 0 && tax > 0 && sub > tax && Math.abs(sub + tax - result.amount) <= 0.02) {
+            if (sub > 0 && tax > 0 && sub > tax && Math.abs(sub + tax - pairTarget) <= 0.02) {
                 result.subtotalAmount = sub;
                 result.taxAmount = tax;
-                filled.push(`subtotalAmount+taxAmount (pair ${sub}+${tax}=${result.amount})`);
+                filled.push(`subtotalAmount+taxAmount (pair ${sub}+${tax}=${pairTarget})`);
                 break;
             }
         }
