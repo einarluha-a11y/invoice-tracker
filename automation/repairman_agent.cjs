@@ -300,7 +300,7 @@ async function repairInvoice(invoiceId, invoiceData) {
     const scoutIsPaid = scoutResult[0].isPaid || false;
 
     // Re-validate with Teacher
-    const teacherResult = await validateAndTeach(scoutResult[0], invoiceData.companyId);
+    const teacherResult = await validateAndTeach(scoutResult[0], invoiceData.companyId, scoutResult[0]._rawText || '');
 
     // Build update object
     const newData = teacherResult.invoice;

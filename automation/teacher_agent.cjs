@@ -215,9 +215,10 @@ function isEmpty(val) {
  * @param {string} companyId   - Firestore company doc ID
  * @returns {Promise<{approved: boolean, invoice: object, corrections: string[]}>}
  */
-async function validateAndTeach(invoiceData, companyId) {
+async function validateAndTeach(invoiceData, companyId, rawText = '') {
     const invoice = { ...invoiceData };
     const corrections = [];
+    // rawText = original document text from Document AI (for field verification)
 
     // ── 1. Load Charter (global AI rules) ──────────────────────────────────────
     let charterRules = '';
@@ -454,6 +455,72 @@ async function validateAndTeach(invoiceData, companyId) {
         // Apply teachingNotes if available (vendor-specific rules)
         if (best.teachingNotes) {
             console.log(`[Teacher] Applying teaching notes for ${best.vendorName}: ${best.teachingNotes}`);
+        }
+    }
+
+    // ── 3c. Full Field Verification from rawText ──────────────────────────
+    // DocAI is a draft — Teacher verifies EVERY field against the actual document text.
+    // rawText values OVERRIDE DocAI when found (DocAI often confuses sub/tax/total).
+    if (rawText && rawText.length > 20) {
+        const { cleanNum } = require('./document_ai_service.cjs');
+
+        // amount: "Tasuda kokku" (payable) has highest priority
+        const tasudaM = rawText.match(/(?:Tasuda\s+kokku|Kokku\s+tasuda)[:\s]+(-?[\d\s,.]+)\s*(?:€|EUR)?/i);
+        if (tasudaM) {
+            const raw = tasudaM[1].trim();
+            const isNeg = raw.startsWith('-');
+            const v = cleanNum(raw.replace('-', ''));
+            if (isNeg || v === 0) {
+                // Overpayment — mark as paid, use Arve kokku for amount
+                invoice.isPaid = true;
+                const arveM = rawText.match(/Arve\s+kokku[:\s]+([\d,.]+)/i);
+                if (arveM) {
+                    const ak = cleanNum(arveM[1]);
+                    if (ak > 0 && ak !== invoice.amount) {
+                        corrections.push(`rawText: Tasuda kokku ≤ 0 (overpayment), amount from Arve kokku: ${invoice.amount}→${ak}`);
+                        invoice.amount = ak;
+                    }
+                }
+            } else if (v > 0 && Math.abs(v - invoice.amount) > 0.50) {
+                corrections.push(`rawText: Tasuda kokku override: amount ${invoice.amount}→${v}`);
+                invoice.amount = v;
+            }
+        }
+
+        // Pair detection: find (sub, tax) where sub+tax=amount
+        const amt = parseFloat(invoice.amount) || 0;
+        const curSub = parseFloat(invoice.subtotalAmount) || 0;
+        const curTax = parseFloat(invoice.taxAmount) || 0;
+        if (amt > 0 && Math.abs(curSub + curTax - amt) > 0.50) {
+            // Also check Arve kokku as pair target
+            let pairTarget = amt;
+            const arveM2 = rawText.match(/Arve\s+kokku[:\s]+([\d,.]+)/i);
+            if (arveM2) { const ak = cleanNum(arveM2[1]); if (ak > 0) pairTarget = ak; }
+
+            const allNums = [...rawText.matchAll(/([\d]+[.,]\d{2})/g)].map(m => cleanNum(m[1]));
+            for (let i = 0; i < allNums.length - 1; i++) {
+                const s = allNums[i], t = allNums[i + 1];
+                if (s > 0 && t > 0 && s > t && Math.abs(s + t - pairTarget) <= 0.02) {
+                    corrections.push(`rawText: pair detection sub=${s} tax=${t} (${s}+${t}=${pairTarget})`);
+                    invoice.subtotalAmount = s;
+                    invoice.taxAmount = t;
+                    break;
+                }
+            }
+        }
+
+        // currency: detect from text
+        if (/\$\s*[\d,.]+|\bUSD\b/i.test(rawText) && !/€|EUR/i.test(rawText)) {
+            if (invoice.currency !== 'USD') {
+                corrections.push(`rawText: currency ${invoice.currency}→USD`);
+                invoice.currency = 'USD';
+            }
+        }
+
+        // Kaardimakse: card payment = already paid
+        if (/kaardimakse/i.test(rawText)) {
+            invoice.isPaid = true;
+            corrections.push('rawText: Kaardimakse detected → isPaid');
         }
     }
 

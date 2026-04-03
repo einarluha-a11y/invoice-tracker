@@ -394,7 +394,7 @@ async function scoutTeacherPipeline(content, mimeType, companyId, customRules) {
 
     // Step 2: Teacher — validate and fill from Charter + examples
     try {
-        const teacherResult = await validateAndTeach(tempParsed[0], companyId);
+        const teacherResult = await validateAndTeach(tempParsed[0], companyId, tempParsed[0]._rawText || '');
         tempParsed[0] = teacherResult.invoice;
 
         if (teacherResult.corrections && teacherResult.corrections.length > 0) {
@@ -1179,7 +1179,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                             try {
                                 // Step A: Teacher validation for body-text invoices
                                 try {
-                                    const teacherResult = await validateAndTeach(inv, companyId);
+                                    const teacherResult = await validateAndTeach(inv, companyId, inv._rawText || '');
                                     Object.assign(inv, teacherResult.invoice);
                                     if (!teacherResult.approved) {
                                         console.warn(`[Email] Body-text invoice has missing fields after Teacher validation.`);
