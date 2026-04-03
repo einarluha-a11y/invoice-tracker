@@ -137,6 +137,8 @@ export const subscribeToInvoices = (
                 paymentTerms: data.paymentTerms,
                 viesValidation: data.viesValidation,
                 enrichmentSource: data.enrichmentSource || data.recoverySource || undefined,
+                originalForeignCurrency: data.originalForeignCurrency || undefined,
+                originalForeignAmount: data.originalForeignAmount || undefined,
             });
         });
 

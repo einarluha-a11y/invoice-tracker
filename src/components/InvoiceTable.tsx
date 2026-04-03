@@ -377,8 +377,8 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                                         <span style={{ fontWeight: 600 }}>{formatCurrency(invoice.amount, invoice.currency)}</span>
                                         {invoice.subtotalAmount !== undefined && (
                                             <div style={{ display: 'flex', flexDirection: 'column', fontSize: '0.7rem', fontWeight: 400, color: 'var(--text-secondary)', marginTop: '2px' }}>
-                                                <span>Sub: {formatCurrency(invoice.subtotalAmount, invoice.currency)}</span>
-                                                {invoice.taxAmount !== undefined && <span>Tax: {formatCurrency(invoice.taxAmount, invoice.currency)}</span>}
+                                                <span>Sub: {formatCurrency(invoice.subtotalAmount, invoice.originalForeignCurrency || invoice.currency)}</span>
+                                                {invoice.taxAmount !== undefined && <span>Tax: {formatCurrency(invoice.taxAmount, invoice.originalForeignCurrency || invoice.currency)}</span>}
                                             </div>
                                         )}
                                     </div>
@@ -422,8 +422,8 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                                     <td colSpan={7} style={{ padding: 0, borderTop: 'none' }}>
                                         <div className="expanded-content">
                                             <div className="financial-summary">
-                                                <span><strong>Subtotal:</strong> {formatCurrency(invoice.subtotalAmount || 0, invoice.currency)}</span>
-                                                <span><strong>Tax (VAT):</strong> {formatCurrency(invoice.taxAmount || 0, invoice.currency)}</span>
+                                                <span><strong>Subtotal:</strong> {formatCurrency(invoice.subtotalAmount || 0, invoice.originalForeignCurrency || invoice.currency)}</span>
+                                                <span><strong>Tax (VAT):</strong> {formatCurrency(invoice.taxAmount || 0, invoice.originalForeignCurrency || invoice.currency)}</span>
                                                 <span className="total-highlight"><strong>Total:</strong> {formatCurrency(invoice.amount, invoice.currency)}</span>
                                             </div>
                                             {invoice.lineItems && invoice.lineItems.length > 0 ? (

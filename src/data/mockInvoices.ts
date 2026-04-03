@@ -22,6 +22,8 @@ export interface Invoice {
     paymentTerms?: string;
     viesValidation?: { isValid: boolean; name: string | null; address: string | null; error: string | null; };
     enrichmentSource?: string;
+    originalForeignCurrency?: string;
+    originalForeignAmount?: number;
 }
 
 export const mockInvoices: Invoice[] = [
