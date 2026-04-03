@@ -382,12 +382,19 @@ async function repairInvoice(invoiceId, invoiceData) {
         qualityIssues.push('Missing vendor name');
     }
     if (qualityIssues.length > 0) {
-        updates.repairQualityWarnings = qualityIssues;
-        console.warn(`  [Teacher QC] ⚠️  Post-repair issues: ${qualityIssues.join(' | ')}`);
+        // Teacher rejected Repairman's work — don't save bad data
+        console.warn(`  [Teacher QC] ❌ Repair REJECTED: ${qualityIssues.join(' | ')}`);
+        console.warn(`  [Teacher QC] Old data preserved. Invoice needs manual correction (pencil).`);
+        await db.collection('invoices').doc(invoiceId).update({
+            status: 'Needs Action',
+            repairQualityWarnings: qualityIssues,
+            repairedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        return false;
     }
 
     await db.collection('invoices').doc(invoiceId).update(updates);
-    console.log(`  [Repairman] ✅ Updated ${invoiceId} with ${Object.keys(updates).length - 2} field(s).${qualityIssues.length ? ' ⚠️ WITH WARNINGS' : ''}`);
+    console.log(`  [Repairman] ✅ Updated ${invoiceId} with ${Object.keys(updates).length - 2} field(s).`);
 
     // Update staging
     if (invoiceData.stagingId) {
