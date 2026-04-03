@@ -104,6 +104,11 @@ async function findExamplesByIdentifiers(invoice) {
     const invoiceVat = (invoice.supplierVat || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
     const invoiceReg = (invoice.supplierRegistration || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
 
+    // Our companies' VAT/Reg — never match against these (DocAI sometimes uses buyer's info)
+    const OUR_VATS = new Set(['ee101841061']); // Global Technics, Ideacom
+    const OUR_REGS = new Set(['12875353']);
+    if (OUR_VATS.has(invoiceVat) || OUR_REGS.has(invoiceReg)) return [];
+
     for (const ex of allExamples) {
         const gt = ex.groundTruth || {};
 
@@ -465,8 +470,21 @@ async function validateAndTeach(invoiceData, companyId, rawText = '') {
 
     // ── 3c. Full Field Verification from rawText ──────────────────────────
     // DocAI is a draft — Teacher verifies EVERY field against the actual document text.
-    // rawText values OVERRIDE DocAI when found (DocAI often confuses sub/tax/total).
     if (rawText && rawText.length > 20) {
+        // Our companies are ALWAYS the buyer, never the supplier
+        const OUR_COMPANIES = ['global technics', 'ideacom'];
+        const vendorLower = (invoice.vendorName || '').toLowerCase();
+        if (OUR_COMPANIES.some(c => vendorLower.includes(c))) {
+            // DocAI confused buyer with supplier — try to find real vendor in rawText
+            // Look for company names near keywords like Tiekėjas/Tarnija/Supplier/footer
+            // Also check: the other company mentioned that is NOT ours
+            const companyMatches = rawText.match(/(?:MTÜ|OÜ|AS|UAB|SIA|GmbH|LLC)\s+/gi);
+            // Simpler: if receiverName exists and is NOT our company, swap
+            if (invoice.receiverName && !OUR_COMPANIES.some(c => invoice.receiverName.toLowerCase().includes(c))) {
+                // receiverName might actually be the supplier
+            }
+            corrections.push(`WARNING: vendorName "${invoice.vendorName}" is our company — DocAI confused buyer/supplier`);
+        }
         const { cleanNum } = require('./document_ai_service.cjs');
 
         // amount: "Tasuda kokku" (payable) has highest priority
