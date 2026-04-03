@@ -368,9 +368,9 @@ async function validateAndTeach(invoiceData, companyId, rawText = '') {
         } catch { /* no match — proceed without examples */ }
     }
 
-    // ── 3. Fill/correct fields from examples ────────────────────────────────
+    // ── 3. Apply knowledge base (HIGHEST PRIORITY — human-verified) ────────
+    // Examples ALWAYS override DocAI for static fields and fix numeric fields.
     if (examples.length > 0) {
-        // Use the most recent example for this vendor
         const best = examples.sort((a, b) => {
             const tA = a.updatedAt?._seconds || a.createdAt?._seconds || 0;
             const tB = b.updatedAt?._seconds || b.createdAt?._seconds || 0;
@@ -379,91 +379,49 @@ async function validateAndTeach(invoiceData, companyId, rawText = '') {
 
         const gt = best.groundTruth || {};
 
-        // Vendor name: use example's name if matched by identifiers (trusted)
-        // or if Scout returned "Unknown Vendor" / very short name (likely wrong)
-        if (gt.vendorName && !isEmpty(gt.vendorName)) {
-            if (isEmpty(invoice.vendorName) || matchedByIdentifiers || (invoice.vendorName.length <= 3 && gt.vendorName.length > 3)) {
-                if (invoice.vendorName !== gt.vendorName) {
-                    corrections.push(`Corrected vendorName: "${invoice.vendorName}" → "${gt.vendorName}" (from verified example)`);
-                    invoice.vendorName = gt.vendorName;
-                }
-            }
+        // vendorName: example ALWAYS wins (DocAI often confuses buyer/supplier)
+        if (gt.vendorName && !isEmpty(gt.vendorName) && invoice.vendorName !== gt.vendorName) {
+            corrections.push(`Example: vendorName "${invoice.vendorName}" → "${gt.vendorName}"`);
+            invoice.vendorName = gt.vendorName;
         }
 
-        // Static vendor fields: supplierVat, supplierRegistration, currency
-        // These are constant per vendor — example is always trusted over DocAI
-        const STATIC_FIELDS = ['supplierVat', 'supplierRegistration', 'currency'];
-        for (const field of STATIC_FIELDS) {
-            if (!gt[field] || isEmpty(gt[field])) continue;
-
-            if (isEmpty(invoice[field])) {
-                invoice[field] = gt[field];
-                corrections.push(`Filled ${field} from example: ${gt[field]}`);
-            } else if (invoice[field] !== gt[field]) {
-                // Static fields are constant per vendor — example always overrides DocAI
-                corrections.push(`Corrected ${field}: ${invoice[field]} → ${gt[field]} (from verified example)`);
+        // Static fields: VAT, Reg, currency — constant per vendor, example always wins
+        for (const field of ['supplierVat', 'supplierRegistration', 'currency']) {
+            if (gt[field] && !isEmpty(gt[field]) && invoice[field] !== gt[field]) {
+                corrections.push(`Example: ${field} "${invoice[field]}" → "${gt[field]}"`);
                 invoice[field] = gt[field];
             }
         }
 
-        // Description: copy pattern from example if Scout returned empty
+        // Description: fill from example if empty
         if (isEmpty(invoice.description) && gt.description && !isEmpty(gt.description)) {
             invoice.description = gt.description;
-            corrections.push(`Filled description from example: ${gt.description}`);
+            corrections.push(`Example: description → "${gt.description}"`);
         }
 
-        // Vendor name normalization: if example has the canonical name, use it
-        if (invoice.vendorName && gt.vendorName && !isEmpty(invoice.vendorName)) {
-            const scoutNorm = invoice.vendorName.toLowerCase().replace(/[^a-z0-9]/g, '');
-            const exNorm = gt.vendorName.toLowerCase().replace(/[^a-z0-9]/g, '');
-            if (scoutNorm.includes(exNorm) || exNorm.includes(scoutNorm)) {
-                if (invoice.vendorName !== gt.vendorName) {
-                    invoice.vendorName = gt.vendorName;
-                    corrections.push(`Normalized vendorName to: ${gt.vendorName}`);
+        // Tax rate pattern: if DocAI math is wrong, use example's tax rate
+        const gtSub = parseFloat(gt.subtotalAmount) || 0;
+        const gtTax = parseFloat(gt.taxAmount) || 0;
+        const gtAmt = parseFloat(gt.amount) || 0;
+        if (gtSub > 0 && Math.abs(gtSub + gtTax - gtAmt) <= 0.50) {
+            const docAmt = parseFloat(invoice.amount) || 0;
+            const docMathOk = Math.abs((parseFloat(invoice.subtotalAmount)||0) + (parseFloat(invoice.taxAmount)||0) - docAmt) <= 0.50;
+            if (!docMathOk && docAmt > 0) {
+                const taxRate = gtSub > 0 ? gtTax / gtSub : 0;
+                if (taxRate > 0 && taxRate < 1) {
+                    invoice.subtotalAmount = parseFloat((docAmt / (1 + taxRate)).toFixed(2));
+                    invoice.taxAmount = parseFloat((docAmt - invoice.subtotalAmount).toFixed(2));
+                    corrections.push(`Example: tax rate ${(taxRate*100).toFixed(0)}% → sub=${invoice.subtotalAmount}, tax=${invoice.taxAmount}`);
+                } else if (taxRate === 0) {
+                    invoice.subtotalAmount = docAmt;
+                    invoice.taxAmount = 0;
+                    corrections.push(`Example: VAT 0% vendor → sub=${docAmt}, tax=0`);
                 }
             }
         }
 
-        // ── Verify numeric fields against ground truth ──────────────────────
-        // If example has verified sub/tax and DocAI extracted different values,
-        // AND the example's sub+tax=amount holds, trust the example pattern.
-        // This catches DocAI errors like putting total in tax field.
-        if (gt.subtotalAmount && gt.taxAmount && gt.amount) {
-            const gtSub = parseFloat(gt.subtotalAmount) || 0;
-            const gtTax = parseFloat(gt.taxAmount) || 0;
-            const gtAmt = parseFloat(gt.amount) || 0;
-            const gtMathOk = Math.abs(gtSub + gtTax - gtAmt) <= 0.50;
-
-            if (gtMathOk && gtAmt > 0) {
-                const docSub = parseFloat(invoice.subtotalAmount) || 0;
-                const docTax = parseFloat(invoice.taxAmount) || 0;
-                const docAmt = parseFloat(invoice.amount) || 0;
-                const docMathOk = Math.abs(docSub + docTax - docAmt) <= 0.50;
-
-                // If DocAI math is wrong but example math is right → use example's tax rate pattern
-                if (!docMathOk && docAmt > 0) {
-                    const taxRate = gtTax / gtSub; // e.g. 0.24 for 24% VAT
-                    if (taxRate > 0 && taxRate < 1) {
-                        const newSub = parseFloat((docAmt / (1 + taxRate)).toFixed(2));
-                        const newTax = parseFloat((docAmt - newSub).toFixed(2));
-                        if (Math.abs(newSub + newTax - docAmt) <= 0.02) {
-                            corrections.push(`Fixed sub/tax from example tax rate (${(taxRate*100).toFixed(0)}%): sub ${docSub}→${newSub}, tax ${docTax}→${newTax}`);
-                            invoice.subtotalAmount = newSub;
-                            invoice.taxAmount = newTax;
-                        }
-                    } else if (taxRate === 0) {
-                        // No tax vendor (e.g. Emergent)
-                        invoice.subtotalAmount = docAmt;
-                        invoice.taxAmount = 0;
-                        corrections.push(`Fixed sub/tax from example: no VAT vendor (tax=0)`);
-                    }
-                }
-            }
-        }
-
-        // Apply teachingNotes if available (vendor-specific rules)
         if (best.teachingNotes) {
-            console.log(`[Teacher] Applying teaching notes for ${best.vendorName}: ${best.teachingNotes}`);
+            console.log(`[Teacher] Teaching notes: ${best.teachingNotes}`);
         }
     }
 
