@@ -61,7 +61,8 @@ const MAX_REPAIR_ATTEMPTS = 2;
 const EMPTY_VALUES = ['', 'Not_Found', 'Unknown Vendor', 'UNKNOWN VENDOR', 'Unknown', null, undefined];
 function isEmpty(val) {
     if (EMPTY_VALUES.includes(val)) return true;
-    if (typeof val === 'number' && val === 0) return true;
+    if (typeof val === 'number' && isNaN(val)) return true;
+    // Note: 0 is a valid value (e.g. taxAmount=0 for VAT 0%), not "empty"
     if (typeof val === 'string' && val.startsWith('Auto-')) return true;
     return false;
 }
