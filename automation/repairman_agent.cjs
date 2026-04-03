@@ -370,8 +370,24 @@ async function repairInvoice(invoiceId, invoiceData) {
         updates.teacherCorrections = teacherResult.corrections;
     }
 
+    // ── Post-repair quality check (Teacher verifies Repairman's work) ──
+    const finalAmount = updates.amount ?? newData.amount ?? invoiceData.amount ?? 0;
+    const finalSub = updates.subtotalAmount ?? newData.subtotalAmount ?? invoiceData.subtotalAmount ?? 0;
+    const finalTax = updates.taxAmount ?? newData.taxAmount ?? invoiceData.taxAmount ?? 0;
+    const qualityIssues = [];
+    if (finalAmount > 0 && finalSub > 0 && Math.abs(finalSub + finalTax - finalAmount) > 0.50) {
+        qualityIssues.push(`Math: ${finalSub} + ${finalTax} = ${(finalSub + finalTax).toFixed(2)} ≠ ${finalAmount}`);
+    }
+    if (!updates.vendorName && isEmpty(newData.vendorName) && isEmpty(invoiceData.vendorName)) {
+        qualityIssues.push('Missing vendor name');
+    }
+    if (qualityIssues.length > 0) {
+        updates.repairQualityWarnings = qualityIssues;
+        console.warn(`  [Teacher QC] ⚠️  Post-repair issues: ${qualityIssues.join(' | ')}`);
+    }
+
     await db.collection('invoices').doc(invoiceId).update(updates);
-    console.log(`  [Repairman] ✅ Updated ${invoiceId} with ${Object.keys(updates).length - 2} field(s).`);
+    console.log(`  [Repairman] ✅ Updated ${invoiceId} with ${Object.keys(updates).length - 2} field(s).${qualityIssues.length ? ' ⚠️ WITH WARNINGS' : ''}`);
 
     // Update staging
     if (invoiceData.stagingId) {
