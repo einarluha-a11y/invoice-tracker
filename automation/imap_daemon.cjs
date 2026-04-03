@@ -480,11 +480,9 @@ async function reconcilePayment(reference, description, paidAmount, totalBankDra
             const data = doc.data();
             const invoiceAmount = parseFloat(data.amount) || 0;
 
-            // Allow exact match OR explicitly reported Foreign Amount match from the bank
-            // For Ettemaks payments: widen tolerance to ±0.50 (bank fees on prepayments)
-            const amountTolerance = isEttemaksPayment ? 0.50 : 0.05;
-            const isAmountMatch = Math.abs(invoiceAmount - paidAmount) <= amountTolerance ||
-                                  (foreignAmount !== null && Math.abs(invoiceAmount - foreignAmount) <= amountTolerance);
+            // Global tolerance ±0.50 EUR covers bank transfer fees (Revolut €0.20, etc.)
+            const isAmountMatch = Math.abs(invoiceAmount - paidAmount) <= 0.50 ||
+                                  (foreignAmount !== null && Math.abs(invoiceAmount - foreignAmount) <= 0.50);
 
             const dbId = normalizeAlphaNum(data.invoiceId);
             const dbDigits = extractDigits(data.invoiceId);
