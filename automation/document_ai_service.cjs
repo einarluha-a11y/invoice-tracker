@@ -546,11 +546,13 @@ CURRENT DATA:
 ERRORS FOUND: ${qcIssues.join('; ')}
 
 RULES:
-- amount = "Tasuda kokku" or "Kokku tasuda" (what needs to be paid). If negative → overpayment.
+- amount = "Tasuda kokku" or "Kokku tasuda" or "Tasuda" (what needs to be paid). If negative → overpayment.
 - subtotalAmount = "Summa km-ta" or "Neto" or "Kokku maksustatav + Kokku mv" (without VAT)
 - taxAmount = "Käibemaks" or "KM" (VAT amount)
 - If "Kaardimakse" appears → isPaid: true
 - If currency is not EUR, keep sub/tax in original currency
+- "Global Technics OÜ" and "Ideacom OÜ" are ALWAYS the buyer, never the supplier. The supplier (vendorName) is the OTHER company in the document.
+- Look for supplier name near: "Tiekėjas"/"Tarnija"/"Supplier"/"Lieferant" labels, or in the document header/footer with different VAT/Reg than our companies.
 
 ${charterRules ? 'CHARTER RULES:\n' + charterRules : ''}
 
@@ -558,7 +560,7 @@ INVOICE TEXT:
 ${rawText.substring(0, 3000)}
 
 Return ONLY a JSON object with the corrected fields. Example:
-{"amount": 81.18, "subtotalAmount": 84.42, "taxAmount": 15.11, "currency": "EUR"}
+{"vendorName": "Company Name", "amount": 81.18, "subtotalAmount": 84.42, "taxAmount": 15.11, "currency": "EUR"}
 Only include fields that need correction. Return {} if you cannot determine the correct values.`;
 
         console.log(`[Claude QC] 🔍 Asking Claude to fix: ${qcIssues.join(' | ')}`);
