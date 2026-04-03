@@ -1,4 +1,4 @@
-import { collection, onSnapshot, doc, getDoc, deleteDoc, updateDoc, setDoc, query, orderBy, where, limit, serverTimestamp } from 'firebase/firestore';
+import { collection, onSnapshot, doc, getDoc, getDocs, deleteDoc, updateDoc, setDoc, query, orderBy, where, limit, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Invoice, InvoiceStatus } from './mockInvoices';
 
@@ -452,5 +452,48 @@ export const updateInvoice = async (invoiceId: string, data: Partial<Invoice>): 
     } catch (teachErr) {
         // Non-fatal: don't block the save if Teacher Agent fails
         console.warn(`[Teacher Agent] ⚠️  Could not save example: ${teachErr}`);
+    }
+
+    // ── Post-save reconciliation: check bank_transactions for payment ──────
+    // After manual edit, check if this invoice was already paid.
+    try {
+        const freshSnap = await getDoc(invoiceRef);
+        if (freshSnap.exists()) {
+            const d = freshSnap.data();
+            if (d.status !== 'Paid' && d.companyId) {
+                const invoiceAmount = parseFloat(d.amount) || 0;
+                const invoiceNum = (d.invoiceId || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                const vendorWords = (d.vendorName || '').toLowerCase().split(/[^a-zöäüõ0-9]+/).filter((w: string) => w.length >= 3);
+                const invoiceDate = d.dateCreated || '';
+
+                const txSnap = await getDocs(query(
+                    collection(db!, 'bank_transactions'),
+                    where('companyId', '==', d.companyId)
+                ));
+
+                for (const txDoc of txSnap.docs) {
+                    const tx = txDoc.data();
+                    const txAmount = parseFloat(tx.amount) || 0;
+                    if (Math.abs(txAmount - invoiceAmount) > 0.50) continue;
+                    if (invoiceDate && tx.date && tx.date < invoiceDate) continue;
+
+                    const txVendor = (tx.counterparty || '').toLowerCase();
+                    const txRef = (tx.reference || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+                    const refMatch = invoiceNum.length > 3 && (txRef.includes(invoiceNum) || invoiceNum.includes(txRef));
+                    const vendorMatch = vendorWords.length > 0 && vendorWords.some((w: string) => txVendor.includes(w));
+                    const isEttemaks = (tx.reference || '').toLowerCase().includes('ettemaks');
+
+                    if (vendorMatch && !refMatch && txRef.length > 3 && !isEttemaks) continue;
+                    if (vendorMatch || refMatch) {
+                        await updateDoc(invoiceRef, { status: 'Paid', previousStatus: d.status });
+                        console.log(`[Post-Save Reconciliation] Invoice ${d.invoiceId} → Paid (matched bank tx €${txAmount})`);
+                        break;
+                    }
+                }
+            }
+        }
+    } catch (reconErr) {
+        console.warn(`[Post-Save Reconciliation] ⚠️  Failed: ${reconErr}`);
     }
 };
