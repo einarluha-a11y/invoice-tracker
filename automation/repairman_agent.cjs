@@ -381,16 +381,48 @@ async function repairInvoice(invoiceId, invoiceData) {
     if (!updates.vendorName && isEmpty(newData.vendorName) && isEmpty(invoiceData.vendorName)) {
         qualityIssues.push('Missing vendor name');
     }
-    if (qualityIssues.length > 0) {
-        // Teacher rejected Repairman's work — don't save bad data
-        console.warn(`  [Teacher QC] ❌ Repair REJECTED: ${qualityIssues.join(' | ')}`);
-        console.warn(`  [Teacher QC] Old data preserved. Invoice needs manual correction (pencil).`);
-        await db.collection('invoices').doc(invoiceId).update({
-            status: 'Needs Action',
-            repairQualityWarnings: qualityIssues,
-            repairedAt: admin.firestore.FieldValue.serverTimestamp(),
-        });
-        return false;
+    // ── Teacher QC loop: Teacher checks, tells Repairman what to fix, max 2 retries ──
+    const MAX_QC_RETRIES = 2;
+    for (let qcRound = 0; qcRound <= MAX_QC_RETRIES; qcRound++) {
+        const qcAmount = parseFloat(updates.amount ?? newData.amount ?? invoiceData.amount ?? 0);
+        const qcSub = parseFloat(updates.subtotalAmount ?? newData.subtotalAmount ?? invoiceData.subtotalAmount ?? 0);
+        const qcTax = parseFloat(updates.taxAmount ?? newData.taxAmount ?? invoiceData.taxAmount ?? 0);
+        const qcIssues = [];
+
+        if (qcAmount > 0 && qcSub > 0 && Math.abs(qcSub + qcTax - qcAmount) > 0.50) {
+            qcIssues.push(`sub(${qcSub}) + tax(${qcTax}) = ${(qcSub + qcTax).toFixed(2)} ≠ amount(${qcAmount})`);
+        }
+        if (!updates.vendorName && isEmpty(newData.vendorName) && isEmpty(invoiceData.vendorName)) {
+            qcIssues.push('Missing vendor name');
+        }
+
+        if (qcIssues.length === 0) break; // All good
+
+        if (qcRound < MAX_QC_RETRIES) {
+            // Teacher tells Repairman what to fix
+            console.log(`  [Teacher QC] Round ${qcRound + 1}: ${qcIssues.join(' | ')}`);
+
+            // Repairman tries to fix: recalculate sub/tax from amount
+            if (qcSub > 0 && qcTax > 0 && Math.abs(qcSub + qcTax - qcAmount) > 0.50) {
+                // If sub+tax > amount, likely Võlgnevus included — trust amount, recalculate
+                if (qcAmount > 0 && qcTax > 0 && qcTax < qcAmount) {
+                    updates.subtotalAmount = parseFloat((qcAmount - qcTax).toFixed(2));
+                    console.log(`  [Repairman] Fixed sub: ${qcSub} → ${updates.subtotalAmount} (amount - tax)`);
+                } else if (qcAmount > 0 && qcSub > 0 && qcSub < qcAmount) {
+                    updates.taxAmount = parseFloat((qcAmount - qcSub).toFixed(2));
+                    console.log(`  [Repairman] Fixed tax: ${qcTax} → ${updates.taxAmount} (amount - sub)`);
+                }
+            }
+        } else {
+            // Max retries reached — give up, save for manual correction
+            console.warn(`  [Teacher QC] ❌ Repair REJECTED after ${MAX_QC_RETRIES} attempts: ${qcIssues.join(' | ')}`);
+            await db.collection('invoices').doc(invoiceId).update({
+                status: 'Needs Action',
+                repairQualityWarnings: qcIssues,
+                repairedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+            return false;
+        }
     }
 
     await db.collection('invoices').doc(invoiceId).update(updates);
