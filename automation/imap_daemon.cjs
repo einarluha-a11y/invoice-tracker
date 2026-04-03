@@ -1339,20 +1339,23 @@ async function pollLoop() {
 //
 async function sweepStatuses() {
     const today = new Date().toISOString().slice(0, 10);
-    const snap = await db.collection('invoices').where('status', '==', 'Pending').get();
+    // Check ALL non-Paid, non-Overdue, non-Duplicate invoices
+    // (covers Pending, Needs Action, UNREPAIRABLE, etc.)
+    const snap = await db.collection('invoices').get();
     let fixed = 0;
     for (const doc of snap.docs) {
         const data = doc.data();
+        if (data.status === 'Paid' || data.status === 'Overdue' || data.status === 'Duplicate') continue;
         if (data.dueDate && data.dueDate < today) {
             await db.collection('invoices').doc(doc.id).update({
                 status: 'Overdue',
-                previousStatus: 'Pending',
+                previousStatus: data.status,
                 statusFixedAt: admin.firestore.FieldValue.serverTimestamp(),
             });
             fixed++;
         }
     }
-    if (fixed > 0) console.log(`[Status Sweep] ${fixed} invoice(s) Pending → Overdue.`);
+    if (fixed > 0) console.log(`[Status Sweep] ${fixed} invoice(s) → Overdue.`);
 }
 
 // Overlap-safe Post-Flight Auditor daemon

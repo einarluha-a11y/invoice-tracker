@@ -574,7 +574,7 @@ async function runAudit() {
                 updates.previousStatus = oldStatus;
                 updates.statusFixedAt = admin.firestore.FieldValue.serverTimestamp();
                 paidFound++;
-            } else if (oldStatus === 'Pending' && data.dueDate && data.dueDate < today) {
+            } else if (oldStatus !== 'Overdue' && data.dueDate && data.dueDate < today) {
                 updates.status = 'Overdue';
                 updates.previousStatus = oldStatus;
                 updates.statusFixedAt = admin.firestore.FieldValue.serverTimestamp();
