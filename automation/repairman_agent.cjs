@@ -46,6 +46,7 @@ const companyFilter = getArg('--company');
 const dateArg       = getArg('--date');
 let sinceArg        = getArg('--since');
 let untilArg        = getArg('--until');
+const invoiceFilter = getArg('--invoice'); // repair specific invoice by Firestore ID
 
 if (dateArg) { sinceArg = dateArg; untilArg = dateArg; }
 
@@ -69,6 +70,13 @@ function isEmpty(val) {
 
 async function findBadInvoices() {
     if (mode === 'statuses') return findBadStatuses();
+
+    // --invoice ID: force repair specific invoice regardless of problems
+    if (invoiceFilter) {
+        const doc = await db.collection('invoices').doc(invoiceFilter).get();
+        if (!doc.exists) { console.log(`Invoice ${invoiceFilter} not found.`); return []; }
+        return [{ id: doc.id, data: doc.data(), reason: 'Forced repair (--invoice)' }];
+    }
 
     let q = db.collection('invoices').orderBy('createdAt', 'desc').limit(5000);
     if (companyFilter) q = q.where('companyId', '==', companyFilter);
