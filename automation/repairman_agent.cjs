@@ -527,7 +527,9 @@ async function runAudit() {
             let isPaidInBank = false;
             const companyTxs = bankTxByCompany[data.companyId] || [];
             if (companyTxs.length > 0) {
-                const vendorClean = (newVendor || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                // Word-based vendor matching: "Esvika Elekter AS" matches "Aktsiaselts Esvika Elekter"
+                const LEGAL_SUFFIXES = new Set(['as', 'ou', 'oü', 'uab', 'sia', 'llc', 'gmbh', 'inc', 'bv', 'oy', 'aktsiaselts', 'osaühing']);
+                const vendorWords = (newVendor || '').toLowerCase().split(/[^a-zöäüõ0-9]+/).filter(w => w.length >= 3 && !LEGAL_SUFFIXES.has(w));
                 const invoiceNum = (data.invoiceId || '').toLowerCase().replace(/[^a-z0-9]/g, '');
                 const invoiceDate = data.dateCreated || '';
 
@@ -536,15 +538,21 @@ async function runAudit() {
                     if (Math.abs(txAmount - invoiceAmount) > 0.50) continue;
                     if (invoiceDate && tx.date && tx.date < invoiceDate) continue;
 
-                    const txVendor = (tx.counterparty || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                    const txVendorFull = (tx.counterparty || '').toLowerCase();
                     const txRef = (tx.reference || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
                     const refMatch = invoiceNum.length > 3 &&
                         (txRef.includes(invoiceNum) || invoiceNum.includes(txRef));
-                    const vendorMatch = vendorClean.length > 3 && txVendor.length > 3 &&
-                        (vendorClean.includes(txVendor) || txVendor.includes(vendorClean));
+                    // Word-based: at least one significant vendor word appears in bank counterparty
+                    const vendorMatch = vendorWords.length > 0 &&
+                        vendorWords.some(w => txVendorFull.includes(w));
 
-                    if (vendorMatch && !refMatch && txRef.length > 3) continue;
+                    // Prepayment invoices (Ettemaksuteatis/Pro-forma): bank reference
+                    // contains "ettemaks" with a different number than Arve.
+                    // In this case, match by vendor + amount only (skip reference guard).
+                    const isEttemaks = (tx.reference || '').toLowerCase().includes('ettemaks');
+
+                    if (vendorMatch && !refMatch && txRef.length > 3 && !isEttemaks) continue;
                     if (vendorMatch || refMatch) { isPaidInBank = true; break; }
                 }
             }

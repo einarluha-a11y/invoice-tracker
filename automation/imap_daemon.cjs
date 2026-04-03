@@ -470,26 +470,34 @@ async function reconcilePayment(reference, description, paidAmount, totalBankDra
         // 0. Unified Priority Matrix for Bank Payments
         let candidates = [];
         
+        // Prepayment (Ettemaksuteatis/Pro-forma) detection:
+        // Bank reference contains "ettemaks" — payment was for a prepayment invoice,
+        // but the real Arve has a different number. Allow wider amount tolerance (±0.50)
+        // and match by vendor name only.
+        const isEttemaksPayment = (reference || '').toLowerCase().includes('ettemaks');
+
         const assessCandidate = (doc, isPaid) => {
             const data = doc.data();
             const invoiceAmount = parseFloat(data.amount) || 0;
-            
+
             // Allow exact match OR explicitly reported Foreign Amount match from the bank
-            const isAmountMatch = Math.abs(invoiceAmount - paidAmount) <= 0.05 || 
-                                  (foreignAmount !== null && Math.abs(invoiceAmount - foreignAmount) <= 0.05);
+            // For Ettemaks payments: widen tolerance to ±0.50 (bank fees on prepayments)
+            const amountTolerance = isEttemaksPayment ? 0.50 : 0.05;
+            const isAmountMatch = Math.abs(invoiceAmount - paidAmount) <= amountTolerance ||
+                                  (foreignAmount !== null && Math.abs(invoiceAmount - foreignAmount) <= amountTolerance);
 
             const dbId = normalizeAlphaNum(data.invoiceId);
             const dbDigits = extractDigits(data.invoiceId);
-            
+
             const vendorWords = (data.vendorName || '').toLowerCase().split(/[^a-z0-9]/).filter(w => w.length >= 3);
             const vNameMatch = vendorWords.some(word => bankDesc.includes(word));
-            
+
             let refMatchScore = 0;
             if (dbId) {
-                if (dbId === bankRefClean) refMatchScore = 150; 
+                if (dbId === bankRefClean) refMatchScore = 150;
                 else if (dbDigits.length >= 4 && refDigits.length >= 4 && (dbDigits === refDigits)) refMatchScore = 100;
                 // Min 5 chars for substring to prevent short historic IDs ('2603') from hijacking new active IDs ('260399843')
-                else if (dbId.length >= 5 && bankRefClean.includes(dbId)) refMatchScore = 50; 
+                else if (dbId.length >= 5 && bankRefClean.includes(dbId)) refMatchScore = 50;
             }
 
             if (isAmountMatch) {
@@ -641,22 +649,28 @@ async function reconcilePayment(reference, description, paidAmount, totalBankDra
                     const pVendor = normalizeString(pData.vendorName);
 
                     // Does the Vendor perfectly overlap and Amount exactly equal?
-                    if (Math.abs(pData.amount - matchedAmount) <= 0.05) {
+                    // Wider tolerance for prepayment pairs (bank fees may differ)
+                    if (Math.abs(pData.amount - matchedAmount) <= 0.50) {
                         const pWords = pVendor.split(/[^a-z0-9]/).filter(w => w.length >= 3);
                         const mWords = matchedVendor.split(/[^a-z0-9]/).filter(w => w.length >= 3);
                         const isVendorTwin = pWords.some(w => matchedVendor.includes(w)) || mWords.some(w => pVendor.includes(w));
 
                         if (isVendorTwin) {
-                            // Only trigger Cascade Paid if one of them is clearly a prepayment / ettemaks
+                            // Prepayment/Arve pair: delete the Ettemaksuteatis, keep the Arve as Paid
                             if (isPrepayment(matchedId) || isPrepayment(pData.invoiceId)) {
-                                console.log(`[Reconciliation-ProFormaSwap] Found corresponding mirror invoice (ProForma/Real pair): ${pData.invoiceId}. Marking as Paid automatically.`);
-                                await db.runTransaction(async (t) => {
-                                    const freshDoc = await t.get(doc.ref);
-                                    if (freshDoc.exists && freshDoc.data().status !== 'Paid') {
-                                        t.update(doc.ref, { status: 'Paid' });
-                                    }
-                                });
-                                // Keep scanning in case there are multiple
+                                const ettemaksDoc = isPrepayment(pData.invoiceId) ? doc : matchedDoc;
+                                const arveDoc = isPrepayment(pData.invoiceId) ? matchedDoc : doc;
+                                console.log(`[Reconciliation-ProFormaSwap] Deleting prepayment ${ettemaksDoc.data().invoiceId}, keeping Arve ${arveDoc.data().invoiceId} as Paid.`);
+                                await ettemaksDoc.ref.delete();
+                                if (arveDoc.id !== matchedDoc.id) {
+                                    // Arve is the pending twin — mark it Paid too
+                                    await db.runTransaction(async (t) => {
+                                        const freshDoc = await t.get(arveDoc.ref);
+                                        if (freshDoc.exists && freshDoc.data().status !== 'Paid') {
+                                            t.update(arveDoc.ref, { status: 'Paid' });
+                                        }
+                                    });
+                                }
                             }
                         }
                     }
