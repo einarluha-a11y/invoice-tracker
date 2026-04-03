@@ -49,6 +49,66 @@ const C = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  CLAUDE HAIKU — vendor identity extraction from raw text
+// ─────────────────────────────────────────────────────────────────────────────
+
+let _anthropic = null;
+function getAnthropic() {
+    if (_anthropic) return _anthropic;
+    const Anthropic = require('@anthropic-ai/sdk');
+    _anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    return _anthropic;
+}
+
+/**
+ * Ask Claude Haiku to extract vendor identity from raw invoice text.
+ * Used when DocAI returned "Unknown Vendor" and no example matched.
+ */
+async function extractVendorWithClaude(rawText) {
+    // Re-read .env to ensure ANTHROPIC_API_KEY is available (dotenv may have loaded without it)
+    if (!process.env.ANTHROPIC_API_KEY) {
+        require('dotenv').config({ path: path.join(__dirname, '.env'), override: true });
+    }
+    if (!rawText || !process.env.ANTHROPIC_API_KEY) return null;
+
+    // Trim to first 2000 chars — enough for header with vendor info
+    const snippet = rawText.slice(0, 2000);
+
+    try {
+        const client = getAnthropic();
+        const resp = await client.messages.create({
+            model: 'claude-haiku-4-5-20251001',
+            max_tokens: 300,
+            messages: [{
+                role: 'user',
+                content: `Extract the SUPPLIER (seller/service provider) details from this invoice text. The buyer is NOT the supplier.
+
+Return ONLY valid JSON, nothing else:
+{"vendorName": "...", "supplierVat": "...", "supplierRegistration": "..."}
+
+If a field is not found, use empty string "".
+VAT number format: country code + digits (e.g. LT100018378612, EE102076039).
+Registration number: digits only.
+
+Invoice text:
+${snippet}`
+            }],
+        });
+
+        const text = resp.content[0]?.text || '';
+        const match = text.match(/\{[\s\S]*\}/);
+        if (!match) return null;
+
+        const parsed = JSON.parse(match[0]);
+        console.log(`[Teacher] 🤖 Claude extracted vendor: "${parsed.vendorName}", VAT=${parsed.supplierVat}, Reg=${parsed.supplierRegistration}`);
+        return parsed;
+    } catch (err) {
+        console.warn(`[Teacher] Claude vendor extraction failed: ${err.message}`);
+        return null;
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  FIRESTORE HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -374,7 +434,72 @@ async function validateAndTeach(invoiceData, companyId) {
         corrections.push(...rulesApplied);
     }
 
-    // ── 5. Math validation: subtotal + tax ≈ amount ─────────────────────────
+    // ── 5. Cross-validation: vendor name ↔ VAT/Reg must be consistent ──────
+    // If we have examples, check that the invoice's VAT/Reg matches the example.
+    // If they don't match → this might be a different vendor with the same name.
+    // If vendorName is still "Unknown Vendor" or empty → ask Claude to extract from rawText.
+    {
+        const rawText = invoice._rawText || invoiceData._rawText || '';
+        if (!rawText) console.log(`[Teacher] ⚠ No rawText available for Claude fallback`);
+        const needsClaude =
+            isEmpty(invoice.vendorName) ||
+            isEmpty(invoice.supplierVat) ||
+            isEmpty(invoice.supplierRegistration);
+
+        // Check for VAT/Reg mismatch with example (different company, same name)
+        let vatMismatch = false;
+        if (examples.length > 0) {
+            const gt = (examples.sort((a, b) => {
+                const tA = a.updatedAt?._seconds || a.createdAt?._seconds || 0;
+                const tB = b.updatedAt?._seconds || b.createdAt?._seconds || 0;
+                return tB - tA;
+            })[0]).groundTruth || {};
+
+            if (gt.supplierVat && !isEmpty(invoice.supplierVat) && !isEmpty(gt.supplierVat)) {
+                const invVat = invoice.supplierVat.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+                const exVat = gt.supplierVat.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+                if (invVat !== exVat) {
+                    vatMismatch = true;
+                    corrections.push(`WARNING: VAT mismatch — invoice has ${invoice.supplierVat} but example has ${gt.supplierVat}. Possible different company.`);
+                    console.log(`[Teacher] ⚠ VAT mismatch: invoice=${invoice.supplierVat} vs example=${gt.supplierVat}`);
+                }
+            }
+        }
+
+        // If vendor unknown, fields missing, or VAT mismatch → ask Claude to read the original
+        if ((needsClaude || vatMismatch) && rawText) {
+            const claude = await extractVendorWithClaude(rawText);
+            if (claude) {
+                if (claude.vendorName && !isEmpty(claude.vendorName)) {
+                    if (isEmpty(invoice.vendorName) || vatMismatch) {
+                        corrections.push(`Claude: vendor "${invoice.vendorName}" → "${claude.vendorName}" (from original text)`);
+                        invoice.vendorName = claude.vendorName;
+                    }
+                }
+                if (claude.supplierVat && isEmpty(invoice.supplierVat)) {
+                    invoice.supplierVat = claude.supplierVat;
+                    corrections.push(`Claude: filled supplierVat = ${claude.supplierVat}`);
+                }
+                if (claude.supplierRegistration && isEmpty(invoice.supplierRegistration)) {
+                    invoice.supplierRegistration = claude.supplierRegistration;
+                    corrections.push(`Claude: filled supplierRegistration = ${claude.supplierRegistration}`);
+                }
+                // If VAT mismatch was detected, also fix VAT/Reg from Claude
+                if (vatMismatch) {
+                    if (claude.supplierVat) {
+                        invoice.supplierVat = claude.supplierVat;
+                        corrections.push(`Claude: corrected supplierVat = ${claude.supplierVat}`);
+                    }
+                    if (claude.supplierRegistration) {
+                        invoice.supplierRegistration = claude.supplierRegistration;
+                        corrections.push(`Claude: corrected supplierRegistration = ${claude.supplierRegistration}`);
+                    }
+                }
+            }
+        }
+    }
+
+    // ── 6. Math validation: subtotal + tax ≈ amount ─────────────────────────
     if (invoice.amount > 0 && invoice.subtotalAmount > 0 && invoice.taxAmount >= 0) {
         const computed = parseFloat((invoice.subtotalAmount + invoice.taxAmount).toFixed(2));
         if (Math.abs(computed - invoice.amount) > 0.05) {
@@ -382,7 +507,7 @@ async function validateAndTeach(invoiceData, companyId) {
         }
     }
 
-    // ── 6. Completeness check ───────────────────────────────────────────────
+    // ── 7. Completeness check ───────────────────────────────────────────────
     const missing = MANDATORY_FIELDS.filter(f => isEmpty(invoice[f]));
 
     const approved = missing.length === 0;

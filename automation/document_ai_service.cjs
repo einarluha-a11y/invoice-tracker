@@ -434,6 +434,7 @@ async function processInvoiceWithDocAI(buffer, mimeType = 'application/pdf', sup
             paymentTerms:         partial.paymentTerms,
             lineItems:            partial.lineItems,
             validationWarnings:   validationWarnings.length > 0 ? validationWarnings : undefined,
+            _rawText:             rawDocText,
         }];
 
     } catch (error) {
