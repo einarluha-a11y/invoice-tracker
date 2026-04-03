@@ -391,17 +391,16 @@ async function validateAndTeach(invoiceData, companyId, rawText = '') {
         }
 
         // Static vendor fields: supplierVat, supplierRegistration, currency
-        // - If empty → always fill from example
-        // - If filled but example matched by identifiers → overwrite (example is from manual correction = trusted)
+        // These are constant per vendor — example is always trusted over DocAI
         const STATIC_FIELDS = ['supplierVat', 'supplierRegistration', 'currency'];
         for (const field of STATIC_FIELDS) {
-            if (!gt[field] || isEmpty(gt[field])) continue; // example has no value for this field
+            if (!gt[field] || isEmpty(gt[field])) continue;
 
             if (isEmpty(invoice[field])) {
                 invoice[field] = gt[field];
                 corrections.push(`Filled ${field} from example: ${gt[field]}`);
-            } else if (matchedByIdentifiers && invoice[field] !== gt[field]) {
-                // High-confidence match: example comes from manual correction, trust it
+            } else if (invoice[field] !== gt[field]) {
+                // Static fields are constant per vendor — example always overrides DocAI
                 corrections.push(`Corrected ${field}: ${invoice[field]} → ${gt[field]} (from verified example)`);
                 invoice[field] = gt[field];
             }
