@@ -509,14 +509,6 @@ async function validateAndTeach(invoiceData, companyId, rawText = '') {
             }
         }
 
-        // currency: detect from text
-        if (/\$\s*[\d,.]+|\bUSD\b/i.test(rawText) && !/€|EUR/i.test(rawText)) {
-            if (invoice.currency !== 'USD') {
-                corrections.push(`rawText: currency ${invoice.currency}→USD`);
-                invoice.currency = 'USD';
-            }
-        }
-
         // Kaardimakse: card payment = already paid
         if (/kaardimakse/i.test(rawText)) {
             invoice.isPaid = true;
