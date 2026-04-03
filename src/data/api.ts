@@ -187,6 +187,9 @@ export const updateInvoice = async (invoiceId: string, data: Partial<Invoice>): 
     if (data.taxAmount !== undefined) updateData.taxAmount = data.taxAmount;
     if (data.description !== undefined) updateData.description = data.description;
 
+    // Mark as manually edited — Repairman will not overwrite these fields
+    updateData.manuallyEdited = true;
+
     await updateDoc(invoiceRef, updateData);
 
     // AI Self-Healing Loop: Log the manual correction as a global rule

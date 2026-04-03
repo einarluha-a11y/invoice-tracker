@@ -86,6 +86,9 @@ async function findBadInvoices() {
 }
 
 function detectProblems(d) {
+    // Manually edited invoices are trusted — don't flag for repair
+    if (d.manuallyEdited) return [];
+
     const hasMissingFile   = !d.fileUrl || d.fileUrl === 'BODY_TEXT_NO_ATTACHMENT';
     const hasZeroAmount    = !d.amount || Number(d.amount) === 0;
     const isMissingIdentity = (!d.supplierVat || d.supplierVat === 'Not_Found') &&
