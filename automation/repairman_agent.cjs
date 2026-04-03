@@ -513,11 +513,20 @@ async function runAudit() {
         const oldStatus = data.status;
 
         if (oldStatus !== 'Paid' && oldStatus !== 'Duplicate') {
+            const invoiceAmount = parseFloat(data.amount) || 0;
+
+            // Credit notes (negative amounts) are always Paid
+            if (invoiceAmount < 0) {
+                updates.status = 'Paid';
+                updates.previousStatus = oldStatus;
+                updates.statusFixedAt = admin.firestore.FieldValue.serverTimestamp();
+                paidFound++;
+            }
             // Check bank transactions for payment (second line after Scout)
+            else if (invoiceAmount > 0) {
             let isPaidInBank = false;
             const companyTxs = bankTxByCompany[data.companyId] || [];
-            const invoiceAmount = parseFloat(data.amount) || 0;
-            if (invoiceAmount > 0 && companyTxs.length > 0) {
+            if (companyTxs.length > 0) {
                 const vendorClean = (newVendor || '').toLowerCase().replace(/[^a-z0-9]/g, '');
                 const invoiceNum = (data.invoiceId || '').toLowerCase().replace(/[^a-z0-9]/g, '');
                 const invoiceDate = data.dateCreated || '';
@@ -551,6 +560,7 @@ async function runAudit() {
                 updates.statusFixedAt = admin.firestore.FieldValue.serverTimestamp();
                 overdueFound++;
             }
+            } // close else if (invoiceAmount > 0)
         }
 
         // ── Apply updates ──
