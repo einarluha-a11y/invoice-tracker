@@ -124,6 +124,16 @@ function applyEstonianRegexFallback(rawText, result) {
         if (m) { const v = cleanNum(m[1]); if (v > 0) { result.taxAmount = v; filled.push('taxAmount'); } }
     }
 
+    // amount: "Tasuda kokku" (actual payable) ALWAYS overrides Document AI amount.
+    // Tasuda kokku = what the bank statement shows (after Ettemaks/Võlgnevus adjustments).
+    const tasudaMatch = t.match(/Tasuda\s+kokku[:\s]+([\d\s,.]+)\s*(?:€|EUR)?/i);
+    if (tasudaMatch) {
+        const v = cleanNum(tasudaMatch[1]);
+        if (v > 0) {
+            result.amount = v;
+            filled.push('amount (Tasuda kokku override)');
+        }
+    }
     // amount fallback: "Summa kokku (EUR) 41,22"
     if (!result.amount || result.amount === 0) {
         const m = t.match(/Summa\s+kokku\s+(?:\([A-Z]+\)\s+)?([\d\s,.]+)/i);
