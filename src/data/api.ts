@@ -471,10 +471,11 @@ export const updateInvoice = async (invoiceId: string, data: Partial<Invoice>): 
                     where('companyId', '==', d.companyId)
                 ));
 
+                const isForeignCurrency = d.currency && d.currency !== 'EUR';
+
                 for (const txDoc of txSnap.docs) {
                     const tx = txDoc.data();
                     const txAmount = parseFloat(tx.amount) || 0;
-                    if (Math.abs(txAmount - invoiceAmount) > 0.50) continue;
                     if (invoiceDate && tx.date && tx.date < invoiceDate) continue;
 
                     const txVendor = (tx.counterparty || '').toLowerCase();
@@ -484,9 +485,21 @@ export const updateInvoice = async (invoiceId: string, data: Partial<Invoice>): 
                     const vendorMatch = vendorWords.length > 0 && vendorWords.some((w: string) => txVendor.includes(w));
                     const isEttemaks = (tx.reference || '').toLowerCase().includes('ettemaks');
 
+                    // Amount check: skip if amounts don't match (unless foreign currency)
+                    if (!isForeignCurrency && Math.abs(txAmount - invoiceAmount) > 0.50) continue;
+
                     if (vendorMatch && !refMatch && txRef.length > 3 && !isEttemaks) continue;
                     if (vendorMatch || refMatch) {
-                        await updateDoc(invoiceRef, { status: 'Paid', previousStatus: d.status });
+                        // FX conversion: replace amount with EUR from bank statement
+                        const updatePayload: any = { status: 'Paid', previousStatus: d.status };
+                        if (isForeignCurrency) {
+                            updatePayload.originalForeignAmount = invoiceAmount;
+                            updatePayload.originalForeignCurrency = d.currency;
+                            updatePayload.amount = txAmount;
+                            updatePayload.currency = 'EUR';
+                            console.log(`[Post-Save Reconciliation] FX: ${d.invoiceId} ${invoiceAmount} ${d.currency} → ${txAmount} EUR`);
+                        }
+                        await updateDoc(invoiceRef, updatePayload);
                         console.log(`[Post-Save Reconciliation] Invoice ${d.invoiceId} → Paid (matched bank tx €${txAmount})`);
                         break;
                     }
