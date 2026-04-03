@@ -503,7 +503,15 @@ async function validateAndTeach(invoiceData, companyId) {
     if (invoice.amount > 0 && invoice.subtotalAmount > 0 && invoice.taxAmount >= 0) {
         const computed = parseFloat((invoice.subtotalAmount + invoice.taxAmount).toFixed(2));
         if (Math.abs(computed - invoice.amount) > 0.05) {
-            corrections.push(`WARNING: Math mismatch: ${invoice.subtotalAmount} + ${invoice.taxAmount} = ${computed} ≠ ${invoice.amount}`);
+            // If subtotal is wildly off (e.g. DocAI parsed PLN but amount is EUR), reset
+            const ratio = invoice.subtotalAmount / invoice.amount;
+            if (ratio > 1.5 || ratio < 0.5) {
+                corrections.push(`Fixed: subtotal ${invoice.subtotalAmount} was in wrong currency (ratio ${ratio.toFixed(1)}x vs amount ${invoice.amount}). Reset to amount.`);
+                invoice.subtotalAmount = invoice.amount;
+                invoice.taxAmount = 0;
+            } else {
+                corrections.push(`WARNING: Math mismatch: ${invoice.subtotalAmount} + ${invoice.taxAmount} = ${computed} ≠ ${invoice.amount}`);
+            }
         }
     }
 
