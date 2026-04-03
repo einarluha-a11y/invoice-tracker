@@ -414,6 +414,43 @@ async function validateAndTeach(invoiceData, companyId) {
             }
         }
 
+        // ── Verify numeric fields against ground truth ──────────────────────
+        // If example has verified sub/tax and DocAI extracted different values,
+        // AND the example's sub+tax=amount holds, trust the example pattern.
+        // This catches DocAI errors like putting total in tax field.
+        if (gt.subtotalAmount && gt.taxAmount && gt.amount) {
+            const gtSub = parseFloat(gt.subtotalAmount) || 0;
+            const gtTax = parseFloat(gt.taxAmount) || 0;
+            const gtAmt = parseFloat(gt.amount) || 0;
+            const gtMathOk = Math.abs(gtSub + gtTax - gtAmt) <= 0.50;
+
+            if (gtMathOk && gtAmt > 0) {
+                const docSub = parseFloat(invoice.subtotalAmount) || 0;
+                const docTax = parseFloat(invoice.taxAmount) || 0;
+                const docAmt = parseFloat(invoice.amount) || 0;
+                const docMathOk = Math.abs(docSub + docTax - docAmt) <= 0.50;
+
+                // If DocAI math is wrong but example math is right → use example's tax rate pattern
+                if (!docMathOk && docAmt > 0) {
+                    const taxRate = gtTax / gtSub; // e.g. 0.24 for 24% VAT
+                    if (taxRate > 0 && taxRate < 1) {
+                        const newSub = parseFloat((docAmt / (1 + taxRate)).toFixed(2));
+                        const newTax = parseFloat((docAmt - newSub).toFixed(2));
+                        if (Math.abs(newSub + newTax - docAmt) <= 0.02) {
+                            corrections.push(`Fixed sub/tax from example tax rate (${(taxRate*100).toFixed(0)}%): sub ${docSub}→${newSub}, tax ${docTax}→${newTax}`);
+                            invoice.subtotalAmount = newSub;
+                            invoice.taxAmount = newTax;
+                        }
+                    } else if (taxRate === 0) {
+                        // No tax vendor (e.g. Emergent)
+                        invoice.subtotalAmount = docAmt;
+                        invoice.taxAmount = 0;
+                        corrections.push(`Fixed sub/tax from example: no VAT vendor (tax=0)`);
+                    }
+                }
+            }
+        }
+
         // Apply teachingNotes if available (vendor-specific rules)
         if (best.teachingNotes) {
             console.log(`[Teacher] Applying teaching notes for ${best.vendorName}: ${best.teachingNotes}`);
