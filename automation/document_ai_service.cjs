@@ -287,7 +287,7 @@ function applyMultiLanguageRegexFallback(rawText, result) {
     // taxAmount: international labels
     // But first: if VAT is explicitly 0%, set tax=0 and skip further search
     if (/VAT[\/\s]*PVM[:\s]*\(\s*0\s*%\s*\)|VAT\s*0\s*%|PVM[:\s]*0\s*%/i.test(t)) {
-        if (!result.taxAmount) { result.taxAmount = 0; filled.push('taxAmount (VAT 0%)'); }
+        if (result.taxAmount !== 0) { result.taxAmount = 0; filled.push('taxAmount (VAT 0% override)'); }
     } else if (!result.taxAmount || result.taxAmount === 0) {
         // Only match "VAT amount: X" (not bare "Tax" which catches article numbers)
         const m = t.match(/(?:VAT\s+amount|MwSt|НДС|Podatek\s+VAT)[:\s]+(?:\d+%\s+)?([\d\s,.]+)/i);
