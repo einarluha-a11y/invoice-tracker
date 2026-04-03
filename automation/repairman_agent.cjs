@@ -506,6 +506,22 @@ async function runAudit() {
             updates.previousVendorName = oldVendor;
         }
 
+        // ── Võlgnevus correction ──
+        // If invoice amount EXCEEDS subtotal + tax, the difference is carry-over
+        // debt (Võlgnevus). Correct amount = subtotalAmount + taxAmount only.
+        // Only applies when amount > sub+tax (debt added), not when amount < sub+tax.
+        const sub = parseFloat(data.subtotalAmount) || 0;
+        const tax = parseFloat(data.taxAmount) || 0;
+        const currentAmount = parseFloat(data.amount) || 0;
+        if (sub > 0 && tax > 0 && currentAmount > 0) {
+            const correctAmount = parseFloat((sub + tax).toFixed(2));
+            if (currentAmount > correctAmount + 0.50) {
+                updates.amount = correctAmount;
+                updates.previousAmount = currentAmount;
+                console.log(`  [Audit] Võlgnevus fix: ${data.invoiceId} amount ${currentAmount} → ${correctAmount} (debt ${(currentAmount - correctAmount).toFixed(2)} removed)`);
+            }
+        }
+
         // ── Status determination ──
         // 1. Scout (reconcilePayment) is the first line — matches payments on bank statement arrival
         // 2. Repairman audit is the second line — catches what Scout missed
