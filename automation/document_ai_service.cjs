@@ -154,10 +154,28 @@ function applyEstonianRegexFallback(rawText, result) {
         if (m) { result.dateCreated = parseDocAiDate(m[1]); if (result.dateCreated) filled.push('dateCreated'); }
     }
 
-    // dueDate fallback: "Maksetähtpäev 30.03.2026" or "Maksetähtaeg 30.03.2026"
+    // dueDate fallback: "Maksetähtpäev 30.03.2026" or "Maksetähtaeg 30.03.2026" or "Tasumistähtaeg"
     if (!result.dueDate) {
-        const m = t.match(/Makset[äa]ht(?:p[äa]ev|aeg)\s+(\d{1,2}[.\/-]\d{1,2}[.\/-]\d{4})/i);
+        const m = t.match(/(?:Makset[äa]ht(?:p[äa]ev|aeg)|Tasumist[äa]htaeg|Tasumisaeg)\s+(\d{1,2}[.\/-]\d{1,2}[.\/-]\d{4})/i);
         if (m) { result.dueDate = parseDocAiDate(m[1]); if (result.dueDate) filled.push('dueDate'); }
+    }
+
+    // Kaardimakse (card payment) = already paid
+    if (/kaardimakse/i.test(t)) {
+        result.isPaid = true;
+        filled.push('isPaid (Kaardimakse)');
+    }
+
+    // subtotalAmount fallback: "Neto 8.27" or "Neto: 8.27"
+    if (!result.subtotalAmount || result.subtotalAmount === 0) {
+        const m = t.match(/\bNeto[:\s]+([\d\s,.]+)/i);
+        if (m) { const v = cleanNum(m[1]); if (v > 0) { result.subtotalAmount = v; filled.push('subtotalAmount (Neto)'); } }
+    }
+
+    // taxAmount fallback: "KM 1.99" or "KM: 1.99" (but not "KM%" which is the rate)
+    if (!result.taxAmount || result.taxAmount === 0) {
+        const m = t.match(/\bKM[:\s]+([\d\s,.]+)/i);
+        if (m && !t.match(/KM%/i)) { const v = cleanNum(m[1]); if (v > 0) { result.taxAmount = v; filled.push('taxAmount (KM)'); } }
     }
 
     if (filled.length > 0) {
@@ -407,8 +425,8 @@ async function processInvoiceWithDocAI(buffer, mimeType = 'application/pdf', sup
             partial.subtotalAmount = partial.amount;
         }
 
-        // Determine status — default Pending (Ootel)
-        const status = 'Pending';
+        // Determine status — Paid if Kaardimakse/isPaid detected, else Pending
+        const status = partial.isPaid ? 'Paid' : 'Pending';
 
         // --- Validation warnings ---
         const validationWarnings = [];
@@ -440,6 +458,7 @@ async function processInvoiceWithDocAI(buffer, mimeType = 'application/pdf', sup
             dateCreated:          partial.dateCreated,
             dueDate:              partial.dueDate,
             status,
+            isPaid:               partial.isPaid || false,
             description:          partial.description,
             paymentTerms:         partial.paymentTerms,
             lineItems:            partial.lineItems,

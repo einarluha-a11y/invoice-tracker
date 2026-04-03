@@ -293,11 +293,15 @@ async function repairInvoice(invoiceId, invoiceData) {
         return false;
     }
 
+    // Preserve isPaid flag from Scout extraction (Kaardimakse detection)
+    const scoutIsPaid = scoutResult[0].isPaid || false;
+
     // Re-validate with Teacher
     const teacherResult = await validateAndTeach(scoutResult[0], invoiceData.companyId);
 
     // Build update object
     const newData = teacherResult.invoice;
+    if (scoutIsPaid) newData.isPaid = true;
     const updates = {};
     const isManual = invoiceData.manuallyEdited === true;
 
@@ -337,7 +341,11 @@ async function repairInvoice(invoiceId, invoiceData) {
 
     // Set status using unified status rules
     if (!isManual) {
-        if (!teacherResult.approved) {
+        // Kaardimakse (card payment) or isPaid from extraction → always Paid
+        if (newData.isPaid || invoiceData.isPaid) {
+            updates.status = 'Paid';
+            console.log(`  [Repairman] Status → Paid (isPaid from extraction — Kaardimakse/card payment)`);
+        } else if (!teacherResult.approved) {
             updates.status = 'Needs Action';
         } else {
             // Check bank_transactions for payment
