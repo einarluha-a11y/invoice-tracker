@@ -302,48 +302,6 @@ async function validateAndTeach(invoiceData, companyId) {
         }
     }
 
-    // ── 1c. Load vendor profile (auto-learned defaults) ─────────────────────
-    let vendorProfile = null;
-    if (invoice.vendorName && !isEmpty(invoice.vendorName) && db) {
-        try {
-            const profileKey = invoice.vendorName.replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 60);
-            const profileDoc = await db.collection('vendor_profiles').doc(profileKey).get();
-            if (profileDoc.exists) {
-                vendorProfile = profileDoc.data();
-            } else {
-                // Try searching by VAT in all profiles
-                const allProfiles = await db.collection('vendor_profiles').get();
-                const invoiceVat = (invoice.supplierVat || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-                for (const p of allProfiles.docs) {
-                    const pd = p.data();
-                    const vatList = (pd.vatNumbers || []).map(v => v.replace(/[^a-zA-Z0-9]/g, '').toLowerCase());
-                    if (invoiceVat.length > 5 && vatList.includes(invoiceVat)) {
-                        vendorProfile = pd;
-                        break;
-                    }
-                }
-            }
-        } catch { /* no profile — that's fine */ }
-    }
-
-    // Apply vendor profile defaults (high confidence — from 2+ manual corrections)
-    if (vendorProfile && vendorProfile.corrections) {
-        const corr = vendorProfile.corrections;
-        if (corr.currency && corr.currency.count >= 2 && invoice.currency !== corr.currency.value) {
-            corrections.push(`Profile: corrected currency ${invoice.currency} → ${corr.currency.value} (${corr.currency.count} edits)`);
-            invoice.currency = corr.currency.value;
-        }
-        if (corr.description && corr.description.count >= 2 && isEmpty(invoice.description)) {
-            corrections.push(`Profile: filled description from vendor profile: ${corr.description.value}`);
-            invoice.description = corr.description.value;
-        }
-        // Vendor name from profile (if Unknown Vendor)
-        if (isEmpty(invoice.vendorName) && vendorProfile.vendorName) {
-            invoice.vendorName = vendorProfile.vendorName;
-            corrections.push(`Profile: filled vendorName from vendor profile: ${vendorProfile.vendorName}`);
-        }
-    }
-
     // ── 2. Load matching examples from invoice_examples ─────────────────────
     let examples = [];
     if (invoice.vendorName && !isEmpty(invoice.vendorName)) {
@@ -353,14 +311,10 @@ async function validateAndTeach(invoiceData, companyId) {
     }
 
     // ── 2b. Smart fallback: search by VAT/RegNo if name search found nothing ──
-    //   When matched by identifiers, we have high confidence this is the same vendor,
-    //   so we trust the example's static fields (currency, VAT, etc.) over DocAI output.
-    let matchedByIdentifiers = false;
     if (examples.length === 0) {
         try {
             examples = await findExamplesByIdentifiers(invoice);
             if (examples.length > 0) {
-                matchedByIdentifiers = true;
                 console.log(`[Teacher] 🔍 Found ${examples.length} example(s) by VAT/RegNo/patterns match`);
             }
         } catch { /* no match — proceed without examples */ }
@@ -377,25 +331,27 @@ async function validateAndTeach(invoiceData, companyId) {
 
         const gt = best.groundTruth || {};
 
-        // Vendor name: if Scout returned "Unknown Vendor" but example knows the name, use it
-        if (isEmpty(invoice.vendorName) && gt.vendorName && !isEmpty(gt.vendorName)) {
+        // Vendor name: example ALWAYS wins (DocAI often confuses buyer/supplier)
+        if (gt.vendorName && !isEmpty(gt.vendorName) && invoice.vendorName !== gt.vendorName) {
+            if (!isEmpty(invoice.vendorName)) {
+                corrections.push(`Corrected vendorName: ${invoice.vendorName} → ${gt.vendorName} (from example)`);
+            } else {
+                corrections.push(`Filled vendorName from example: ${gt.vendorName}`);
+            }
             invoice.vendorName = gt.vendorName;
-            corrections.push(`Filled vendorName from example (matched by VAT/RegNo): ${gt.vendorName}`);
         }
 
-        // Static vendor fields: supplierVat, supplierRegistration, currency
-        // - If empty → always fill from example
-        // - If filled but example matched by identifiers → overwrite (example is from manual correction = trusted)
+        // Static vendor fields: examples ALWAYS override DocAI (manual correction = trusted)
         const STATIC_FIELDS = ['supplierVat', 'supplierRegistration', 'currency'];
         for (const field of STATIC_FIELDS) {
-            if (!gt[field] || isEmpty(gt[field])) continue; // example has no value for this field
+            if (!gt[field] || isEmpty(gt[field])) continue;
 
-            if (isEmpty(invoice[field])) {
-                invoice[field] = gt[field];
-                corrections.push(`Filled ${field} from example: ${gt[field]}`);
-            } else if (matchedByIdentifiers && invoice[field] !== gt[field]) {
-                // High-confidence match: example comes from manual correction, trust it
-                corrections.push(`Corrected ${field}: ${invoice[field]} → ${gt[field]} (from verified example)`);
+            if (invoice[field] !== gt[field]) {
+                if (!isEmpty(invoice[field])) {
+                    corrections.push(`Corrected ${field}: ${invoice[field]} → ${gt[field]} (from example)`);
+                } else {
+                    corrections.push(`Filled ${field} from example: ${gt[field]}`);
+                }
                 invoice[field] = gt[field];
             }
         }
@@ -404,18 +360,6 @@ async function validateAndTeach(invoiceData, companyId) {
         if (isEmpty(invoice.description) && gt.description && !isEmpty(gt.description)) {
             invoice.description = gt.description;
             corrections.push(`Filled description from example: ${gt.description}`);
-        }
-
-        // Vendor name normalization: if example has the canonical name, use it
-        if (invoice.vendorName && gt.vendorName && !isEmpty(invoice.vendorName)) {
-            const scoutNorm = invoice.vendorName.toLowerCase().replace(/[^a-z0-9]/g, '');
-            const exNorm = gt.vendorName.toLowerCase().replace(/[^a-z0-9]/g, '');
-            if (scoutNorm.includes(exNorm) || exNorm.includes(scoutNorm)) {
-                if (invoice.vendorName !== gt.vendorName) {
-                    invoice.vendorName = gt.vendorName;
-                    corrections.push(`Normalized vendorName to: ${gt.vendorName}`);
-                }
-            }
         }
 
         // Apply teachingNotes if available (vendor-specific rules)
