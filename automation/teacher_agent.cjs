@@ -219,17 +219,13 @@ async function validateAndTeach(invoiceData, companyId) {
     const invoice = { ...invoiceData };
     const corrections = [];
 
-    // ── 1. Load Charter (customAiRules) ──────────────────────────────────────
+    // ── 1. Load Charter (global AI rules) ──────────────────────────────────────
     let charterRules = '';
-    if (companyId && db) {
-        try {
-            const companyDoc = await db.collection('companies').doc(companyId).get();
-            if (companyDoc.exists) {
-                charterRules = companyDoc.data().customAiRules || '';
-            }
-        } catch (err) {
-            console.warn(`[Teacher] Could not load Charter: ${err.message}`);
-        }
+    try {
+        const { getGlobalAiRules } = require('./core/firebase.cjs');
+        charterRules = await getGlobalAiRules();
+    } catch (err) {
+        console.warn(`[Teacher] Could not load global Charter: ${err.message}`);
     }
 
     // ── 1b. Apply global rules (universal patterns learned from ALL corrections) ──

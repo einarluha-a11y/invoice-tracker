@@ -34,4 +34,27 @@ if (!admin.apps.length && sa) {
 const db = admin.apps.length ? admin.firestore() : null;
 const bucket = admin.apps.length ? admin.storage().bucket() : null;
 
-module.exports = { admin, db, bucket, serviceAccount: sa };
+// ─── Global AI Rules (cached) ───────────────────────────────────────────────
+// Single source of truth: config/global_ai_rules document in Firestore.
+// All agents read from here. Auto-learning writes here.
+let _cachedRules = null;
+let _cachedAt = 0;
+const RULES_CACHE_TTL = 60000; // 60 seconds
+
+async function getGlobalAiRules() {
+    if (!db) return '';
+    if (_cachedRules !== null && Date.now() - _cachedAt < RULES_CACHE_TTL) {
+        return _cachedRules;
+    }
+    try {
+        const snap = await db.collection('config').doc('global_ai_rules').get();
+        _cachedRules = snap.exists ? (snap.data().customAiRules || '') : '';
+        _cachedAt = Date.now();
+        return _cachedRules;
+    } catch (err) {
+        console.warn('[Firebase Core] Failed to load global AI rules:', err.message);
+        return _cachedRules || '';
+    }
+}
+
+module.exports = { admin, db, bucket, serviceAccount: sa, getGlobalAiRules };

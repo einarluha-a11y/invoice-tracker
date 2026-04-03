@@ -112,11 +112,11 @@ async function reprocessDocument(stagedDoc, { dry = false } = {}) {
     const filename = source?.filename || 'unknown';
     const mime     = mimeFromFilename(filename);
 
-    // ── Load custom rules for company ─────────────────────────────────────────
+    // ── Load global AI rules ────────────────────────────────────────────────────
+    const { getGlobalAiRules } = require('./core/firebase.cjs');
     let customRules = '';
     try {
-        const companySnap = await db.collection('companies').doc(companyId).get();
-        customRules = companySnap.exists ? (companySnap.data().customAiRules || '') : '';
+        customRules = await getGlobalAiRules();
     } catch (_) {}
 
     // ── Helper: save parsed invoices to Firestore ─────────────────────────────

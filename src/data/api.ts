@@ -187,26 +187,24 @@ export const updateInvoice = async (invoiceId: string, data: Partial<Invoice>): 
 
     await updateDoc(invoiceRef, updateData);
 
-    // AI Self-Healing Loop: Log the manual correction as a rule
-    if (companyId && data.vendor && originalVendorName && data.vendor !== originalVendorName) {
+    // AI Self-Healing Loop: Log the manual correction as a global rule
+    if (data.vendor && originalVendorName && data.vendor !== originalVendorName) {
         const cleanOld = originalVendorName.trim();
         const cleanNew = data.vendor.trim();
-        
-        // Ensure changes are meaningful (not just uppercase/lowercase toggles that are 1 character)
+
         if (cleanOld.length > 2 && cleanNew.length > 2 && cleanOld.toLowerCase() !== cleanNew.toLowerCase()) {
-            const companyRef = doc(db, 'companies', companyId);
-            const compSnap = await getDoc(companyRef);
-            if (compSnap.exists()) {
-                const currentRules = compSnap.data().customAiRules || '';
-                const newRule = `If you see "${cleanOld}", the correct official name is "${cleanNew}".`;
-                
-                // Check if rule already exists to prevent duplication
-                if (!currentRules.includes(newRule)) {
-                    await updateDoc(companyRef, {
-                        customAiRules: currentRules ? `${currentRules}\n${newRule}` : newRule
-                    });
-                    console.log(`[AI-Self-Healing] Taught AI: ${newRule}`);
-                }
+            const globalRulesRef = doc(db!, 'config', 'global_ai_rules');
+            const globalSnap = await getDoc(globalRulesRef);
+            const currentRules = globalSnap.exists() ? (globalSnap.data().customAiRules || '') : '';
+            const newRule = `If you see "${cleanOld}", the correct official name is "${cleanNew}".`;
+
+            if (!currentRules.includes(newRule)) {
+                await setDoc(globalRulesRef, {
+                    customAiRules: currentRules ? `${currentRules}\n${newRule}` : newRule,
+                    updatedAt: serverTimestamp(),
+                    updatedBy: 'auto-learning'
+                }, { merge: true });
+                console.log(`[AI-Self-Healing] Taught AI: ${newRule}`);
             }
         }
     }
@@ -326,11 +324,11 @@ export const updateInvoice = async (invoiceId: string, data: Partial<Invoice>): 
                         updatedAt:   serverTimestamp(),
                     }, { merge: true });
 
-                    // ── Auto-generate Charter rules when threshold reached ──
-                    if (d.companyId) {
-                        const companyRef2 = doc(db!, 'companies', d.companyId);
-                        const compSnap2 = await getDoc(companyRef2);
-                        const currentRules = compSnap2.exists() ? (compSnap2.data().customAiRules || '') : '';
+                    // ── Auto-generate global Charter rules when threshold reached ──
+                    {
+                        const globalRulesRef = doc(db!, 'config', 'global_ai_rules');
+                        const globalSnap = await getDoc(globalRulesRef);
+                        const currentRules = globalSnap.exists() ? (globalSnap.data().customAiRules || '') : '';
                         const newRules: string[] = [];
 
                         for (const [field, stats] of Object.entries(corrections) as [string, any][]) {
@@ -354,8 +352,12 @@ export const updateInvoice = async (invoiceId: string, data: Partial<Invoice>): 
                             const updatedRules = currentRules
                                 ? `${currentRules}\n${newRules.join('\n')}`
                                 : newRules.join('\n');
-                            await updateDoc(companyRef2, { customAiRules: updatedRules });
-                            console.log(`[Teacher Agent] 📜 Auto-generated ${newRules.length} Charter rule(s): ${newRules.join(' | ')}`);
+                            await setDoc(globalRulesRef, {
+                                customAiRules: updatedRules,
+                                updatedAt: serverTimestamp(),
+                                updatedBy: 'auto-learning'
+                            }, { merge: true });
+                            console.log(`[Teacher Agent] Auto-generated ${newRules.length} global Charter rule(s): ${newRules.join(' | ')}`);
                         }
                     }
                 } catch (profileErr) {

@@ -1224,19 +1224,22 @@ async function pollAllCompanyInboxes() {
             }, "Global Backend Default");
         }
 
-        // 2. Query Firestore for company-specific inboxes
+        // 2. Load global AI rules once (shared across all companies)
+        const { getGlobalAiRules } = require('./core/firebase.cjs');
+        const globalRules = await getGlobalAiRules();
+
+        // 3. Query Firestore for company-specific inboxes
         const companiesSnapshot = await db.collection('companies').get();
         for (const doc of companiesSnapshot.docs) {
             const data = doc.data();
             if (data.imapHost && data.imapUser && data.imapPassword) {
-                // Trim all values — Firestore UI can introduce leading/trailing spaces
                 const customConfig = {
                     user:     (data.imapUser    || '').trim(),
                     password: (data.imapPassword || '').trim(),
                     host:     (data.imapHost     || '').trim(),
                     port:     data.imapPort || 993
                 };
-                await checkEmailForInvoices(customConfig, data.name, doc.id, data.customAiRules || "");
+                await checkEmailForInvoices(customConfig, data.name, doc.id, globalRules);
             }
         }
     } catch (err) {

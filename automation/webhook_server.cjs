@@ -235,10 +235,8 @@ app.post('/api/reprocess-invoice', rateLimit(10, 60_000), async (req, res) => {
         // Step 3: Re-run Claude extraction
         const { processInvoiceWithDocAI } = require('./document_ai_service.cjs');
 
-        const companyDoc = existing.companyId
-            ? await db.collection('companies').doc(existing.companyId).get()
-            : null;
-        const customRules = companyDoc?.exists ? (companyDoc.data().customRules || '') : '';
+        const { getGlobalAiRules } = require('./core/firebase.cjs');
+        const customRules = await getGlobalAiRules();
 
         const extracted = await processInvoiceWithDocAI(fileBuffer, mimeType, null, customRules);
 
