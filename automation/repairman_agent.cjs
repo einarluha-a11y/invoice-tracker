@@ -382,7 +382,7 @@ async function repairInvoice(invoiceId, invoiceData) {
         qualityIssues.push('Missing vendor name');
     }
     // ── Teacher QC loop: Teacher checks, tells Repairman what to fix, max 2 retries ──
-    const MAX_QC_RETRIES = 2;
+    const MAX_QC_RETRIES = 3; // Round 0: arithmetic, Round 1: Claude, Round 2: verify Claude
     for (let qcRound = 0; qcRound <= MAX_QC_RETRIES; qcRound++) {
         const qcAmount = parseFloat(updates.amount ?? newData.amount ?? invoiceData.amount ?? 0);
         const qcSub = parseFloat(updates.subtotalAmount ?? newData.subtotalAmount ?? invoiceData.subtotalAmount ?? 0);
@@ -398,13 +398,11 @@ async function repairInvoice(invoiceId, invoiceData) {
 
         if (qcIssues.length === 0) break; // All good
 
-        if (qcRound < MAX_QC_RETRIES) {
-            // Teacher tells Repairman what to fix
-            console.log(`  [Teacher QC] Round ${qcRound + 1}: ${qcIssues.join(' | ')}`);
+        console.log(`  [Teacher QC] Round ${qcRound + 1}: ${qcIssues.join(' | ')}`);
 
-            // Repairman tries to fix: recalculate sub/tax from amount
+        if (qcRound === 0) {
+            // Round 1: Repairman tries arithmetic fix
             if (qcSub > 0 && qcTax > 0 && Math.abs(qcSub + qcTax - qcAmount) > 0.50) {
-                // If sub+tax > amount, likely Võlgnevus included — trust amount, recalculate
                 if (qcAmount > 0 && qcTax > 0 && qcTax < qcAmount) {
                     updates.subtotalAmount = parseFloat((qcAmount - qcTax).toFixed(2));
                     console.log(`  [Repairman] Fixed sub: ${qcSub} → ${updates.subtotalAmount} (amount - tax)`);
@@ -413,12 +411,39 @@ async function repairInvoice(invoiceId, invoiceData) {
                     console.log(`  [Repairman] Fixed tax: ${qcTax} → ${updates.taxAmount} (amount - sub)`);
                 }
             }
+        } else if (qcRound === 1 && !invoiceData.claudeFixAttempted) {
+            // Round 2: Ask Claude (once per invoice, rawText only, haiku model)
+            try {
+                const { askClaudeToFix } = require('./document_ai_service.cjs');
+                const rawText = scoutResult[0]?._rawText || '';
+                const fixes = await askClaudeToFix(rawText, {
+                    vendorName: updates.vendorName || newData.vendorName || invoiceData.vendorName,
+                    invoiceId: updates.invoiceId || newData.invoiceId || invoiceData.invoiceId,
+                    amount: qcAmount, subtotalAmount: qcSub, taxAmount: qcTax,
+                    currency: updates.currency || newData.currency || invoiceData.currency,
+                    dateCreated: updates.dateCreated || newData.dateCreated || invoiceData.dateCreated,
+                    dueDate: updates.dueDate || newData.dueDate || invoiceData.dueDate,
+                }, qcIssues);
+
+                if (fixes && Object.keys(fixes).length > 0) {
+                    if (fixes.amount !== undefined) updates.amount = fixes.amount;
+                    if (fixes.subtotalAmount !== undefined) updates.subtotalAmount = fixes.subtotalAmount;
+                    if (fixes.taxAmount !== undefined) updates.taxAmount = fixes.taxAmount;
+                    if (fixes.currency !== undefined) updates.currency = fixes.currency;
+                    if (fixes.isPaid) updates.status = 'Paid';
+                }
+                updates.claudeFixAttempted = true;
+            } catch (claudeErr) {
+                console.warn(`  [Claude QC] ⚠️ Error: ${claudeErr.message}`);
+                updates.claudeFixAttempted = true;
+            }
         } else {
-            // Max retries reached — give up, save for manual correction
-            console.warn(`  [Teacher QC] ❌ Repair REJECTED after ${MAX_QC_RETRIES} attempts: ${qcIssues.join(' | ')}`);
+            // All attempts exhausted — save for manual correction
+            console.warn(`  [Teacher QC] ❌ Repair REJECTED: ${qcIssues.join(' | ')}`);
             await db.collection('invoices').doc(invoiceId).update({
                 status: 'Needs Action',
                 repairQualityWarnings: qcIssues,
+                claudeFixAttempted: true,
                 repairedAt: admin.firestore.FieldValue.serverTimestamp(),
             });
             return false;

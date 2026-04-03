@@ -405,11 +405,37 @@ async function scoutTeacherPipeline(content, mimeType, companyId, customRules) {
             console.warn(`[Teacher] ⚠️  Invoice not fully approved — missing fields remain.`);
             tempParsed[0].validationWarnings = tempParsed[0].validationWarnings || [];
             tempParsed[0].validationWarnings.push('TEACHER: Not all 11 mandatory fields filled');
+
+            // Step 3: Claude "second opinion" for math mismatch (once per invoice)
+            const sub = parseFloat(tempParsed[0].subtotalAmount) || 0;
+            const tax = parseFloat(tempParsed[0].taxAmount) || 0;
+            const amt = parseFloat(tempParsed[0].amount) || 0;
+            if (amt > 0 && sub > 0 && Math.abs(sub + tax - amt) > 0.50) {
+                try {
+                    const { askClaudeToFix } = require('./document_ai_service.cjs');
+                    const rawText = tempParsed[0]._rawText || '';
+                    const fixes = await askClaudeToFix(rawText, tempParsed[0],
+                        [`sub(${sub}) + tax(${tax}) = ${(sub+tax).toFixed(2)} ≠ amount(${amt})`]);
+                    if (fixes && Object.keys(fixes).length > 0) {
+                        if (fixes.amount !== undefined) tempParsed[0].amount = fixes.amount;
+                        if (fixes.subtotalAmount !== undefined) tempParsed[0].subtotalAmount = fixes.subtotalAmount;
+                        if (fixes.taxAmount !== undefined) tempParsed[0].taxAmount = fixes.taxAmount;
+                        if (fixes.currency !== undefined) tempParsed[0].currency = fixes.currency;
+                        if (fixes.isPaid) tempParsed[0].status = 'Paid';
+                        console.log(`[Claude QC] Applied fixes in Scout pipeline`);
+                    }
+                    tempParsed[0].claudeFixAttempted = true;
+                } catch (claudeErr) {
+                    console.warn(`[Claude QC] ⚠️ Scout pipeline error: ${claudeErr.message}`);
+                }
+            }
         }
     } catch (teacherErr) {
         console.warn(`[Teacher] ⚠️  Validation error (proceeding with Scout data): ${teacherErr.message}`);
     }
 
+    // Remove internal field before saving
+    delete tempParsed[0]._rawText;
     return tempParsed;
 }
 

@@ -502,6 +502,7 @@ async function processInvoiceWithDocAI(buffer, mimeType = 'application/pdf', sup
             paymentTerms:         partial.paymentTerms,
             lineItems:            partial.lineItems,
             validationWarnings:   validationWarnings.length > 0 ? validationWarnings : undefined,
+            _rawText:             rawDocText, // internal: for Claude QC if needed
         }];
 
     } catch (error) {
@@ -510,4 +511,80 @@ async function processInvoiceWithDocAI(buffer, mimeType = 'application/pdf', sup
     }
 }
 
-module.exports = { processInvoiceWithDocAI, cleanNum, parseDocAiDate, inferDescription };
+// ─── Claude "Second Opinion" for Math Mismatch Correction ──────────────────
+// Called ONCE per invoice when DocAI + Regex + arithmetic can't fix sub+tax≠amount.
+// Uses rawText (not PDF vision) + Charter rules to minimize token cost.
+// Model: claude-haiku for cheapest extraction.
+
+async function askClaudeToFix(rawText, currentData, qcIssues) {
+    if (!rawText || rawText.length < 20) return null;
+
+    try {
+        const Anthropic = require('@anthropic-ai/sdk');
+        // Load API key from env (may need explicit dotenv load if running from worktree)
+        if (!process.env.ANTHROPIC_API_KEY) {
+            try { require('dotenv').config({ path: require('path').join(__dirname, '.env') }); } catch (_) {}
+        }
+        const apiKey = process.env.ANTHROPIC_API_KEY;
+        if (!apiKey) { console.warn('[Claude QC] No ANTHROPIC_API_KEY — skipping'); return null; }
+        const client = new Anthropic({ apiKey });
+        const { getGlobalAiRules } = require('./core/firebase.cjs');
+
+        const charterRules = await getGlobalAiRules();
+
+        const prompt = `You are an invoice data extraction expert. The automated system extracted these fields but made errors.
+
+CURRENT DATA:
+- vendorName: ${currentData.vendorName || ''}
+- invoiceId: ${currentData.invoiceId || ''}
+- amount: ${currentData.amount} ${currentData.currency || 'EUR'}
+- subtotalAmount: ${currentData.subtotalAmount}
+- taxAmount: ${currentData.taxAmount}
+- dateCreated: ${currentData.dateCreated || ''}
+- dueDate: ${currentData.dueDate || ''}
+
+ERRORS FOUND: ${qcIssues.join('; ')}
+
+RULES:
+- amount = "Tasuda kokku" or "Kokku tasuda" (what needs to be paid). If negative → overpayment.
+- subtotalAmount = "Summa km-ta" or "Neto" or "Kokku maksustatav + Kokku mv" (without VAT)
+- taxAmount = "Käibemaks" or "KM" (VAT amount)
+- If "Kaardimakse" appears → isPaid: true
+- If currency is not EUR, keep sub/tax in original currency
+
+${charterRules ? 'CHARTER RULES:\n' + charterRules : ''}
+
+INVOICE TEXT:
+${rawText.substring(0, 3000)}
+
+Return ONLY a JSON object with the corrected fields. Example:
+{"amount": 81.18, "subtotalAmount": 84.42, "taxAmount": 15.11, "currency": "EUR"}
+Only include fields that need correction. Return {} if you cannot determine the correct values.`;
+
+        console.log(`[Claude QC] 🔍 Asking Claude to fix: ${qcIssues.join(' | ')}`);
+
+        const response = await client.messages.create({
+            model: 'claude-haiku-4-5-20251001',
+            max_tokens: 200,
+            messages: [{ role: 'user', content: prompt }],
+        });
+
+        const text = response.content[0]?.text || '';
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) {
+            console.warn('[Claude QC] No JSON in response');
+            return null;
+        }
+
+        const fixes = JSON.parse(jsonMatch[0]);
+        const tokens = (response.usage?.input_tokens || 0) + (response.usage?.output_tokens || 0);
+        console.log(`[Claude QC] ✅ Got fixes: ${JSON.stringify(fixes)} (${tokens} tokens)`);
+
+        return fixes;
+    } catch (err) {
+        console.warn(`[Claude QC] ⚠️ Failed: ${err.message}`);
+        return null;
+    }
+}
+
+module.exports = { processInvoiceWithDocAI, askClaudeToFix, cleanNum, parseDocAiDate, inferDescription };
