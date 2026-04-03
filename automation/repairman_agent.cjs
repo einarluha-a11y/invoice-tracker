@@ -98,6 +98,9 @@ function detectProblems(d) {
     const hasMissingDescription = isEmpty(d.description);
     const hasZeroTaxOnTaxableAmount = Number(d.amount) > 0 && Number(d.subtotalAmount) > 0
         && Number(d.taxAmount) === 0 && Number(d.amount) === Number(d.subtotalAmount);
+    // Absurd tax: tax >= amount or tax > subtotal (extraction error)
+    const hasAbsurdTax = Number(d.taxAmount) > 0 && Number(d.amount) > 0 &&
+        (Number(d.taxAmount) >= Number(d.amount) || Number(d.taxAmount) > Number(d.subtotalAmount));
 
     const reasons = [];
     if (mode === 'skeletons') {
@@ -112,6 +115,7 @@ function detectProblems(d) {
     if (hasSameDates)                        reasons.push('dueDate = dateCreated (suspicious)');
     if (hasMissingDescription)               reasons.push('Missing Description');
     if (hasZeroTaxOnTaxableAmount && hasMissingFile) reasons.push('Zero tax but amount = subtotal');
+    if (hasAbsurdTax)                            reasons.push('Absurd tax (tax >= amount)');
     return reasons;
 }
 
@@ -543,29 +547,27 @@ async function runAudit() {
             let isPaidInBank = false;
             const companyTxs = bankTxByCompany[data.companyId] || [];
             if (companyTxs.length > 0) {
-                // Word-based vendor matching: "Esvika Elekter AS" matches "Aktsiaselts Esvika Elekter"
                 const LEGAL_SUFFIXES = new Set(['as', 'ou', 'oü', 'uab', 'sia', 'llc', 'gmbh', 'inc', 'bv', 'oy', 'aktsiaselts', 'osaühing']);
                 const vendorWords = (newVendor || '').toLowerCase().split(/[^a-zöäüõ0-9]+/).filter(w => w.length >= 3 && !LEGAL_SUFFIXES.has(w));
                 const invoiceNum = (data.invoiceId || '').toLowerCase().replace(/[^a-z0-9]/g, '');
                 const invoiceDate = data.dateCreated || '';
 
                 for (const tx of companyTxs) {
+                    if (invoiceDate && tx.date && tx.date < invoiceDate) continue;
+
                     const txAmount = parseFloat(tx.amount) || 0;
                     if (Math.abs(txAmount - invoiceAmount) > 0.50) continue;
-                    if (invoiceDate && tx.date && tx.date < invoiceDate) continue;
 
                     const txVendorFull = (tx.counterparty || '').toLowerCase();
                     const txRef = (tx.reference || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
+                    // Match criteria: vendor name (word-based) + invoice number in reference
                     const refMatch = invoiceNum.length > 3 &&
                         (txRef.includes(invoiceNum) || invoiceNum.includes(txRef));
-                    // Word-based: at least one significant vendor word appears in bank counterparty
                     const vendorMatch = vendorWords.length > 0 &&
                         vendorWords.some(w => txVendorFull.includes(w));
 
-                    // Prepayment invoices (Ettemaksuteatis/Pro-forma): bank reference
-                    // contains "ettemaks" with a different number than Arve.
-                    // In this case, match by vendor + amount only (skip reference guard).
+                    // Ettemaksuteatis: bank ref contains "ettemaks" — match by vendor+amount only
                     const isEttemaks = (tx.reference || '').toLowerCase().includes('ettemaks');
 
                     if (vendorMatch && !refMatch && txRef.length > 3 && !isEttemaks) continue;
