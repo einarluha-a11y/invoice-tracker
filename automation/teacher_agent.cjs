@@ -374,10 +374,15 @@ async function validateAndTeach(invoiceData, companyId, rawText = '') {
 
         const gt = best.groundTruth || {};
 
-        // Vendor name: if Scout returned "Unknown Vendor" but example knows the name, use it
-        if (isEmpty(invoice.vendorName) && gt.vendorName && !isEmpty(gt.vendorName)) {
-            invoice.vendorName = gt.vendorName;
-            corrections.push(`Filled vendorName from example (matched by VAT/RegNo): ${gt.vendorName}`);
+        // Vendor name: use example's name if matched by identifiers (trusted)
+        // or if Scout returned "Unknown Vendor" / very short name (likely wrong)
+        if (gt.vendorName && !isEmpty(gt.vendorName)) {
+            if (isEmpty(invoice.vendorName) || matchedByIdentifiers || (invoice.vendorName.length <= 3 && gt.vendorName.length > 3)) {
+                if (invoice.vendorName !== gt.vendorName) {
+                    corrections.push(`Corrected vendorName: "${invoice.vendorName}" → "${gt.vendorName}" (from verified example)`);
+                    invoice.vendorName = gt.vendorName;
+                }
+            }
         }
 
         // Static vendor fields: supplierVat, supplierRegistration, currency
