@@ -685,8 +685,6 @@ async function runAudit() {
     console.log(`  Skipped:       ${skipped} (no changes needed)`);
     if (dryRun && changes.length > 0) console.log('\nRun with --fix to execute.');
     console.log('══════════════════════════════════════════════════');
-
-    process.exit(0);
 }
 
 // ─── Main Orchestrator ───────────────────────────────────────────────────────
@@ -701,7 +699,7 @@ async function main() {
     console.log('─────────────────────────────────────────────────\n');
 
     // ── Audit mode: separate flow ──────────────────────────────────────────
-    if (mode === 'audit') return runAudit();
+    if (mode === 'audit') { await runAudit(); process.exit(0); }
 
     // ── Step 1: Find problems ────────────────────────────────────────────────
     console.log('Step 1: Scanning Firestore...');
@@ -794,6 +792,10 @@ async function main() {
         console.log(`Would repair ${repairable.length} record(s). Run with --fix to execute.`);
     } else {
         console.log('Repair complete. Records updated in place.');
+        // Auto-run audit after full repair to fix statuses (Overdue, Paid from bank)
+        console.log('\n─────────────────────────────────────────────────');
+        console.log('Running post-repair audit...');
+        await runAudit();
     }
 
     process.exit(0);
