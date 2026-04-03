@@ -278,6 +278,7 @@ function isEmpty(val) {
 async function validateAndTeach(invoiceData, companyId) {
     const invoice = { ...invoiceData };
     const corrections = [];
+    const originalCurrency = invoice.currency; // Track for currency-change detection
 
     // ── 1. Load Charter (customAiRules) ──────────────────────────────────────
     let charterRules = '';
@@ -416,6 +417,31 @@ async function validateAndTeach(invoiceData, companyId) {
             }
         }
 
+        // Amount fix: if any example has same invoiceId and DocAI amount is wildly different,
+        // DocAI likely parsed amount in wrong currency (e.g. PLN instead of EUR)
+        const exactMatch = examples.find(ex => {
+            const exId = (ex.groundTruth?.invoiceId || '').toLowerCase().trim();
+            const invId = (invoice.invoiceId || '').toLowerCase().trim();
+            return exId && invId && exId === invId;
+        });
+        if (exactMatch && invoice.amount > 0) {
+            const egt = exactMatch.groundTruth;
+            if (egt.amount > 0) {
+                const ratio = invoice.amount / egt.amount;
+                if (ratio > 1.5 || ratio < 0.5) {
+                    corrections.push(`Fixed amount: ${invoice.amount} → ${egt.amount} (example match by invoiceId, DocAI had wrong currency)`);
+                    invoice.amount = egt.amount;
+                    invoice.subtotalAmount = egt.subtotalAmount || egt.amount;
+                    invoice.taxAmount = egt.taxAmount || 0;
+                }
+            }
+            // Also pick Reg from exact match (more precise than latest example)
+            if (egt.supplierRegistration && egt.supplierRegistration !== invoice.supplierRegistration) {
+                corrections.push(`Corrected supplierRegistration: ${invoice.supplierRegistration} → ${egt.supplierRegistration} (exact invoiceId match)`);
+                invoice.supplierRegistration = egt.supplierRegistration;
+            }
+        }
+
         // Description: copy pattern from example if Scout returned empty
         if (isEmpty(invoice.description) && gt.description && !isEmpty(gt.description)) {
             invoice.description = gt.description;
@@ -503,12 +529,48 @@ async function validateAndTeach(invoiceData, companyId) {
     if (invoice.amount > 0 && invoice.subtotalAmount > 0 && invoice.taxAmount >= 0) {
         const computed = parseFloat((invoice.subtotalAmount + invoice.taxAmount).toFixed(2));
         if (Math.abs(computed - invoice.amount) > 0.05) {
-            // If subtotal is wildly off (e.g. DocAI parsed PLN but amount is EUR), reset
             const ratio = invoice.subtotalAmount / invoice.amount;
+            const amountRatio = invoice.amount / (invoice.subtotalAmount || 1);
+            const currencyWasChanged = originalCurrency !== invoice.currency;
+
             if (ratio > 1.5 || ratio < 0.5) {
-                corrections.push(`Fixed: subtotal ${invoice.subtotalAmount} was in wrong currency (ratio ${ratio.toFixed(1)}x vs amount ${invoice.amount}). Reset to amount.`);
-                invoice.subtotalAmount = invoice.amount;
-                invoice.taxAmount = 0;
+                // Amounts wildly off — likely wrong currency extraction.
+                // If currency was changed and no exact example match fixed it, ask Claude.
+                const rawText = invoice._rawText || invoiceData._rawText || '';
+                if (currencyWasChanged && rawText) {
+                    try {
+                        if (!process.env.ANTHROPIC_API_KEY) {
+                            require('dotenv').config({ path: require('path').join(__dirname, '.env'), override: true });
+                        }
+                        const client = getAnthropic();
+                        const resp = await client.messages.create({
+                            model: 'claude-haiku-4-5-20251001',
+                            max_tokens: 200,
+                            messages: [{ role: 'user', content: `What is the TOTAL amount (final sum to pay) on this invoice? Return ONLY JSON: {"amount": number, "currency": "EUR/USD/etc", "subtotal": number, "tax": number}. If tax is 0% or not shown, tax=0 and subtotal=amount.\n\nInvoice text:\n${rawText.slice(0, 2000)}` }],
+                        });
+                        const text = resp.content[0]?.text || '';
+                        const match = text.match(/\{[\s\S]*\}/);
+                        if (match) {
+                            const parsed = JSON.parse(match[0]);
+                            if (parsed.amount > 0) {
+                                corrections.push(`Claude: fixed amounts — ${invoice.amount} ${originalCurrency} → ${parsed.amount} ${parsed.currency || invoice.currency} (from original text)`);
+                                invoice.amount = parsed.amount;
+                                invoice.subtotalAmount = parsed.subtotal || parsed.amount;
+                                invoice.taxAmount = parsed.tax || 0;
+                                console.log(`[Teacher] 🤖 Claude fixed amounts: ${parsed.amount} ${parsed.currency}, sub=${parsed.subtotal}, tax=${parsed.tax}`);
+                            }
+                        }
+                    } catch (err) {
+                        console.warn(`[Teacher] Claude amount extraction failed: ${err.message}`);
+                    }
+                }
+
+                // Fallback: if Claude didn't fix or no rawText, reset subtotal to match amount
+                if (invoice.subtotalAmount !== invoice.amount && (invoice.subtotalAmount / invoice.amount > 1.5 || invoice.subtotalAmount / invoice.amount < 0.5)) {
+                    corrections.push(`Fixed: subtotal ${invoice.subtotalAmount} reset to amount ${invoice.amount} (wrong currency ratio)`);
+                    invoice.subtotalAmount = invoice.amount;
+                    invoice.taxAmount = 0;
+                }
             } else {
                 corrections.push(`WARNING: Math mismatch: ${invoice.subtotalAmount} + ${invoice.taxAmount} = ${computed} ≠ ${invoice.amount}`);
             }
