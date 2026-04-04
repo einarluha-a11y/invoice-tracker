@@ -621,6 +621,22 @@ async function validateAndTeach(invoiceData, companyId) {
             }
         }
 
+        // Re-apply self-invoice guard after Claude (Claude also confuses buyer/supplier)
+        if (db) {
+            try {
+                const compSnap2 = await db.collection('companies').get();
+                const postVat = (invoice.supplierVat || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+                const postReg = (invoice.supplierRegistration || '').replace(/[^0-9]/g, '');
+                for (const cd of compSnap2.docs) {
+                    const c = cd.data();
+                    const cVat = (c.vat || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+                    const cReg = (c.regCode || '').replace(/[^0-9]/g, '');
+                    if (cVat && postVat && cVat === postVat) { invoice.supplierVat = ''; }
+                    if (cReg && postReg && cReg === postReg) { invoice.supplierRegistration = ''; }
+                }
+            } catch { /* non-critical */ }
+        }
+
         // Fallback: if math still wrong after Claude, reset subtotal = amount
         if (mathWrong && invoice.subtotalAmount > 0) {
             const ratio = invoice.subtotalAmount / invoice.amount;
