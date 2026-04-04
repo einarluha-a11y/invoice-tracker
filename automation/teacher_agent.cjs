@@ -36,6 +36,7 @@ const fs          = require('fs');
 const path        = require('path');
 const readline    = require('readline');
 const { admin, db, bucket } = require('./core/firebase.cjs');
+const { cleanNum } = require('./core/utils.cjs');
 
 // ── Colours for terminal output ──────────────────────────────────────────────
 const C = {
@@ -531,6 +532,7 @@ async function validateAndTeach(invoiceData, companyId) {
 
         // Static vendor fields: examples ALWAYS override DocAI (manual correction = trusted)
         const STATIC_FIELDS = ['supplierVat', 'supplierRegistration', 'currency'];
+        const oldCurrency = invoice.currency;
         for (const field of STATIC_FIELDS) {
             if (!gt[field] || isEmpty(gt[field])) continue;
 
@@ -541,6 +543,41 @@ async function validateAndTeach(invoiceData, companyId) {
                     corrections.push(`Filled ${field} from example: ${gt[field]}`);
                 }
                 invoice[field] = gt[field];
+            }
+        }
+
+        // CRITICAL RULE: if currency was changed, the amount MUST also be re-extracted.
+        // Never keep a number extracted in the old currency under the new currency label.
+        if (oldCurrency && invoice.currency && oldCurrency !== invoice.currency && invoice.amount > 0) {
+            const rawText = invoice._rawText || invoiceData._rawText || '';
+            const newCur = invoice.currency;
+            let foundAmount = null, foundSub = null, foundTax = null;
+
+            if (rawText) {
+                // Find total amounts labeled with the new currency
+                // Patterns: "Wartość brutto 4 050,00 EUR", "Total 4050.00 EUR", "4 050,00 EUR"
+                const re = new RegExp(`([\\d\\s]+[,.]\\d{2})\\s*${newCur}\\b`, 'gi');
+                const amounts = [...rawText.matchAll(re)].map(m => cleanNum(m[1])).filter(n => n > 0);
+                if (amounts.length > 0) {
+                    // The largest amount in the new currency is usually the total (brutto/do zapłaty)
+                    foundAmount = Math.max(...amounts);
+                    // Subtotal is usually the same or smaller; tax is the difference if there is one
+                    foundSub = foundAmount;
+                    foundTax = 0;
+                }
+            }
+
+            if (foundAmount && Math.abs(foundAmount - invoice.amount) > 0.01) {
+                corrections.push(`Amount re-extracted after currency change: ${invoice.amount} ${oldCurrency} → ${foundAmount} ${newCur}`);
+                invoice.amount = foundAmount;
+                invoice.subtotalAmount = foundSub;
+                invoice.taxAmount = foundTax;
+            } else if (!foundAmount) {
+                // Cannot find amount in new currency → clear it rather than keep wrong value
+                corrections.push(`WARNING: currency changed ${oldCurrency} → ${newCur} but no matching amount found in text. Cleared amount.`);
+                invoice.amount = 0;
+                invoice.subtotalAmount = 0;
+                invoice.taxAmount = 0;
             }
         }
 
