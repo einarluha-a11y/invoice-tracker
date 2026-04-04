@@ -295,23 +295,27 @@ async function validateAndTeach(invoiceData, companyId) {
     const originalCurrency = invoice.currency; // Track for currency-change detection
 
     // ── 0. SELF-INVOICE GUARD: clear buyer data, re-extract supplier's ──────
-    // If invoice's supplierVat or supplierRegistration matches any registered
-    // receiving company → Scout extracted buyer's data, not vendor's.
-    // After clearing, search rawText for the real supplier's Reg/VAT.
+    // If invoice's vendorName, supplierVat, or supplierRegistration matches any
+    // registered receiving company → Scout extracted buyer's data, not vendor's.
+    // After clearing, search rawText for the real supplier's name/Reg/VAT.
     if (db) {
         try {
             const compSnap = await db.collection('companies').get();
             const buyerIds = new Set(); // collect all buyer VAT/Reg to exclude
+            const buyerNames = new Set(); // collect buyer names (lowercased, cleaned)
             const invVat = (invoice.supplierVat || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
             const invReg = (invoice.supplierRegistration || '').replace(/[^0-9]/g, '');
-            let vatCleared = false, regCleared = false;
+            const invName = (invoice.vendorName || '').toLowerCase().replace(/[^a-zöäüõ0-9]/g, '');
+            let vatCleared = false, regCleared = false, nameCleared = false;
 
             for (const cd of compSnap.docs) {
                 const c = cd.data();
                 const cVat = (c.vat || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
                 const cReg = (c.regCode || '').replace(/[^0-9]/g, '');
+                const cName = (c.name || '').toLowerCase().replace(/[^a-zöäüõ0-9]/g, '');
                 if (cVat) buyerIds.add(cVat);
                 if (cReg) buyerIds.add(cReg);
+                if (cName) buyerNames.add(cName);
 
                 if (cVat && invVat && cVat === invVat) {
                     corrections.push(`Self-invoice guard: cleared buyer VAT ${invoice.supplierVat} (belongs to ${c.name})`);
@@ -323,33 +327,52 @@ async function validateAndTeach(invoiceData, companyId) {
                     invoice.supplierRegistration = '';
                     regCleared = true;
                 }
+                // Check vendorName — buyer company can never be the vendor
+                if (cName && invName && (cName === invName || invName.includes(cName) || cName.includes(invName)) && invName.length > 3) {
+                    corrections.push(`Self-invoice guard: vendor "${invoice.vendorName}" is a receiver company (${c.name}) — clearing`);
+                    invoice.vendorName = '';
+                    nameCleared = true;
+                }
             }
 
-            // Re-extract from rawText: find Reg/VAT codes that are NOT buyer's
-            if (regCleared || vatCleared) {
+            // Re-extract from rawText: find Reg/VAT/vendorName that are NOT buyer's
+            if (regCleared || vatCleared || nameCleared) {
                 const rawText = invoice._rawText || invoiceData._rawText || '';
                 if (rawText) {
-                    // Find all registration codes in text
                     if (regCleared) {
                         const regMatches = rawText.matchAll(/(?:Reg\.?\s*(?:nr|code|kood)|Rg-?kood)[.:\s]+(\d{6,10})/gi);
                         for (const m of regMatches) {
                             if (!buyerIds.has(m[1])) {
                                 invoice.supplierRegistration = m[1];
-                                corrections.push(`Self-invoice guard: found supplier Reg ${m[1]} in text (after clearing buyer's)`);
+                                corrections.push(`Self-invoice guard: found supplier Reg ${m[1]} in text`);
                                 break;
                             }
                         }
                     }
-                    // Find all VAT codes in text
                     if (vatCleared) {
                         const vatMatches = rawText.matchAll(/(?:KMKR|KMKN|VAT)[.\s:]*([A-Z]{2}\d{6,12})/gi);
                         for (const m of vatMatches) {
                             const clean = m[1].toUpperCase();
                             if (!buyerIds.has(clean)) {
                                 invoice.supplierVat = m[1];
-                                corrections.push(`Self-invoice guard: found supplier VAT ${m[1]} in text (after clearing buyer's)`);
+                                corrections.push(`Self-invoice guard: found supplier VAT ${m[1]} in text`);
                                 break;
                             }
+                        }
+                    }
+                    // Re-extract vendorName: first line of the document is usually the vendor
+                    if (nameCleared) {
+                        const lines = rawText.split('\n').map(l => l.trim()).filter(l => l.length > 3);
+                        for (const line of lines) {
+                            const lineLower = line.toLowerCase().replace(/[^a-zöäüõ0-9]/g, '');
+                            // Skip lines that match buyer names or look like addresses/dates
+                            if (buyerNames.has(lineLower)) continue;
+                            if (/^\d|^arve|^kuup|^maks|^viitenumber|^swedbank|^seb|^lhv/i.test(line)) continue;
+                            if (line.length > 80) continue;
+                            // This is likely the vendor name
+                            invoice.vendorName = line;
+                            corrections.push(`Self-invoice guard: found supplier name "${line}" in text`);
+                            break;
                         }
                     }
                 }
