@@ -763,12 +763,66 @@ async function processBankStatement(csvText, companyId = null) {
 
 /**
  * 3.5 AI Parsing for Bank Statements (PDFs)
- * PDF bank statements require Claude for text extraction — disabled.
- * Use CSV bank statement exports (Revolut/Wise CSV) instead — they work without AI.
+ * Uses Claude Haiku to extract outgoing transactions from bank statement text.
  */
 async function parseBankStatementWithAI(rawText) {
-    console.warn('[DocAI] ⚠️  PDF bank statement parsing disabled (required Claude). Use CSV export from your bank instead.');
-    return null;
+    if (!rawText || rawText.trim().length < 50) {
+        console.warn('[Bank AI] Raw text too short — cannot parse.');
+        return null;
+    }
+
+    if (!process.env.ANTHROPIC_API_KEY) {
+        require('dotenv').config({ path: require('path').join(__dirname, '.env'), override: true });
+    }
+    if (!process.env.ANTHROPIC_API_KEY) {
+        console.warn('[Bank AI] No ANTHROPIC_API_KEY — cannot parse PDF bank statement.');
+        return null;
+    }
+
+    try {
+        const Anthropic = require('@anthropic-ai/sdk');
+        const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+        // Split long text into chunks if needed (Haiku context is small)
+        const snippet = rawText.slice(0, 8000);
+
+        const resp = await client.messages.create({
+            model: 'claude-haiku-4-5-20251001',
+            max_tokens: 4000,
+            messages: [{
+                role: 'user',
+                content: `Extract ALL outgoing payment transactions from this bank statement.
+Only outgoing payments (money leaving the account). Skip incoming, fees, interest, and internal transfers.
+
+Return ONLY a valid JSON array:
+[{"date": "YYYY-MM-DD", "description": "recipient/vendor name", "amount": 123.45, "reference": "invoice ref if visible"}]
+
+Rules:
+- amount: always POSITIVE number (even though it's outgoing)
+- date: format YYYY-MM-DD
+- description: the counterparty/recipient name, cleaned (no "To:", no bank codes)
+- reference: invoice number from payment description, or "" if not found
+- Skip zero-amount rows, bank fees, currency exchanges, internal transfers
+
+Bank statement text:
+${snippet}`
+            }],
+        });
+
+        const text = resp.content[0]?.text || '';
+        const match = text.match(/\[[\s\S]*\]/);
+        if (!match) {
+            console.warn('[Bank AI] Claude returned no array.');
+            return null;
+        }
+
+        const transactions = JSON.parse(match[0]);
+        console.log(`[Bank AI] 🤖 Claude extracted ${transactions.length} outgoing transaction(s) from PDF statement.`);
+        return transactions;
+    } catch (err) {
+        console.error(`[Bank AI] Claude extraction failed: ${err.message}`);
+        return null;
+    }
 }
 
 /**
