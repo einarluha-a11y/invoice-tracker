@@ -49,6 +49,70 @@ const C = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  CLAUDE HAIKU — vendor identity extraction from raw text
+// ─────────────────────────────────────────────────────────────────────────────
+
+let _anthropic = null;
+function getAnthropic() {
+    if (_anthropic) return _anthropic;
+    const Anthropic = require('@anthropic-ai/sdk');
+    _anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    return _anthropic;
+}
+
+/**
+ * Ask Claude Haiku to extract vendor identity AND amounts from raw invoice text.
+ * Single call replaces two separate calls (vendor + amounts).
+ */
+async function extractFromRawText(rawText) {
+    if (!process.env.ANTHROPIC_API_KEY) {
+        require('dotenv').config({ path: path.join(__dirname, '.env'), override: true });
+    }
+    if (!rawText || !process.env.ANTHROPIC_API_KEY) return null;
+
+    const snippet = rawText.slice(0, 2000);
+
+    try {
+        const client = getAnthropic();
+        const resp = await client.messages.create({
+            model: 'claude-haiku-4-5-20251001',
+            max_tokens: 400,
+            messages: [{
+                role: 'user',
+                content: `Extract invoice details from this text. The SUPPLIER (seller/service provider) is NOT the buyer.
+
+Return ONLY valid JSON:
+{"vendorName": "...", "supplierVat": "...", "supplierRegistration": "...", "amount": 0, "subtotal": 0, "tax": 0, "currency": "EUR"}
+
+Rules:
+- vendorName: the company providing the service/goods (NOT the buyer)
+- supplierVat: country code + digits (e.g. LT100018378612, EE102076039)
+- supplierRegistration: digits only
+- amount: total sum to pay
+- subtotal: net amount before tax. If VAT 0% or no tax, subtotal = amount
+- tax: VAT amount. If 0% or not shown, tax = 0
+- currency: EUR, USD, PLN etc.
+- Use empty string "" for text fields not found, 0 for numbers not found.
+
+Invoice text:
+${snippet}`
+            }],
+        });
+
+        const text = resp.content[0]?.text || '';
+        const match = text.match(/\{[\s\S]*\}/);
+        if (!match) return null;
+
+        const parsed = JSON.parse(match[0]);
+        console.log(`[Teacher] 🤖 Claude: vendor="${parsed.vendorName}", VAT=${parsed.supplierVat}, Reg=${parsed.supplierRegistration}, amount=${parsed.amount} ${parsed.currency}`);
+        return parsed;
+    } catch (err) {
+        console.warn(`[Teacher] Claude extraction failed: ${err.message}`);
+        return null;
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  FIRESTORE HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -103,11 +167,6 @@ async function findExamplesByIdentifiers(invoice) {
 
     const invoiceVat = (invoice.supplierVat || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
     const invoiceReg = (invoice.supplierRegistration || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-
-    // Our companies' VAT/Reg — never match against these (DocAI sometimes uses buyer's info)
-    const OUR_VATS = new Set(['ee101841061']); // Global Technics, Ideacom
-    const OUR_REGS = new Set(['12875353']);
-    if (OUR_VATS.has(invoiceVat) || OUR_REGS.has(invoiceReg)) return [];
 
     for (const ex of allExamples) {
         const gt = ex.groundTruth || {};
@@ -220,18 +279,22 @@ function isEmpty(val) {
  * @param {string} companyId   - Firestore company doc ID
  * @returns {Promise<{approved: boolean, invoice: object, corrections: string[]}>}
  */
-async function validateAndTeach(invoiceData, companyId, rawText = '') {
+async function validateAndTeach(invoiceData, companyId) {
     const invoice = { ...invoiceData };
     const corrections = [];
-    // rawText = original document text from Document AI (for field verification)
+    const originalCurrency = invoice.currency; // Track for currency-change detection
 
-    // ── 1. Load Charter (global AI rules) ──────────────────────────────────────
+    // ── 1. Load Charter (customAiRules) ──────────────────────────────────────
     let charterRules = '';
-    try {
-        const { getGlobalAiRules } = require('./core/firebase.cjs');
-        charterRules = await getGlobalAiRules();
-    } catch (err) {
-        console.warn(`[Teacher] Could not load global Charter: ${err.message}`);
+    if (companyId && db) {
+        try {
+            const companyDoc = await db.collection('companies').doc(companyId).get();
+            if (companyDoc.exists) {
+                charterRules = companyDoc.data().customAiRules || '';
+            }
+        } catch (err) {
+            console.warn(`[Teacher] Could not load Charter: ${err.message}`);
+        }
     }
 
     // ── 1b. Apply global rules (universal patterns learned from ALL corrections) ──
@@ -304,48 +367,6 @@ async function validateAndTeach(invoiceData, companyId, rawText = '') {
         }
     }
 
-    // ── 1c. Load vendor profile (auto-learned defaults) ─────────────────────
-    let vendorProfile = null;
-    if (invoice.vendorName && !isEmpty(invoice.vendorName) && db) {
-        try {
-            const profileKey = invoice.vendorName.replace(/[^a-zA-Z0-9_\-]/g, '_').slice(0, 60);
-            const profileDoc = await db.collection('vendor_profiles').doc(profileKey).get();
-            if (profileDoc.exists) {
-                vendorProfile = profileDoc.data();
-            } else {
-                // Try searching by VAT in all profiles
-                const allProfiles = await db.collection('vendor_profiles').get();
-                const invoiceVat = (invoice.supplierVat || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-                for (const p of allProfiles.docs) {
-                    const pd = p.data();
-                    const vatList = (pd.vatNumbers || []).map(v => v.replace(/[^a-zA-Z0-9]/g, '').toLowerCase());
-                    if (invoiceVat.length > 5 && vatList.includes(invoiceVat)) {
-                        vendorProfile = pd;
-                        break;
-                    }
-                }
-            }
-        } catch { /* no profile — that's fine */ }
-    }
-
-    // Apply vendor profile defaults (high confidence — from 2+ manual corrections)
-    if (vendorProfile && vendorProfile.corrections) {
-        const corr = vendorProfile.corrections;
-        if (corr.currency && corr.currency.count >= 2 && invoice.currency !== corr.currency.value) {
-            corrections.push(`Profile: corrected currency ${invoice.currency} → ${corr.currency.value} (${corr.currency.count} edits)`);
-            invoice.currency = corr.currency.value;
-        }
-        if (corr.description && corr.description.count >= 2 && isEmpty(invoice.description)) {
-            corrections.push(`Profile: filled description from vendor profile: ${corr.description.value}`);
-            invoice.description = corr.description.value;
-        }
-        // Vendor name from profile (if Unknown Vendor)
-        if (isEmpty(invoice.vendorName) && vendorProfile.vendorName) {
-            invoice.vendorName = vendorProfile.vendorName;
-            corrections.push(`Profile: filled vendorName from vendor profile: ${vendorProfile.vendorName}`);
-        }
-    }
-
     // ── 2. Load matching examples from invoice_examples ─────────────────────
     let examples = [];
     if (invoice.vendorName && !isEmpty(invoice.vendorName)) {
@@ -355,144 +376,87 @@ async function validateAndTeach(invoiceData, companyId, rawText = '') {
     }
 
     // ── 2b. Smart fallback: search by VAT/RegNo if name search found nothing ──
-    //   When matched by identifiers, we have high confidence this is the same vendor,
-    //   so we trust the example's static fields (currency, VAT, etc.) over DocAI output.
-    let matchedByIdentifiers = false;
     if (examples.length === 0) {
         try {
             examples = await findExamplesByIdentifiers(invoice);
             if (examples.length > 0) {
-                matchedByIdentifiers = true;
                 console.log(`[Teacher] 🔍 Found ${examples.length} example(s) by VAT/RegNo/patterns match`);
             }
         } catch { /* no match — proceed without examples */ }
     }
 
-    // ── 3. Apply knowledge base (HIGHEST PRIORITY — human-verified) ────────
-    // Examples ALWAYS override DocAI for static fields and fix numeric fields.
-    if (examples.length > 0) {
-        const best = examples.sort((a, b) => {
-            const tA = a.updatedAt?._seconds || a.createdAt?._seconds || 0;
-            const tB = b.updatedAt?._seconds || b.createdAt?._seconds || 0;
-            return tB - tA;
-        })[0];
+    // ── 3. Fill/correct fields from examples ────────────────────────────────
+    // Sort once, reuse in step 3 and step 5
+    const bestExample = examples.length > 0
+        ? examples.sort((a, b) => {
+              const tA = a.updatedAt?._seconds || a.createdAt?._seconds || 0;
+              const tB = b.updatedAt?._seconds || b.createdAt?._seconds || 0;
+              return tB - tA;
+          })[0]
+        : null;
 
-        const gt = best.groundTruth || {};
+    if (bestExample) {
+        const gt = bestExample.groundTruth || {};
 
-        // vendorName: example ALWAYS wins (DocAI often confuses buyer/supplier)
+        // Vendor name: example ALWAYS wins (DocAI often confuses buyer/supplier)
         if (gt.vendorName && !isEmpty(gt.vendorName) && invoice.vendorName !== gt.vendorName) {
-            corrections.push(`Example: vendorName "${invoice.vendorName}" → "${gt.vendorName}"`);
+            if (!isEmpty(invoice.vendorName)) {
+                corrections.push(`Corrected vendorName: ${invoice.vendorName} → ${gt.vendorName} (from example)`);
+            } else {
+                corrections.push(`Filled vendorName from example: ${gt.vendorName}`);
+            }
             invoice.vendorName = gt.vendorName;
         }
 
-        // Static fields: VAT, Reg, currency — constant per vendor, example always wins
-        for (const field of ['supplierVat', 'supplierRegistration', 'currency']) {
-            if (gt[field] && !isEmpty(gt[field]) && invoice[field] !== gt[field]) {
-                corrections.push(`Example: ${field} "${invoice[field]}" → "${gt[field]}"`);
+        // Static vendor fields: examples ALWAYS override DocAI (manual correction = trusted)
+        const STATIC_FIELDS = ['supplierVat', 'supplierRegistration', 'currency'];
+        for (const field of STATIC_FIELDS) {
+            if (!gt[field] || isEmpty(gt[field])) continue;
+
+            if (invoice[field] !== gt[field]) {
+                if (!isEmpty(invoice[field])) {
+                    corrections.push(`Corrected ${field}: ${invoice[field]} → ${gt[field]} (from example)`);
+                } else {
+                    corrections.push(`Filled ${field} from example: ${gt[field]}`);
+                }
                 invoice[field] = gt[field];
             }
         }
 
-        // Description: fill from example if empty
+        // Amount fix: if any example has same invoiceId and DocAI amount is wildly different,
+        // DocAI likely parsed amount in wrong currency (e.g. PLN instead of EUR)
+        const exactMatch = examples.find(ex => {
+            const exId = (ex.groundTruth?.invoiceId || '').toLowerCase().trim();
+            const invId = (invoice.invoiceId || '').toLowerCase().trim();
+            return exId && invId && exId === invId;
+        });
+        if (exactMatch && invoice.amount > 0) {
+            const egt = exactMatch.groundTruth;
+            if (egt.amount > 0) {
+                const ratio = invoice.amount / egt.amount;
+                if (ratio > 1.5 || ratio < 0.5) {
+                    corrections.push(`Fixed amount: ${invoice.amount} → ${egt.amount} (example match by invoiceId, DocAI had wrong currency)`);
+                    invoice.amount = egt.amount;
+                    invoice.subtotalAmount = egt.subtotalAmount || egt.amount;
+                    invoice.taxAmount = egt.taxAmount || 0;
+                }
+            }
+            // Also pick Reg from exact match (more precise than latest example)
+            if (egt.supplierRegistration && egt.supplierRegistration !== invoice.supplierRegistration) {
+                corrections.push(`Corrected supplierRegistration: ${invoice.supplierRegistration} → ${egt.supplierRegistration} (exact invoiceId match)`);
+                invoice.supplierRegistration = egt.supplierRegistration;
+            }
+        }
+
+        // Description: copy pattern from example if Scout returned empty
         if (isEmpty(invoice.description) && gt.description && !isEmpty(gt.description)) {
             invoice.description = gt.description;
-            corrections.push(`Example: description → "${gt.description}"`);
+            corrections.push(`Filled description from example: ${gt.description}`);
         }
 
-        // Tax rate pattern: if DocAI math is wrong, use example's tax rate
-        const gtSub = parseFloat(gt.subtotalAmount) || 0;
-        const gtTax = parseFloat(gt.taxAmount) || 0;
-        const gtAmt = parseFloat(gt.amount) || 0;
-        if (gtSub > 0 && Math.abs(gtSub + gtTax - gtAmt) <= 0.50) {
-            const docAmt = parseFloat(invoice.amount) || 0;
-            const docMathOk = Math.abs((parseFloat(invoice.subtotalAmount)||0) + (parseFloat(invoice.taxAmount)||0) - docAmt) <= 0.50;
-            if (!docMathOk && docAmt > 0) {
-                const taxRate = gtSub > 0 ? gtTax / gtSub : 0;
-                if (taxRate > 0 && taxRate < 1) {
-                    invoice.subtotalAmount = parseFloat((docAmt / (1 + taxRate)).toFixed(2));
-                    invoice.taxAmount = parseFloat((docAmt - invoice.subtotalAmount).toFixed(2));
-                    corrections.push(`Example: tax rate ${(taxRate*100).toFixed(0)}% → sub=${invoice.subtotalAmount}, tax=${invoice.taxAmount}`);
-                } else if (taxRate === 0) {
-                    invoice.subtotalAmount = docAmt;
-                    invoice.taxAmount = 0;
-                    corrections.push(`Example: VAT 0% vendor → sub=${docAmt}, tax=0`);
-                }
-            }
-        }
-
-        if (best.teachingNotes) {
-            console.log(`[Teacher] Teaching notes: ${best.teachingNotes}`);
-        }
-    }
-
-    // ── 3c. Full Field Verification from rawText ──────────────────────────
-    // DocAI is a draft — Teacher verifies EVERY field against the actual document text.
-    if (rawText && rawText.length > 20) {
-        // Our companies are ALWAYS the buyer, never the supplier
-        const OUR_COMPANIES = ['global technics', 'ideacom'];
-        const vendorLower = (invoice.vendorName || '').toLowerCase();
-        if (OUR_COMPANIES.some(c => vendorLower.includes(c))) {
-            // DocAI confused buyer with supplier — try to find real vendor in rawText
-            // Look for company names near keywords like Tiekėjas/Tarnija/Supplier/footer
-            // Also check: the other company mentioned that is NOT ours
-            const companyMatches = rawText.match(/(?:MTÜ|OÜ|AS|UAB|SIA|GmbH|LLC)\s+/gi);
-            // Simpler: if receiverName exists and is NOT our company, swap
-            if (invoice.receiverName && !OUR_COMPANIES.some(c => invoice.receiverName.toLowerCase().includes(c))) {
-                // receiverName might actually be the supplier
-            }
-            corrections.push(`WARNING: vendorName "${invoice.vendorName}" is our company — DocAI confused buyer/supplier`);
-        }
-        const { cleanNum } = require('./document_ai_service.cjs');
-
-        // amount: "Tasuda kokku" (payable) has highest priority
-        const tasudaM = rawText.match(/(?:Tasuda\s+kokku|Kokku\s+tasuda)[:\s]+(-?[\d\s,.]+)\s*(?:€|EUR)?/i);
-        if (tasudaM) {
-            const raw = tasudaM[1].trim();
-            const isNeg = raw.startsWith('-');
-            const v = cleanNum(raw.replace('-', ''));
-            if (isNeg || v === 0) {
-                // Overpayment — mark as paid, use Arve kokku for amount
-                invoice.isPaid = true;
-                const arveM = rawText.match(/Arve\s+kokku[:\s]+([\d,.]+)/i);
-                if (arveM) {
-                    const ak = cleanNum(arveM[1]);
-                    if (ak > 0 && ak !== invoice.amount) {
-                        corrections.push(`rawText: Tasuda kokku ≤ 0 (overpayment), amount from Arve kokku: ${invoice.amount}→${ak}`);
-                        invoice.amount = ak;
-                    }
-                }
-            } else if (v > 0 && Math.abs(v - invoice.amount) > 0.50) {
-                corrections.push(`rawText: Tasuda kokku override: amount ${invoice.amount}→${v}`);
-                invoice.amount = v;
-            }
-        }
-
-        // Pair detection: find (sub, tax) where sub+tax=amount
-        const amt = parseFloat(invoice.amount) || 0;
-        const curSub = parseFloat(invoice.subtotalAmount) || 0;
-        const curTax = parseFloat(invoice.taxAmount) || 0;
-        if (amt > 0 && Math.abs(curSub + curTax - amt) > 0.50) {
-            // Also check Arve kokku as pair target
-            let pairTarget = amt;
-            const arveM2 = rawText.match(/Arve\s+kokku[:\s]+([\d,.]+)/i);
-            if (arveM2) { const ak = cleanNum(arveM2[1]); if (ak > 0) pairTarget = ak; }
-
-            const allNums = [...rawText.matchAll(/([\d]+[.,]\d{2})/g)].map(m => cleanNum(m[1]));
-            for (let i = 0; i < allNums.length - 1; i++) {
-                const s = allNums[i], t = allNums[i + 1];
-                if (s > 0 && t > 0 && s > t && Math.abs(s + t - pairTarget) <= 0.02) {
-                    corrections.push(`rawText: pair detection sub=${s} tax=${t} (${s}+${t}=${pairTarget})`);
-                    invoice.subtotalAmount = s;
-                    invoice.taxAmount = t;
-                    break;
-                }
-            }
-        }
-
-        // Kaardimakse: card payment = already paid
-        if (/kaardimakse/i.test(rawText)) {
-            invoice.isPaid = true;
-            corrections.push('rawText: Kaardimakse detected → isPaid');
+        // Apply teachingNotes if available (vendor-specific rules)
+        if (bestExample.teachingNotes) {
+            console.log(`[Teacher] Applying teaching notes for ${bestExample.vendorName}: ${bestExample.teachingNotes}`);
         }
     }
 
@@ -502,15 +466,87 @@ async function validateAndTeach(invoiceData, companyId, rawText = '') {
         corrections.push(...rulesApplied);
     }
 
-    // ── 5. Math validation: subtotal + tax ≈ amount ─────────────────────────
-    if (invoice.amount > 0 && invoice.subtotalAmount > 0 && invoice.taxAmount >= 0) {
-        const computed = parseFloat((invoice.subtotalAmount + invoice.taxAmount).toFixed(2));
-        if (Math.abs(computed - invoice.amount) > 0.05) {
-            corrections.push(`WARNING: Math mismatch: ${invoice.subtotalAmount} + ${invoice.taxAmount} = ${computed} ≠ ${invoice.amount}`);
+    // ── 5. Cross-validation + math check — one Claude call if needed ────────
+    // Detects: unknown vendor, missing identity, VAT mismatch, wrong-currency amounts.
+    // If any issue found → single Claude Haiku call extracts vendor + amounts from rawText.
+    {
+        const rawText = invoice._rawText || invoiceData._rawText || '';
+        const currencyWasChanged = originalCurrency !== invoice.currency;
+
+        // Check identity issues
+        const missingIdentity =
+            isEmpty(invoice.vendorName) ||
+            isEmpty(invoice.supplierVat) ||
+            isEmpty(invoice.supplierRegistration);
+
+        // Check VAT mismatch with example (different company, same name)
+        let vatMismatch = false;
+        if (examples.length > 0 && bestExample) {
+            const exGt = bestExample.groundTruth || {};
+            if (exGt.supplierVat && !isEmpty(invoice.supplierVat) && !isEmpty(exGt.supplierVat)) {
+                const invVat = invoice.supplierVat.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+                const exVat = exGt.supplierVat.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+                if (invVat !== exVat) {
+                    vatMismatch = true;
+                    corrections.push(`WARNING: VAT mismatch — invoice ${invoice.supplierVat} vs example ${exGt.supplierVat}`);
+                }
+            }
+        }
+
+        // Check math: subtotal + tax ≈ amount
+        let mathWrong = false;
+        if (invoice.amount > 0 && invoice.subtotalAmount > 0) {
+            const computed = parseFloat((invoice.subtotalAmount + invoice.taxAmount).toFixed(2));
+            const ratio = invoice.subtotalAmount / invoice.amount;
+            if (Math.abs(computed - invoice.amount) > 0.05) {
+                if (ratio > 1.5 || ratio < 0.5) {
+                    mathWrong = true; // wildly off — likely wrong currency
+                } else {
+                    corrections.push(`WARNING: Math mismatch: ${invoice.subtotalAmount} + ${invoice.taxAmount} = ${computed} ≠ ${invoice.amount}`);
+                }
+            }
+        }
+
+        // Single Claude call if any issue detected
+        const needsClaude = missingIdentity || vatMismatch || (mathWrong && currencyWasChanged);
+        if (needsClaude && rawText) {
+            const claude = await extractFromRawText(rawText);
+            if (claude) {
+                // Fix vendor identity
+                if (claude.vendorName && (isEmpty(invoice.vendorName) || vatMismatch)) {
+                    corrections.push(`Claude: vendor "${invoice.vendorName}" → "${claude.vendorName}"`);
+                    invoice.vendorName = claude.vendorName;
+                }
+                if (claude.supplierVat && (isEmpty(invoice.supplierVat) || vatMismatch)) {
+                    corrections.push(`Claude: supplierVat = ${claude.supplierVat}`);
+                    invoice.supplierVat = claude.supplierVat;
+                }
+                if (claude.supplierRegistration && (isEmpty(invoice.supplierRegistration) || vatMismatch)) {
+                    corrections.push(`Claude: supplierRegistration = ${claude.supplierRegistration}`);
+                    invoice.supplierRegistration = claude.supplierRegistration;
+                }
+                // Fix amounts if Claude returned them and math was wrong
+                if (mathWrong && claude.amount > 0) {
+                    corrections.push(`Claude: amount ${invoice.amount} → ${claude.amount} ${claude.currency || invoice.currency}`);
+                    invoice.amount = claude.amount;
+                    invoice.subtotalAmount = claude.subtotal || claude.amount;
+                    invoice.taxAmount = claude.tax || 0;
+                }
+            }
+        }
+
+        // Fallback: if math still wrong after Claude, reset subtotal = amount
+        if (mathWrong && invoice.subtotalAmount > 0) {
+            const ratio = invoice.subtotalAmount / invoice.amount;
+            if (ratio > 1.5 || ratio < 0.5) {
+                corrections.push(`Fixed: subtotal ${invoice.subtotalAmount} reset to ${invoice.amount}`);
+                invoice.subtotalAmount = invoice.amount;
+                invoice.taxAmount = 0;
+            }
         }
     }
 
-    // ── 6. Completeness check ───────────────────────────────────────────────
+    // ── 7. Completeness check ───────────────────────────────────────────────
     const missing = MANDATORY_FIELDS.filter(f => isEmpty(invoice[f]));
 
     const approved = missing.length === 0;

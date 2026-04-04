@@ -124,35 +124,6 @@ function applyEstonianRegexFallback(rawText, result) {
         if (m) { const v = cleanNum(m[1]); if (v > 0) { result.taxAmount = v; filled.push('taxAmount'); } }
     }
 
-    // amount: "Tasuda kokku" (actual payable) overrides Document AI amount.
-    // If Tasuda kokku is negative (overpayment from previous period) → use Arve kokku as amount, mark as Paid.
-    // If Tasuda kokku is 0 → already paid (Kaardimakse etc.), use Arve/Kokku as amount, mark as Paid.
-    // If Tasuda kokku is positive → use it as amount.
-    const tasudaMatchFull = t.match(/Tasuda\s+kokku[:\s]+(-?[\d\s,.]+)\s*(?:€|EUR)?/i)
-                         || t.match(/Kokku\s+tasuda[:\s]+(-?[\d\s,.]+)\s*(?:€|EUR)?/i);
-    if (tasudaMatchFull) {
-        const raw = tasudaMatchFull[1].trim();
-        const v = cleanNum(raw.replace('-', ''));
-        const isNegative = raw.startsWith('-');
-        if (isNegative || v === 0) {
-            // Overpayment or zero balance — use Arve kokku, mark Paid
-            result.isPaid = true;
-            filled.push('isPaid (Tasuda kokku ≤ 0 — overpayment)');
-            // Don't override amount — let Arve kokku / Summa kokku stand
-        } else if (v > 0) {
-            result.amount = v;
-            filled.push('amount (Tasuda kokku override)');
-        }
-    }
-    // If amount is negative (DocAI picked up Tasuda kokku instead of Arve kokku), fix it
-    if (result.amount < 0) {
-        const arveKokkuMatch = t.match(/Arve\s+kokku[:\s]+([\d\s,.]+)/i)
-                            || t.match(/Summa\s+kokku\s+(?:\([A-Z]+\)\s+)?([\d\s,.]+)/i);
-        if (arveKokkuMatch) {
-            const v = cleanNum(arveKokkuMatch[1]);
-            if (v > 0) { result.amount = v; filled.push('amount (Arve kokku — replaced negative)'); }
-        }
-    }
     // amount fallback: "Summa kokku (EUR) 41,22"
     if (!result.amount || result.amount === 0) {
         const m = t.match(/Summa\s+kokku\s+(?:\([A-Z]+\)\s+)?([\d\s,.]+)/i);
@@ -173,48 +144,10 @@ function applyEstonianRegexFallback(rawText, result) {
         if (m) { result.dateCreated = parseDocAiDate(m[1]); if (result.dateCreated) filled.push('dateCreated'); }
     }
 
-    // dueDate fallback: "Maksetähtpäev 30.03.2026" or "Maksetähtaeg 30.03.2026" or "Tasumistähtaeg"
+    // dueDate fallback: "Maksetähtpäev 30.03.2026" or "Maksetähtaeg 30.03.2026"
     if (!result.dueDate) {
-        const m = t.match(/(?:Makset[äa]ht(?:p[äa]ev|aeg)|Tasumist[äa]htaeg|Tasumisaeg)\s+(\d{1,2}[.\/-]\d{1,2}[.\/-]\d{4})/i);
+        const m = t.match(/Makset[äa]ht(?:p[äa]ev|aeg)\s+(\d{1,2}[.\/-]\d{1,2}[.\/-]\d{4})/i);
         if (m) { result.dueDate = parseDocAiDate(m[1]); if (result.dueDate) filled.push('dueDate'); }
-    }
-
-    // Kaardimakse (card payment) = already paid
-    if (/kaardimakse/i.test(t)) {
-        result.isPaid = true;
-        filled.push('isPaid (Kaardimakse)');
-    }
-
-    // subtotalAmount/taxAmount fallback: look for Neto and KM values
-    // Pattern 1: inline "Neto 8.27" or "Neto: 8.27"
-    if (!result.subtotalAmount || result.subtotalAmount === 0) {
-        const m = t.match(/\bNeto[:\s]+([\d,.]+)/i);
-        if (m) { const v = cleanNum(m[1]); if (v > 0) { result.subtotalAmount = v; filled.push('subtotalAmount (Neto)'); } }
-    }
-    if (!result.taxAmount || result.taxAmount === 0) {
-        const m = t.match(/(?:Käibemaks|K[äa]ibemaks)[:\s]+([\d,.]+)/i);
-        if (m) { const v = cleanNum(m[1]); if (v > 0) { result.taxAmount = v; filled.push('taxAmount (Käibemaks)'); } }
-    }
-
-    // Pattern 2: table format — find pair (sub, tax) where sub + tax = total
-    // Target total: prefer Arve kokku from text, fallback to result.amount
-    let pairTarget = result.amount;
-    const arveKokkuM = t.match(/Arve\s+kokku[:\s]+([\d,.]+)/i);
-    if (arveKokkuM) { const ak = cleanNum(arveKokkuM[1]); if (ak > 0) pairTarget = ak; }
-
-    if (pairTarget > 0 && (!result.subtotalAmount || result.subtotalAmount === result.amount ||
-        Math.abs(result.subtotalAmount + result.taxAmount - pairTarget) > 0.50)) {
-        const allNums = [...t.matchAll(/([\d]+[.,]\d{2})/g)].map(m => cleanNum(m[1]));
-        for (let i = 0; i < allNums.length - 1; i++) {
-            const sub = allNums[i];
-            const tax = allNums[i + 1];
-            if (sub > 0 && tax > 0 && sub > tax && Math.abs(sub + tax - pairTarget) <= 0.02) {
-                result.subtotalAmount = sub;
-                result.taxAmount = tax;
-                filled.push(`subtotalAmount+taxAmount (pair ${sub}+${tax}=${pairTarget})`);
-                break;
-            }
-        }
     }
 
     if (filled.length > 0) {
@@ -285,12 +218,8 @@ function applyMultiLanguageRegexFallback(rawText, result) {
     }
 
     // taxAmount: international labels
-    // But first: if VAT is explicitly 0%, set tax=0 and skip further search
-    if (/VAT[\/\s]*PVM[:\s]*\(\s*0\s*%\s*\)|VAT\s*0\s*%|PVM[:\s]*0\s*%/i.test(t)) {
-        if (result.taxAmount !== 0) { result.taxAmount = 0; filled.push('taxAmount (VAT 0% override)'); }
-    } else if (!result.taxAmount || result.taxAmount === 0) {
-        // Only match "VAT amount: X" (not bare "Tax" which catches article numbers)
-        const m = t.match(/(?:VAT\s+amount|MwSt|НДС|Podatek\s+VAT)[:\s]+(?:\d+%\s+)?([\d\s,.]+)/i);
+    if (!result.taxAmount || result.taxAmount === 0) {
+        const m = t.match(/(?:VAT\s+amount|Tax|MwSt|НДС|Podatek\s+VAT)[:\s]+(?:\d+%\s+)?([\d\s,.]+)/i);
         if (m) { const v = cleanNum(m[1]); if (v > 0) { result.taxAmount = v; filled.push('taxAmount'); } }
     }
 
@@ -468,8 +397,8 @@ async function processInvoiceWithDocAI(buffer, mimeType = 'application/pdf', sup
             partial.subtotalAmount = partial.amount;
         }
 
-        // Determine status — Paid if Kaardimakse/isPaid detected, else Pending
-        const status = partial.isPaid ? 'Paid' : 'Pending';
+        // Determine status — default Pending (Ootel)
+        const status = 'Pending';
 
         // --- Validation warnings ---
         const validationWarnings = [];
@@ -501,12 +430,11 @@ async function processInvoiceWithDocAI(buffer, mimeType = 'application/pdf', sup
             dateCreated:          partial.dateCreated,
             dueDate:              partial.dueDate,
             status,
-            isPaid:               partial.isPaid || false,
             description:          partial.description,
             paymentTerms:         partial.paymentTerms,
             lineItems:            partial.lineItems,
             validationWarnings:   validationWarnings.length > 0 ? validationWarnings : undefined,
-            _rawText:             rawDocText, // internal: for Claude QC if needed
+            _rawText:             rawDocText,
         }];
 
     } catch (error) {
@@ -515,82 +443,4 @@ async function processInvoiceWithDocAI(buffer, mimeType = 'application/pdf', sup
     }
 }
 
-// ─── Claude "Second Opinion" for Math Mismatch Correction ──────────────────
-// Called ONCE per invoice when DocAI + Regex + arithmetic can't fix sub+tax≠amount.
-// Uses rawText (not PDF vision) + Charter rules to minimize token cost.
-// Model: claude-haiku for cheapest extraction.
-
-async function askClaudeToFix(rawText, currentData, qcIssues) {
-    if (!rawText || rawText.length < 20) return null;
-
-    try {
-        const Anthropic = require('@anthropic-ai/sdk');
-        // Load API key from env (may need explicit dotenv load if running from worktree)
-        if (!process.env.ANTHROPIC_API_KEY) {
-            try { require('dotenv').config({ path: require('path').join(__dirname, '.env') }); } catch (_) {}
-        }
-        const apiKey = process.env.ANTHROPIC_API_KEY;
-        if (!apiKey) { console.warn('[Claude QC] No ANTHROPIC_API_KEY — skipping'); return null; }
-        const client = new Anthropic({ apiKey });
-        const { getGlobalAiRules } = require('./core/firebase.cjs');
-
-        const charterRules = await getGlobalAiRules();
-
-        const prompt = `You are an invoice data extraction expert. The automated system extracted these fields but made errors.
-
-CURRENT DATA:
-- vendorName: ${currentData.vendorName || ''}
-- invoiceId: ${currentData.invoiceId || ''}
-- amount: ${currentData.amount} ${currentData.currency || 'EUR'}
-- subtotalAmount: ${currentData.subtotalAmount}
-- taxAmount: ${currentData.taxAmount}
-- dateCreated: ${currentData.dateCreated || ''}
-- dueDate: ${currentData.dueDate || ''}
-
-ERRORS FOUND: ${qcIssues.join('; ')}
-
-RULES:
-- amount = "Tasuda kokku" or "Kokku tasuda" or "Tasuda" (what needs to be paid). If negative → overpayment.
-- subtotalAmount = "Summa km-ta" or "Neto" or "Kokku maksustatav + Kokku mv" (without VAT)
-- taxAmount = "Käibemaks" or "KM" (VAT amount)
-- If "Kaardimakse" appears → isPaid: true
-- If currency is not EUR, keep sub/tax in original currency
-- "Global Technics OÜ" and "Ideacom OÜ" are ALWAYS the buyer, never the supplier. The supplier (vendorName) is the OTHER company in the document.
-- Look for supplier name near: "Tiekėjas"/"Tarnija"/"Supplier"/"Lieferant" labels, or in the document header/footer with different VAT/Reg than our companies.
-
-${charterRules ? 'CHARTER RULES:\n' + charterRules : ''}
-
-INVOICE TEXT:
-${rawText.substring(0, 3000)}
-
-Return ONLY a JSON object with the corrected fields. Example:
-{"vendorName": "Company Name", "amount": 81.18, "subtotalAmount": 84.42, "taxAmount": 15.11, "currency": "EUR"}
-Only include fields that need correction. Return {} if you cannot determine the correct values.`;
-
-        console.log(`[Claude QC] 🔍 Asking Claude to fix: ${qcIssues.join(' | ')}`);
-
-        const response = await client.messages.create({
-            model: 'claude-haiku-4-5-20251001',
-            max_tokens: 200,
-            messages: [{ role: 'user', content: prompt }],
-        });
-
-        const text = response.content[0]?.text || '';
-        const jsonMatch = text.match(/\{[\s\S]*\}/);
-        if (!jsonMatch) {
-            console.warn('[Claude QC] No JSON in response');
-            return null;
-        }
-
-        const fixes = JSON.parse(jsonMatch[0]);
-        const tokens = (response.usage?.input_tokens || 0) + (response.usage?.output_tokens || 0);
-        console.log(`[Claude QC] ✅ Got fixes: ${JSON.stringify(fixes)} (${tokens} tokens)`);
-
-        return fixes;
-    } catch (err) {
-        console.warn(`[Claude QC] ⚠️ Failed: ${err.message}`);
-        return null;
-    }
-}
-
-module.exports = { processInvoiceWithDocAI, askClaudeToFix, cleanNum, parseDocAiDate, inferDescription };
+module.exports = { processInvoiceWithDocAI, cleanNum, parseDocAiDate, inferDescription };

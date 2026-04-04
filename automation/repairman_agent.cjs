@@ -86,8 +86,18 @@ async function findBadInvoices() {
 
     const snap = await q.get();
     const bad = [];
+
+    // ── Duplicate detection: invoiceId + vendorName + amount + companyId ─────
+    const seen = new Map(); // key → first doc id
     for (const doc of snap.docs) {
         const d = doc.data();
+        const dedupKey = `${(d.invoiceId || '').toLowerCase().trim()}|${(d.vendorName || '').toLowerCase().trim()}|${d.amount || 0}|${d.companyId || ''}`;
+        if (seen.has(dedupKey)) {
+            bad.push({ id: doc.id, data: d, reason: `Duplicate of ${seen.get(dedupKey)} (same invoiceId + vendor + amount)` });
+            continue; // skip further checks for duplicates
+        }
+        seen.set(dedupKey, doc.id);
+
         const reasons = detectProblems(d);
         if (reasons.length > 0) bad.push({ id: doc.id, data: d, reason: reasons.join(' + ') });
     }
@@ -823,13 +833,31 @@ async function main() {
         process.exit(0);
     }
 
+    // ── Step 2b: Handle duplicates — mark as Duplicate, don't re-extract ────
+    const duplicates = repairable.filter(inv => inv.reason.startsWith('Duplicate of'));
+    const toRepair = repairable.filter(inv => !inv.reason.startsWith('Duplicate of'));
+
+    if (duplicates.length > 0) {
+        console.log(`\nStep 2b: ${dryRun ? '[DRY RUN] Would delete' : 'Deleting'} ${duplicates.length} duplicate(s)...`);
+        if (!dryRun) {
+            for (const inv of duplicates) {
+                try {
+                    await db.collection('invoices').doc(inv.id).delete();
+                    console.log(`  [Repairman] 🗑️  Deleted duplicate ${inv.id} (${inv.reason})`);
+                } catch (err) {
+                    console.error(`  [Repairman] Error deleting duplicate ${inv.id}: ${err.message}`);
+                }
+            }
+        }
+    }
+
     // Full / Skeletons mode: re-extract and UPDATE
-    console.log(`\nStep 3: ${dryRun ? '[DRY RUN] Would repair' : 'Repairing'} ${repairable.length} record(s)...`);
+    console.log(`\nStep 3: ${dryRun ? '[DRY RUN] Would repair' : 'Repairing'} ${toRepair.length} record(s)...`);
 
     if (!dryRun) {
         let repaired = 0;
         let failed = 0;
-        for (const inv of repairable) {
+        for (const inv of toRepair) {
             try {
                 const ok = await repairInvoice(inv.id, inv.data);
                 if (ok) repaired++; else failed++;
