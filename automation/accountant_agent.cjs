@@ -4,19 +4,24 @@
 const { validateVat } = require('./vies_validator.cjs');
 const { admin, db } = require('./core/firebase.cjs');
 const { enrichCompanyData } = require('./company_enrichment.cjs');
+const { cleanNum } = require('./core/utils.cjs');
 
-/**
- * Shared amount parser — handles European (1.234,56) and US (1,234.56) formats.
- * Single source of truth. Replaces both local parseNum and parseNumGlobal.
- */
-const parseAmount = (val) => {
-    let s = String(val || '').trim().replace(/[€$£\s]/g, '');
-    if (s.includes(',') && s.includes('.')) {
-        if (s.lastIndexOf(',') > s.lastIndexOf('.')) s = s.replace(/\./g, '').replace(',', '.');
-        else s = s.replace(/,/g, '');
-    } else if (s.includes(',')) s = s.replace(',', '.');
-    return parseFloat(s) || 0;
-};
+// parseAmount = cleanNum (backward compat alias)
+const parseAmount = cleanNum;
+
+// ── Companies cache (TTL 5 min) — avoids re-reading all companies per invoice ──
+let _companiesCache = null;
+let _companiesCacheTime = 0;
+const COMPANIES_CACHE_TTL = 5 * 60 * 1000;
+
+async function getCachedCompanies() {
+    const now = Date.now();
+    if (_companiesCache && now - _companiesCacheTime < COMPANIES_CACHE_TTL) return _companiesCache;
+    const snap = await db.collection('companies').get();
+    _companiesCache = snap;
+    _companiesCacheTime = now;
+    return snap;
+}
 
 /**
  * Fuzzy vendor name match — checks if either name contains the other.
@@ -242,7 +247,7 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
 
     // --- 1.2. PRE-FLIGHT AUDIT: THE CROSS-COMPANY ROUTING PROTOCOL (Rule 10) ---
     console.log(`[Accountant Agent] 🌐 Validating multi-tenant Receiver boundaries...`);
-    const companiesSnap = await db.collection('companies').get();
+    const companiesSnap = await getCachedCompanies();
     let bestMatchedCompanyId = null;
     let rxName = String(docAiPayload.receiverName || '').toLowerCase().trim();
 
