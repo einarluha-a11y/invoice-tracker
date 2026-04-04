@@ -170,8 +170,29 @@ async function writeToFirestore(dataArray) {
             let isDuplicate = false;
             let existingDocId = null;
 
+            // 0. Check by file source: if same file was already saved → duplicate
+            // Extract the base filename from the storage URL (ignoring the timestamp prefix)
+            if (data.fileUrl) {
+                const fileBasename = data.fileUrl.match(/\d+_([^?]+)/)?.[1] || '';
+                if (fileBasename) {
+                    const sameCompanySnap = await invoicesRef
+                        .where('companyId', '==', data.companyId)
+                        .get();
+                    for (const doc of sameCompanySnap.docs) {
+                        const existingFile = doc.data().fileUrl || '';
+                        const existingBasename = existingFile.match(/\d+_([^?]+)/)?.[1] || '';
+                        if (existingBasename && existingBasename === fileBasename) {
+                            console.log(`[Firestore] Duplicate caught by filename match: ${fileBasename}`);
+                            isDuplicate = true;
+                            existingDocId = doc.id;
+                            break;
+                        }
+                    }
+                }
+            }
+
             // 1. Check by Invoice ID + Vendor Name + Company
-            if (data.invoiceId) {
+            if (!isDuplicate && data.invoiceId) {
                 const idQuerySnap = await invoicesRef.where('invoiceId', '==', invoiceId).get();
                 for (const doc of idQuerySnap.docs) {
                     const existingData = doc.data();
