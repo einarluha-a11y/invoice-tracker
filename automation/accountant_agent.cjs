@@ -167,7 +167,21 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
         const invId = String(docAiPayload.invoiceId || '').toLowerCase();
         const desc = String(docAiPayload.description || '').toLowerCase();
         const vendor = String(docAiPayload.vendorName || '').toLowerCase();
-        const allText = `${filename} ${invId} ${desc} ${vendor}`;
+        const rawText = String(docAiPayload._rawText || '').toLowerCase();
+        // Check rawText too — CMRs often lack "cmr" in filename but have it in document body
+        const allText = `${filename} ${invId} ${desc} ${vendor} ${rawText.slice(0, 500)}`;
+
+        // Strong CMR markers in document header (early rejection)
+        const CMR_HEADERS = [
+            /international\s+consignment\s+note/i,
+            /tarptautinis\s+krovinių\s+transportavimo\s+važtaraštis/i,
+            /международная\s+товарно-транспортная/i,
+            /lettre\s+de\s+voiture\s+internationale/i,
+        ];
+        if (CMR_HEADERS.some(p => p.test(rawText.slice(0, 1000)))) {
+            console.error(`[Accountant Agent] 🛑 NON-INVOICE FILTER: CMR header detected in document (file: ${filename})`);
+            return null;
+        }
 
         const NON_INVOICE_PATTERNS = [
             // Transport documents

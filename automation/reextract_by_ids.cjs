@@ -14,6 +14,7 @@ const http = require('http');
 const { admin, db } = require('./core/firebase.cjs');
 const { processInvoiceWithDocAI } = require('./document_ai_service.cjs');
 const { validateAndTeach } = require('./teacher_agent.cjs');
+const { auditAndProcessInvoice } = require('./accountant_agent.cjs');
 
 const args = process.argv.slice(2);
 const dryRun = args.includes('--dry-run');
@@ -121,6 +122,31 @@ async function downloadFromStorage(storageUrl) {
         console.log(`  Teacher → vendor="${final.vendorName}", VAT=${final.supplierVat}, Reg=${final.supplierRegistration}`);
         if (teacherResult.corrections?.length) {
             for (const c of teacherResult.corrections) console.log(`    📝 ${c}`);
+        }
+
+        // Accountant: non-invoice filter, VIES, dedup, etc.
+        let audited;
+        try {
+            audited = await auditAndProcessInvoice(final, inv.fileUrl, inv.companyId);
+        } catch (err) {
+            if (err.message === 'BANK_STATEMENT_RECONCILIATION_COMPLETE') {
+                console.log(`  ℹ️ Bank statement — skipping`);
+                continue;
+            }
+            console.error(`  ❌ Accountant failed: ${err.message}`);
+            fail++;
+            continue;
+        }
+
+        if (!audited) {
+            // Accountant rejected (non-invoice, junk, etc.) → delete the bad record
+            console.log(`  🛑 Accountant rejected — record will be deleted`);
+            if (!dryRun) {
+                await db.collection('invoices').doc(id).delete();
+                console.log(`  🗑️  Deleted ${id}`);
+            }
+            ok++;
+            continue;
         }
 
         if (dryRun) {
