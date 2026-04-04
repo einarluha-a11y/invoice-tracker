@@ -460,29 +460,30 @@ async function validateAndTeach(invoiceData, companyId) {
     }
 
     // ── 4b. LEGAL NAME RULE: vendor name must include company suffix ────────
-    // DocAI often extracts logo text ("electrobit") instead of the legal name
-    // ("Electrobit OÜ"). Search rawText for the full name with suffix.
+    // DocAI often extracts logo text ("SMC", "electrobit") instead of the legal name
+    // ("SMC Automation OÜ", "Electrobit OÜ"). Search rawText lines for full name.
     {
-        const LEGAL_SUFFIXES_RE = /\b(AS|OÜ|OY|AB|GmbH|AG|SIA|UAB|BV|NV|Ltd|LLC|Inc|SRL|SARL|SAS|SE|KG|e\.K\.|Sp\.\s*z\s*o\.?\s*o\.?|MB)\b/i;
-        if (invoice.vendorName && !LEGAL_SUFFIXES_RE.test(invoice.vendorName)) {
+        const SUFFIXES = ['AS', 'OÜ', 'OU', 'OY', 'AB', 'GmbH', 'AG', 'SIA', 'UAB', 'BV', 'NV', 'Ltd', 'LLC', 'Inc', 'SRL', 'SARL', 'SAS', 'SE', 'KG', 'MB'];
+        const hasSuffix = (name) => SUFFIXES.some(s => new RegExp(`(?:^|\\s)${s}(?:\\s|$|,|\\.)`, 'i').test(name));
+
+        if (invoice.vendorName && !hasSuffix(' ' + invoice.vendorName + ' ')) {
             const rawText = invoice._rawText || invoiceData._rawText || '';
             if (rawText) {
-                // Search for "VendorName SUFFIX" or "SUFFIX VendorName" in the raw text
-                const escaped = invoice.vendorName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                const suffixList = 'AS|OÜ|OY|AB|GmbH|AG|SIA|UAB|BV|NV|Ltd|LLC|Inc|SRL|SARL|SAS|SE|KG|MB|Sp\\.?\\s*z\\s*o\\.?\\s*o\\.?';
-                // Try "Name SUFFIX" pattern (most common: "Electrobit OÜ")
-                const afterMatch = rawText.match(new RegExp(`(${escaped})\\s+(${suffixList})`, 'i'));
-                // Try "SUFFIX Name" pattern (e.g. "OÜ Electrobit")
-                const beforeMatch = rawText.match(new RegExp(`(${suffixList})\\s+(${escaped})`, 'i'));
+                const vendorLower = invoice.vendorName.toLowerCase().trim();
+                // Split into lines, find lines that contain vendorName AND a legal suffix
+                const candidates = rawText.split('\n')
+                    .map(l => l.trim())
+                    .filter(l => l.toLowerCase().includes(vendorLower) && hasSuffix(l) && l.length < 60);
 
-                if (afterMatch) {
-                    const fullName = `${afterMatch[1]} ${afterMatch[2]}`;
-                    corrections.push(`Legal name: ${invoice.vendorName} → ${fullName} (found in document text)`);
-                    invoice.vendorName = fullName;
-                } else if (beforeMatch) {
-                    const fullName = `${beforeMatch[1]} ${beforeMatch[2]}`;
-                    corrections.push(`Legal name: ${invoice.vendorName} → ${fullName} (found in document text)`);
-                    invoice.vendorName = fullName;
+                if (candidates.length > 0) {
+                    // Pick shortest candidate (most specific)
+                    let best = candidates.sort((a, b) => a.length - b.length)[0];
+                    // Normalize "OU" → "OÜ" (ASCII fallback in Estonian PDFs)
+                    best = best.replace(/\bOU\b/g, 'OÜ');
+                    if (best !== invoice.vendorName) {
+                        corrections.push(`Legal name: ${invoice.vendorName} → ${best} (found in document text)`);
+                        invoice.vendorName = best;
+                    }
                 }
             }
         }
