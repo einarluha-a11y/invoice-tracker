@@ -171,19 +171,28 @@ async function findExamplesByIdentifiers(invoice) {
     for (const ex of allExamples) {
         const gt = ex.groundTruth || {};
 
-        // Match by VAT number
+        // Match by VAT number (strongest signal — VAT is unique per company)
         if (invoiceVat.length > 5) {
             const exVat = (gt.supplierVat || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
             if (exVat.length > 5 && exVat === invoiceVat) {
+                ex._matchType = 'vat';
                 matches.push(ex);
                 continue;
             }
         }
 
-        // Match by registration code
+        // Match by registration code — BUT skip if invoice already has a valid VAT
+        // that differs from the example. This prevents buyer's RegNo (which is the same
+        // across all invoices for one company) from matching wrong vendor examples.
         if (invoiceReg.length > 4) {
             const exReg = (gt.supplierRegistration || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
             if (exReg.length > 4 && exReg === invoiceReg) {
+                // Safety: if invoice has a VAT and example has a different VAT → likely buyer/supplier confusion
+                const exVat = (gt.supplierVat || '').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+                if (invoiceVat.length > 5 && exVat.length > 5 && invoiceVat !== exVat) {
+                    continue; // RegNo matched but VAT differs → probably matched on buyer's RegNo
+                }
+                ex._matchType = 'reg';
                 matches.push(ex);
                 continue;
             }
@@ -194,6 +203,7 @@ async function findExamplesByIdentifiers(invoice) {
             const invName = invoice.vendorName.toLowerCase();
             for (const pattern of ex.vendorPatterns) {
                 if (pattern && invName.includes(pattern.toLowerCase())) {
+                    ex._matchType = 'pattern';
                     matches.push(ex);
                     break;
                 }
