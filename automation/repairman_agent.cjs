@@ -89,10 +89,39 @@ async function findBadInvoices() {
 
     // ── Duplicate detection ─────────────────────────────────────────────────
     const LEGAL_SUFFIXES = /(?:^|\s)(AS|OÜ|OU|OY|AB|GmbH|AG|SIA|UAB|BV|NV|Ltd|LLC|Inc|MTÜ)(?:\s|$|,|\.)/i;
+    const isAutoId = (id) => (id || '').startsWith('Auto-');
+    const fileBasename = (url) => (url || '').match(/\d+_([^?]+)/)?.[1] || '';
+
     const seen = new Map(); // key → { id, vendorName }
     const seenByIdAmt = new Map(); // invoiceId+amount+companyId → { id, vendorName }
+    const seenByFile = new Map(); // fileBasename+companyId → { id, data }
+
     for (const doc of snap.docs) {
         const d = doc.data();
+
+        // Key 0: Same source file → duplicate (file re-processed and generated different invoiceIds)
+        const basename = fileBasename(d.fileUrl);
+        if (basename) {
+            const fileKey = `${basename}|${d.companyId || ''}`;
+            if (seenByFile.has(fileKey)) {
+                const existing = seenByFile.get(fileKey);
+                // Prefer the one with real invoiceId over Auto-
+                const existingAuto = isAutoId(existing.data.invoiceId);
+                const currentAuto = isAutoId(d.invoiceId);
+                if (!existingAuto && currentAuto) {
+                    bad.push({ id: doc.id, data: d, reason: `Duplicate of ${existing.id} (same file, current has Auto- ID)` });
+                    continue;
+                } else if (existingAuto && !currentAuto) {
+                    bad.push({ id: existing.id, data: existing.data, reason: `Duplicate of ${doc.id} (same file, existing has Auto- ID)` });
+                    seenByFile.set(fileKey, { id: doc.id, data: d });
+                    continue;
+                } else {
+                    bad.push({ id: doc.id, data: d, reason: `Duplicate of ${existing.id} (same source file)` });
+                    continue;
+                }
+            }
+            seenByFile.set(fileKey, { id: doc.id, data: d });
+        }
 
         // Key 1: exact match (invoiceId + vendorName + amount + companyId)
         const dedupKey = `${(d.invoiceId || '').toLowerCase().trim()}|${(d.vendorName || '').toLowerCase().trim()}|${d.amount || 0}|${d.companyId || ''}`;
