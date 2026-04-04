@@ -1,21 +1,11 @@
 const express = require('express');
 const cors = require('cors');
-const { DocumentProcessorServiceClient } = require('@google-cloud/documentai').v1;
 const path = require('path');
 const crypto = require('crypto');
 const { reportError } = require('./error_reporter.cjs');
+const { processInvoiceWithDocAI } = require('./document_ai_service.cjs');
 
 const { admin, db, bucket, serviceAccount } = require('./core/firebase.cjs');
-
-// --- Document AI Setup ---
-const docaiClient = new DocumentProcessorServiceClient({
-    credentials: serviceAccount,
-    apiEndpoint: 'eu-documentai.googleapis.com'
-});
-const PROJECT_ID = 'invoice-tracker-xyz';
-const LOCATION = 'eu';
-const PROCESSOR_ID = '8087614a36686ed4'; // The created Invoice Parser
-const PROCESSOR_NAME = `projects/${PROJECT_ID}/locations/${LOCATION}/processors/${PROCESSOR_ID}`;
 
 const app = express();
 app.use(cors());
@@ -69,86 +59,30 @@ app.post('/api/intake', rateLimit(20, 60_000), async (req, res) => {
         const fileBuffer = Buffer.from(arrayBuf);
         const mimeType = fileResponse.headers.get('content-type') || 'application/pdf';
 
-        // --- Step 2 & 3: FILE CLASSIFICATION & PREPROCESSING ---
-        // Document AI handles multi-page splitting, OCR on images vs PDFs, and de-skewing natively.
-        console.log(`[Step 2/3: Preprocessing] Classifying and analyzing File type: ${mimeType}`);
-
-        // --- Step 4: STRUCTURED EXTRACTION ---
-        console.log(`[Step 4: Extraction] Sending to Document AI Invoice Parser (${PROCESSOR_ID})`);
-        const request = {
-            name: PROCESSOR_NAME,
-            rawDocument: {
-                content: fileBuffer.toString('base64'),
-                mimeType,
-            },
-        };
-        const [result] = await docaiClient.processDocument(request);
-        const { document } = result;
+        // --- EXTRACTION via Scout (Azure Document Intelligence) ---
+        console.log(`[Webhook] Extracting invoice via Scout...`);
+        const extracted = await processInvoiceWithDocAI(fileBuffer, mimeType);
+        if (!extracted || extracted.length === 0) {
+            return res.status(422).json({ error: 'Could not extract invoice data from file' });
+        }
+        const inv = extracted[0];
 
         let parsedData = {
-            vendorName: 'Unknown',
-            invoiceId: `Auto-${Date.now()}`,
-            dateCreated: '',
-            dueDate: '',
-            subtotal: 0,
-            tax: 0,
-            total: 0,
-            currency: 'EUR',
-            lineItems: [],
+            vendorName: inv.vendorName || 'Unknown',
+            invoiceId: inv.invoiceId || `Auto-${Date.now()}`,
+            dateCreated: inv.dateCreated || '',
+            dueDate: inv.dueDate || '',
+            subtotal: inv.subtotalAmount || 0,
+            tax: inv.taxAmount || 0,
+            total: inv.amount || 0,
+            currency: inv.currency || 'EUR',
+            lineItems: inv.lineItems || [],
             confidenceScores: {},
             originalFileUrl: null
         };
 
-        // Parse Document AI Entities into structured JSON schema
-        if (document.entities) {
-            for (const entity of document.entities) {
-                const text = entity.mentionText;
-                const conf = entity.confidence;
-                const cleanNum = (str) => parseFloat(String(str).replace(/[^0-9,-]/g, '').replace(',', '.')) || 0;
-
-                if (entity.type === 'supplier_name') { parsedData.vendorName = text; parsedData.confidenceScores.vendor = conf; }
-                if (entity.type === 'invoice_id') { parsedData.invoiceId = text; parsedData.confidenceScores.invoiceId = conf; }
-                if (entity.type === 'invoice_date') { parsedData.dateCreated = text.split(' ')[0]; } // Usually ISO format output by DocAI
-                if (entity.type === 'due_date') { parsedData.dueDate = text.split(' ')[0]; }
-                if (entity.type === 'total_amount') { parsedData.total = cleanNum(text); parsedData.confidenceScores.total = conf; }
-                if (entity.type === 'total_tax_amount') { parsedData.tax = cleanNum(text); parsedData.confidenceScores.tax = conf; }
-                if (entity.type === 'subtotal') { parsedData.subtotal = cleanNum(text); parsedData.confidenceScores.subtotal = conf; }
-                if (entity.type === 'currency') parsedData.currency = text;
-                
-                if (entity.type === 'line_item') {
-                    let desc = '', amt = 0;
-                    if (entity.properties) {
-                        const d = entity.properties.find(p => p.type === 'line_item/description');
-                        const a = entity.properties.find(p => p.type === 'line_item/amount');
-                        if (d) desc = d.mentionText.replace(/\n/g, ' ');
-                        if (a) amt = cleanNum(a.mentionText);
-                    }
-                    parsedData.lineItems.push({ description: desc, amount: amt });
-                }
-            }
-        }
-
-        // --- Step 5: VALIDATION + BUSINESS RULES ---
-        console.log(`[Step 5: Validation] Running math and confidence checks...`);
-        let validationWarnings = [];
-        let systemStatus = 'Unpaid';
-
-        // Math check
-        const computedTotal = parseFloat((parsedData.subtotal + parsedData.tax).toFixed(2));
-        if (Math.abs(computedTotal - parsedData.total) > 0.05) {
-            // Very common OCR issue: it missed a tax line or misread subtotal
-            validationWarnings.push(`Mathematics mismatch: Subtotal (${parsedData.subtotal}) + Tax (${parsedData.tax}) != Total (${parsedData.total})`);
-            systemStatus = 'Needs Action'; // Overrides Unpaid if math is broken
-        }
-
-        // Confidence check
-        if (parsedData.confidenceScores.total < 0.85 || parsedData.confidenceScores.vendor < 0.85) {
-            validationWarnings.push(`Low confidence score detected from OCR (Total: ${parsedData.confidenceScores.total}, Vendor: ${parsedData.confidenceScores.vendor})`);
-            systemStatus = 'Needs Action';
-        }
-
-        // Due date business rule
-        if (!parsedData.dueDate) parsedData.dueDate = parsedData.dateCreated;
+        let validationWarnings = inv.validationWarnings || [];
+        let systemStatus = validationWarnings.length > 0 ? 'Needs Action' : 'Unpaid';
 
         // --- Secure Storage Upload ---
         const cleanName = fileName ? fileName.replace(/[^a-zA-Z0-9.\-_]/g, '') : `Zapier-DocAI-${Date.now()}.pdf`;

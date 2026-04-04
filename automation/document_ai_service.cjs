@@ -18,23 +18,21 @@
 // Status (12-е поле) определяется бизнес-логикой, НЕ извлечением.
 //
 // ЭТАПЫ ИЗВЛЕЧЕНИЯ:
-//   Шаг 1: Google Document AI — быстрый, бесплатный, хорошо для стандартных полей
-//   Шаг 2: Regex по тексту DocAI — добирает эстонские/англ./нем./рус. метки
+//   Шаг 1: Azure Document Intelligence (prebuilt-invoice) — точный, бесплатный (500 стр/мес)
+//   Шаг 2: Regex по тексту Azure — добирает эстонские/англ./нем./рус. метки
 //   Пустые поля после шагов 1-2 остаются как есть — Учитель (teacher_agent) их подхватит
 // =============================================================================
 
-const { DocumentProcessorServiceClient } = require('@google-cloud/documentai').v1;
-const { serviceAccount } = require('./core/firebase.cjs');
+require('dotenv').config();
+const { DocumentAnalysisClient, AzureKeyCredential } = require('@azure/ai-form-recognizer');
 
-// --- Google Document AI Setup ---
-const docaiClient = new DocumentProcessorServiceClient({
-    credentials: serviceAccount,
-    apiEndpoint: 'eu-documentai.googleapis.com'
-});
-const PROJECT_ID = 'invoice-tracker-xyz';
-const LOCATION = 'eu';
-const PROCESSOR_ID = '8087614a36686ed4'; // Invoice Parser
-const PROCESSOR_NAME = `projects/${PROJECT_ID}/locations/${LOCATION}/processors/${PROCESSOR_ID}`;
+// --- Azure Document Intelligence Setup ---
+const AZURE_ENDPOINT = process.env.AZURE_DOC_INTEL_ENDPOINT;
+const AZURE_KEY = process.env.AZURE_DOC_INTEL_KEY;
+if (!AZURE_ENDPOINT || !AZURE_KEY) {
+    console.error('[Scout] 🚨 AZURE_DOC_INTEL_ENDPOINT and AZURE_DOC_INTEL_KEY must be set in .env');
+}
+const azureClient = new DocumentAnalysisClient(AZURE_ENDPOINT, new AzureKeyCredential(AZURE_KEY));
 
 /**
  * Parse a numeric string into a float, handling European formats (1.200,50 or 1,200.50)
@@ -242,119 +240,91 @@ function applyMultiLanguageRegexFallback(rawText, result) {
  * @returns {Promise<Array>} Array of invoice objects or []
  */
 async function processInvoiceWithDocAI(buffer, mimeType = 'application/pdf', supervisorCritique = null, customRules = null, vendorHint = null) {
-    console.log(`[DocAI] 📄 Sending document to Google Document AI Invoice Parser (${PROCESSOR_ID})...`);
+    console.log(`[Scout] Sending document to Azure Document Intelligence (prebuilt-invoice)...`);
 
     try {
-        const request = {
-            name: PROCESSOR_NAME,
-            rawDocument: {
-                content: buffer.toString('base64'),
-                mimeType: mimeType || 'application/pdf',
-            },
-        };
+        const poller = await azureClient.beginAnalyzeDocument('prebuilt-invoice', buffer);
+        const result = await poller.pollUntilDone();
 
-        const [result] = await docaiClient.processDocument(request);
-        const { document } = result;
-
-        if (!document || !document.entities || document.entities.length === 0) {
-            console.warn('[DocAI] ⚠️  Document AI returned no entities — document may be junk/empty.');
+        if (!result.documents || result.documents.length === 0) {
+            console.warn('[Scout] Azure returned no documents — file may be junk/empty.');
             return [];
         }
 
-        // --- ШАГ 1: Map Document AI entities to invoice schema ---
-        let vendorName = 'Unknown Vendor';
-        let invoiceId = `Auto-${Date.now()}`;
-        let dateCreated = null;
-        let dueDate = null;
-        let amount = 0;
-        let taxAmount = 0;
-        let subtotalAmount = 0;
-        let currency = 'EUR';
-        let supplierVat = '';
-        let supplierRegistration = '';
-        let receiverName = '';
-        let receiverVat = '';
-        let paymentTerms = '';
-        let descriptionText = '';
-        const lineItems = [];
+        const doc = result.documents[0];
+        const fields = doc.fields || {};
         const confidenceScores = {};
 
-        for (const entity of document.entities) {
-            const text = (entity.mentionText || '').trim();
-            const conf = entity.confidence || 0;
+        // --- ШАГ 1: Map Azure Document Intelligence fields to invoice schema ---
 
-            switch (entity.type) {
-                case 'supplier_name':
-                    vendorName = text;
-                    confidenceScores.vendor = conf;
-                    break;
-                case 'invoice_id':
-                    invoiceId = text;
-                    confidenceScores.invoiceId = conf;
-                    break;
-                case 'invoice_date':
-                case 'issue_date':
-                    dateCreated = (entity.normalizedValue && entity.normalizedValue.text)
-                        ? entity.normalizedValue.text.split('T')[0]
-                        : parseDocAiDate(text);
-                    break;
-                case 'due_date':
-                    dueDate = (entity.normalizedValue && entity.normalizedValue.text)
-                        ? entity.normalizedValue.text.split('T')[0]
-                        : parseDocAiDate(text);
-                    break;
-                case 'total_amount':
-                    amount = cleanNum(text);
-                    confidenceScores.total = conf;
-                    break;
-                case 'total_tax_amount':
-                    taxAmount = cleanNum(text);
-                    break;
-                case 'net_amount':
-                case 'subtotal':
-                    subtotalAmount = cleanNum(text);
-                    break;
-                case 'currency':
-                    currency = text.toUpperCase() || 'EUR';
-                    break;
-                case 'supplier_tax_id':
-                    supplierVat = text || '';
-                    break;
-                case 'supplier_registration_number':
-                    supplierRegistration = text || '';
-                    break;
-                case 'receiver_name':
-                    receiverName = text;
-                    break;
-                case 'receiver_tax_id':
-                    receiverVat = text;
-                    break;
-                case 'payment_terms':
-                    paymentTerms = text;
-                    break;
-                case 'description':
-                case 'service_description':
-                    if (text && text.length > 3) descriptionText = text;
-                    break;
-                case 'line_item': {
-                    let itemDesc = '';
-                    let itemAmt = 0;
-                    if (entity.properties) {
-                        const d = entity.properties.find(p => p.type === 'line_item/description');
-                        const a = entity.properties.find(p => p.type === 'line_item/amount');
-                        if (d) itemDesc = (d.mentionText || '').replace(/\n/g, ' ').trim();
-                        if (a) itemAmt = cleanNum(a.mentionText);
-                    }
-                    if (itemDesc || itemAmt) lineItems.push({ description: itemDesc, amount: itemAmt });
-                    break;
-                }
+        // Helper: extract string field
+        const str = (name) => fields[name]?.value || fields[name]?.content || '';
+        // Helper: extract currency field (returns {amount, currencyCode})
+        const curr = (name) => fields[name]?.value || null;
+        // Helper: extract date field → YYYY-MM-DD string
+        const dateField = (name) => {
+            const v = fields[name]?.value;
+            if (!v) return null;
+            if (typeof v === 'string') return v.split('T')[0];
+            if (v instanceof Date) return v.toISOString().split('T')[0];
+            return parseDocAiDate(fields[name]?.content || '');
+        };
+
+        // VendorName
+        let vendorName = str('VendorName') || 'Unknown Vendor';
+        confidenceScores.vendor = fields.VendorName?.confidence || 0;
+
+        // InvoiceId
+        let invoiceId = str('InvoiceId') || `Auto-${Date.now()}`;
+        confidenceScores.invoiceId = fields.InvoiceId?.confidence || 0;
+
+        // Dates
+        let dateCreated = dateField('InvoiceDate');
+        let dueDate = dateField('DueDate');
+
+        // Amounts — Azure currency fields have {amount, currencyCode}
+        const totalCurr = curr('InvoiceTotal');
+        let amount = totalCurr?.amount ?? cleanNum(fields.InvoiceTotal?.content || '');
+        confidenceScores.total = fields.InvoiceTotal?.confidence || 0;
+
+        const taxCurr = curr('TotalTax');
+        let taxAmount = taxCurr?.amount ?? cleanNum(fields.TotalTax?.content || '');
+
+        const subCurr = curr('SubTotal');
+        let subtotalAmount = subCurr?.amount ?? cleanNum(fields.SubTotal?.content || '');
+
+        // Currency — from InvoiceTotal.currencyCode or fallback EUR
+        let currency = totalCurr?.currencyCode || subCurr?.currencyCode || 'EUR';
+
+        // Supplier identifiers
+        let supplierVat = str('VendorTaxId');
+        let supplierRegistration = ''; // Azure doesn't have a separate reg code field — regex will catch it
+
+        // Receiver
+        let receiverName = str('CustomerName');
+        let receiverVat = str('CustomerTaxId');
+
+        // Payment terms
+        let paymentTerms = str('PaymentTerm');
+
+        // Line items
+        const lineItems = [];
+        let descriptionText = '';
+        const itemsField = fields.Items;
+        if (itemsField && itemsField.values) {
+            for (const item of itemsField.values) {
+                const props = item.properties || {};
+                const itemDesc = (props.Description?.value || props.Description?.content || '').replace(/\n/g, ' ').trim();
+                const itemAmtCurr = props.Amount?.value;
+                const itemAmt = itemAmtCurr?.amount ?? cleanNum(props.Amount?.content || '');
+                if (itemDesc || itemAmt) lineItems.push({ description: itemDesc, amount: itemAmt });
             }
         }
 
-        // Build description from DocAI results (before regex/Claude steps)
-        const docAiDescription = descriptionText && descriptionText.length > 3
-            ? descriptionText
-            : (lineItems.length > 0 && lineItems[0].description ? lineItems[0].description : '');
+        // Build description from first line item
+        const docDescription = (lineItems.length > 0 && lineItems[0].description)
+            ? lineItems[0].description
+            : '';
 
         // Assemble partial result for Шаги 2-3
         let partial = {
@@ -370,50 +340,46 @@ async function processInvoiceWithDocAI(buffer, mimeType = 'application/pdf', sup
             currency,
             dateCreated,
             dueDate,
-            description: docAiDescription,
+            description: docDescription,
             paymentTerms,
             lineItems,
         };
 
         // --- ШАГ 2: Regex fallback for Estonian labels ---
-        const rawDocText = document.text || '';
+        const rawDocText = result.content || '';
         partial = applyEstonianRegexFallback(rawDocText, partial);
 
         // --- ШАГ 2b: Multilingual regex fallback (EN/DE/RU/PL) ---
         partial = applyMultiLanguageRegexFallback(rawDocText, partial);
 
         // --- Final fallbacks ---
-        // NOTE: Do NOT default dates to today — leave blank if not found, so UI shows "—" instead of wrong date.
         if (!partial.dateCreated) partial.dateCreated = '';
         if (!partial.dueDate) partial.dueDate = '';
 
-        // Description: if still empty after all steps, infer from vendor
         if (!partial.description || partial.description.trim() === '') {
             partial.description = inferDescription(partial.vendorName);
         }
 
-        // subtotalAmount fallback: if total known but sub/tax still 0 (invoice without VAT breakdown)
         if (partial.subtotalAmount === 0 && partial.taxAmount === 0 && partial.amount > 0) {
             partial.subtotalAmount = partial.amount;
         }
 
-        // Determine status — default Pending (Ootel)
         const status = 'Pending';
 
         // --- Validation warnings ---
         const validationWarnings = [];
         const computedTotal = parseFloat((partial.subtotalAmount + partial.taxAmount).toFixed(2));
         if (partial.amount > 0 && partial.subtotalAmount > 0 && Math.abs(computedTotal - partial.amount) > 0.05) {
-            validationWarnings.push(`Math mismatch: ${partial.subtotalAmount} + ${partial.taxAmount} ≠ ${partial.amount}`);
+            validationWarnings.push(`Math mismatch: ${partial.subtotalAmount} + ${partial.taxAmount} != ${partial.amount}`);
         }
         if ((confidenceScores.total || 0) < 0.6 || (confidenceScores.vendor || 0) < 0.6) {
-            validationWarnings.push(`Low DocAI confidence: total=${(confidenceScores.total||0).toFixed(2)}, vendor=${(confidenceScores.vendor||0).toFixed(2)}`);
+            validationWarnings.push(`Low confidence: total=${(confidenceScores.total||0).toFixed(2)}, vendor=${(confidenceScores.vendor||0).toFixed(2)}`);
         }
         if (partial.amount === 0) {
             validationWarnings.push('Total amount not extracted — manual review required');
         }
 
-        console.log(`[DocAI] ✅ Extraction complete: vendor="${partial.vendorName}", invoiceId="${partial.invoiceId}", amount=${partial.amount} ${partial.currency}`);
+        console.log(`[Scout] Extraction complete: vendor="${partial.vendorName}", invoiceId="${partial.invoiceId}", amount=${partial.amount} ${partial.currency}`);
 
         return [{
             type: 'INVOICE',
@@ -438,7 +404,7 @@ async function processInvoiceWithDocAI(buffer, mimeType = 'application/pdf', sup
         }];
 
     } catch (error) {
-        console.error(`[DocAI] 🚨 Extraction failed:`, error.message);
+        console.error(`[Scout] Extraction failed:`, error.message);
         throw error;
     }
 }
