@@ -294,25 +294,64 @@ async function validateAndTeach(invoiceData, companyId) {
     const corrections = [];
     const originalCurrency = invoice.currency; // Track for currency-change detection
 
-    // ── 0. SELF-INVOICE GUARD: clear buyer data from vendor fields ─────────
+    // ── 0. SELF-INVOICE GUARD: clear buyer data, re-extract supplier's ──────
     // If invoice's supplierVat or supplierRegistration matches any registered
-    // receiving company → Scout extracted buyer's data, not vendor's. Clear it.
+    // receiving company → Scout extracted buyer's data, not vendor's.
+    // After clearing, search rawText for the real supplier's Reg/VAT.
     if (db) {
         try {
             const compSnap = await db.collection('companies').get();
+            const buyerIds = new Set(); // collect all buyer VAT/Reg to exclude
             const invVat = (invoice.supplierVat || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
             const invReg = (invoice.supplierRegistration || '').replace(/[^0-9]/g, '');
+            let vatCleared = false, regCleared = false;
+
             for (const cd of compSnap.docs) {
                 const c = cd.data();
                 const cVat = (c.vat || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
                 const cReg = (c.regCode || '').replace(/[^0-9]/g, '');
+                if (cVat) buyerIds.add(cVat);
+                if (cReg) buyerIds.add(cReg);
+
                 if (cVat && invVat && cVat === invVat) {
                     corrections.push(`Self-invoice guard: cleared buyer VAT ${invoice.supplierVat} (belongs to ${c.name})`);
                     invoice.supplierVat = '';
+                    vatCleared = true;
                 }
                 if (cReg && invReg && cReg === invReg) {
                     corrections.push(`Self-invoice guard: cleared buyer Reg ${invoice.supplierRegistration} (belongs to ${c.name})`);
                     invoice.supplierRegistration = '';
+                    regCleared = true;
+                }
+            }
+
+            // Re-extract from rawText: find Reg/VAT codes that are NOT buyer's
+            if (regCleared || vatCleared) {
+                const rawText = invoice._rawText || invoiceData._rawText || '';
+                if (rawText) {
+                    // Find all registration codes in text
+                    if (regCleared) {
+                        const regMatches = rawText.matchAll(/(?:Reg\.?\s*(?:nr|code|kood)|Rg-?kood)[.:\s]+(\d{6,10})/gi);
+                        for (const m of regMatches) {
+                            if (!buyerIds.has(m[1])) {
+                                invoice.supplierRegistration = m[1];
+                                corrections.push(`Self-invoice guard: found supplier Reg ${m[1]} in text (after clearing buyer's)`);
+                                break;
+                            }
+                        }
+                    }
+                    // Find all VAT codes in text
+                    if (vatCleared) {
+                        const vatMatches = rawText.matchAll(/(?:KMKR|KMKN|VAT)[.\s:]*([A-Z]{2}\d{6,12})/gi);
+                        for (const m of vatMatches) {
+                            const clean = m[1].toUpperCase();
+                            if (!buyerIds.has(clean)) {
+                                invoice.supplierVat = m[1];
+                                corrections.push(`Self-invoice guard: found supplier VAT ${m[1]} in text (after clearing buyer's)`);
+                                break;
+                            }
+                        }
+                    }
                 }
             }
         } catch { /* non-critical */ }
@@ -625,14 +664,31 @@ async function validateAndTeach(invoiceData, companyId) {
         if (db) {
             try {
                 const compSnap2 = await db.collection('companies').get();
+                const buyerIds2 = new Set();
                 const postVat = (invoice.supplierVat || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
                 const postReg = (invoice.supplierRegistration || '').replace(/[^0-9]/g, '');
+                let vatCleared2 = false, regCleared2 = false;
+
                 for (const cd of compSnap2.docs) {
                     const c = cd.data();
                     const cVat = (c.vat || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
                     const cReg = (c.regCode || '').replace(/[^0-9]/g, '');
-                    if (cVat && postVat && cVat === postVat) { invoice.supplierVat = ''; }
-                    if (cReg && postReg && cReg === postReg) { invoice.supplierRegistration = ''; }
+                    if (cVat) buyerIds2.add(cVat);
+                    if (cReg) buyerIds2.add(cReg);
+                    if (cVat && postVat && cVat === postVat) { invoice.supplierVat = ''; vatCleared2 = true; }
+                    if (cReg && postReg && cReg === postReg) { invoice.supplierRegistration = ''; regCleared2 = true; }
+                }
+
+                // Re-extract from rawText after clearing Claude's buyer data
+                if (regCleared2 || vatCleared2) {
+                    if (regCleared2) {
+                        const regMs = rawText.matchAll(/(?:Reg\.?\s*(?:nr|code|kood)|Rg-?kood)[.:\s]+(\d{6,10})/gi);
+                        for (const m of regMs) { if (!buyerIds2.has(m[1])) { invoice.supplierRegistration = m[1]; break; } }
+                    }
+                    if (vatCleared2) {
+                        const vatMs = rawText.matchAll(/(?:KMKR|KMKN|VAT)[.\s:]*([A-Z]{2}\d{6,12})/gi);
+                        for (const m of vatMs) { if (!buyerIds2.has(m[1].toUpperCase())) { invoice.supplierVat = m[1]; break; } }
+                    }
                 }
             } catch { /* non-critical */ }
         }
