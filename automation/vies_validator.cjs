@@ -1,11 +1,30 @@
 const https = require('https');
 
+// ── VIES cache (7-day TTL) — avoids repeated API calls for same VAT ──
+const _viesCache = new Map();
+const VIES_CACHE_TTL = 7 * 24 * 60 * 60 * 1000;
+
 /**
  * Validates a European VAT number against the official European Commission VIES REST API.
+ * Results are cached for 7 days to avoid redundant API calls.
  * @param {string} fullVatCode - The full VAT string, starting with a 2-letter Country Code (e.g., "EE101662580").
  * @returns {Promise<Object>} Object containing validity status and registered company name.
  */
 function validateVat(fullVatCode) {
+    // Check cache first
+    const cacheKey = (fullVatCode || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+    const cached = _viesCache.get(cacheKey);
+    if (cached && Date.now() - cached.time < VIES_CACHE_TTL) {
+        return Promise.resolve(cached.result);
+    }
+    const cacheAndResolve = (resolve, result) => {
+        // Only cache successful responses (no errors/timeouts)
+        if (!result.error) {
+            _viesCache.set(cacheKey, { result, time: Date.now() });
+        }
+        resolve(result);
+    };
+
     return new Promise((resolve) => {
         if (!fullVatCode || typeof fullVatCode !== 'string' || fullVatCode.length < 4) {
             return resolve({ isValid: false, name: null, error: 'Invalid Format' });
@@ -38,8 +57,7 @@ function validateVat(fullVatCode) {
                 if (res.statusCode === 200) {
                     try {
                         const json = JSON.parse(data);
-                        // The VIES API returns simply: { "isValid": true/false, "name": "REGISTERED_NAME", ... }
-                        return resolve({
+                        return cacheAndResolve(resolve, {
                             isValid: json.valid === true || json.isValid === true,
                             name: json.name || null,
                             address: json.address || null,
@@ -59,8 +77,6 @@ function validateVat(fullVatCode) {
             return resolve({ isValid: false, name: null, error: 'Network Error connecting to VIES' });
         });
 
-        // Add timeout to prevent hanging the entire ingestion pipeline
-        // req.abort() was removed in Node.js v18 — use req.destroy() instead
         req.setTimeout(5000, () => {
             req.destroy();
             return resolve({ isValid: false, name: null, error: 'VIES API Timeout' });

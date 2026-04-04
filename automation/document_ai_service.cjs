@@ -25,6 +25,7 @@
 
 require('dotenv').config();
 const { DocumentAnalysisClient, AzureKeyCredential } = require('@azure/ai-form-recognizer');
+const { cleanNum } = require('./core/utils.cjs');
 
 // --- Azure Document Intelligence Setup ---
 const AZURE_ENDPOINT = process.env.AZURE_DOC_INTEL_ENDPOINT;
@@ -34,23 +35,7 @@ if (!AZURE_ENDPOINT || !AZURE_KEY) {
 }
 const azureClient = new DocumentAnalysisClient(AZURE_ENDPOINT, new AzureKeyCredential(AZURE_KEY));
 
-/**
- * Parse a numeric string into a float, handling European formats (1.200,50 or 1,200.50)
- */
-function cleanNum(str) {
-    if (!str && str !== 0) return 0;
-    let s = String(str).replace(/[^\d.,-]/g, '').trim();
-    if (s.includes(',') && s.includes('.')) {
-        if (s.lastIndexOf(',') > s.lastIndexOf('.')) {
-            s = s.replace(/\./g, '').replace(',', '.');
-        } else {
-            s = s.replace(/,/g, '');
-        }
-    } else if (s.includes(',')) {
-        s = s.replace(',', '.');
-    }
-    return parseFloat(s) || 0;
-}
+// cleanNum imported from core/utils.cjs
 
 /**
  * Convert Document AI date mentionText (various formats) to YYYY-MM-DD string.
