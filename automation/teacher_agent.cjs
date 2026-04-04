@@ -294,12 +294,13 @@ async function validateAndTeach(invoiceData, companyId) {
             ? db.collection('companies').doc(companyId).get().catch(() => null)
             : Promise.resolve(null),
 
-        // Global rules — batch all 3 reads into one Promise.all
-        (db && vatPrefix.length === 2)
+        // Global rules — batch reads in parallel
+        // Payment term query is VAT-independent, always runs if db exists
+        db
             ? Promise.all([
-                db.collection('teacher_global_rules').doc(`vat_${vatPrefix}_currency`).get().catch(() => null),
+                vatPrefix.length === 2 ? db.collection('teacher_global_rules').doc(`vat_${vatPrefix}_currency`).get().catch(() => null) : Promise.resolve(null),
                 db.collection('teacher_global_rules').where('type', '==', 'common_payment_term').get().catch(() => null),
-                db.collection('teacher_global_rules').doc(`vat_${vatPrefix}_taxrate`).get().catch(() => null),
+                vatPrefix.length === 2 ? db.collection('teacher_global_rules').doc(`vat_${vatPrefix}_taxrate`).get().catch(() => null) : Promise.resolve(null),
               ])
             : Promise.resolve([null, null, null]),
 
