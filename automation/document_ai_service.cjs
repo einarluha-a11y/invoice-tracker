@@ -31,7 +31,7 @@ const { cleanNum } = require('./core/utils.cjs');
 const AZURE_ENDPOINT = process.env.AZURE_DOC_INTEL_ENDPOINT;
 const AZURE_KEY = process.env.AZURE_DOC_INTEL_KEY;
 if (!AZURE_ENDPOINT || !AZURE_KEY) {
-    console.error('[Scout] 🚨 AZURE_DOC_INTEL_ENDPOINT and AZURE_DOC_INTEL_KEY must be set in .env');
+    throw new Error('[Scout] AZURE_DOC_INTEL_ENDPOINT and AZURE_DOC_INTEL_KEY must be set in .env');
 }
 const azureClient = new DocumentAnalysisClient(AZURE_ENDPOINT, new AzureKeyCredential(AZURE_KEY));
 
