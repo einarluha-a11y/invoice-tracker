@@ -317,7 +317,10 @@ async function validateAndTeach(invoiceData, companyId) {
                 if (cReg) buyerIds.add(cReg);
                 if (cName) buyerNames.add(cName);
 
-                if (cVat && invVat && cVat === invVat) {
+                // Match VAT directly, or detect regCode embedded in VAT (e.g. "EE14987085" contains regCode "14987085")
+                const vatMatchesBuyer = (cVat && invVat && cVat === invVat) ||
+                    (cReg && invVat && invVat.endsWith(cReg));
+                if (vatMatchesBuyer) {
                     corrections.push(`Self-invoice guard: cleared buyer VAT ${invoice.supplierVat} (belongs to ${c.name})`);
                     invoice.supplierVat = '';
                     vatCleared = true;
@@ -698,7 +701,7 @@ async function validateAndTeach(invoiceData, companyId) {
                     const cReg = (c.regCode || '').replace(/[^0-9]/g, '');
                     if (cVat) buyerIds2.add(cVat);
                     if (cReg) buyerIds2.add(cReg);
-                    if (cVat && postVat && cVat === postVat) { invoice.supplierVat = ''; vatCleared2 = true; }
+                    if ((cVat && postVat && cVat === postVat) || (cReg && postVat && postVat.endsWith(cReg))) { invoice.supplierVat = ''; vatCleared2 = true; }
                     if (cReg && postReg && cReg === postReg) { invoice.supplierRegistration = ''; regCleared2 = true; }
                 }
 

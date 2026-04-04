@@ -220,7 +220,7 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
             const compVat = (comp.vat || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
             const compReg = (comp.regCode || '').replace(/[^0-9]/g, '');
 
-            const vatMatch = compVat && invVat && compVat === invVat;
+            const vatMatch = (compVat && invVat && compVat === invVat) || (compReg && invVat && invVat.endsWith(compReg));
             const regMatch = compReg && invReg && compReg === invReg;
 
             if (vatMatch || regMatch) {
