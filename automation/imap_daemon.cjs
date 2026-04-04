@@ -985,11 +985,20 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
 
             // Find attachments
             if (parsedEmail.attachments && parsedEmail.attachments.length > 0) {
+                const processedAttachments = new Set(); // dedup by filename+size within same email
                 for (const attachment of parsedEmail.attachments) {
                     const filename = (attachment.filename || '').toLowerCase();
                     const mime = (attachment.contentType || '').toLowerCase();
 
                     if (!filename && !mime) continue; // Skip entirely broken inline attachments
+
+                    // Skip duplicate attachments in same email (same file attached + inlined)
+                    const attachKey = `${filename}|${attachment.size || attachment.content?.length || 0}`;
+                    if (processedAttachments.has(attachKey)) {
+                        console.log(`[Email] Skipping duplicate attachment: ${filename} (already processed in this email)`);
+                        continue;
+                    }
+                    processedAttachments.add(attachKey);
 
                     if (
                         mime.includes('csv') || mime.includes('excel') ||

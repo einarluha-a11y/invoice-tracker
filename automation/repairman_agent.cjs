@@ -87,16 +87,40 @@ async function findBadInvoices() {
     const snap = await q.get();
     const bad = [];
 
-    // ── Duplicate detection: invoiceId + vendorName + amount + companyId ─────
-    const seen = new Map(); // key → first doc id
+    // ── Duplicate detection ─────────────────────────────────────────────────
+    const LEGAL_SUFFIXES = /(?:^|\s)(AS|OÜ|OU|OY|AB|GmbH|AG|SIA|UAB|BV|NV|Ltd|LLC|Inc|MTÜ)(?:\s|$|,|\.)/i;
+    const seen = new Map(); // key → { id, vendorName }
+    const seenByIdAmt = new Map(); // invoiceId+amount+companyId → { id, vendorName }
     for (const doc of snap.docs) {
         const d = doc.data();
+
+        // Key 1: exact match (invoiceId + vendorName + amount + companyId)
         const dedupKey = `${(d.invoiceId || '').toLowerCase().trim()}|${(d.vendorName || '').toLowerCase().trim()}|${d.amount || 0}|${d.companyId || ''}`;
         if (seen.has(dedupKey)) {
-            bad.push({ id: doc.id, data: d, reason: `Duplicate of ${seen.get(dedupKey)} (same invoiceId + vendor + amount)` });
-            continue; // skip further checks for duplicates
+            bad.push({ id: doc.id, data: d, reason: `Duplicate of ${seen.get(dedupKey).id} (same invoiceId + vendor + amount)` });
+            continue;
         }
-        seen.set(dedupKey, doc.id);
+        seen.set(dedupKey, { id: doc.id, vendorName: d.vendorName });
+
+        // Key 2: invoiceId + amount + companyId (different vendor names — e.g. "oriens.ee" vs "ORIENS OÜ")
+        const idAmtKey = `${(d.invoiceId || '').toLowerCase().trim()}|${d.amount || 0}|${d.companyId || ''}`;
+        if (seenByIdAmt.has(idAmtKey)) {
+            const existing = seenByIdAmt.get(idAmtKey);
+            const existingHasSuffix = LEGAL_SUFFIXES.test(existing.vendorName || '');
+            const currentHasSuffix = LEGAL_SUFFIXES.test(d.vendorName || '');
+            if (existingHasSuffix && !currentHasSuffix) {
+                // Existing has legal suffix, current doesn't → current is duplicate
+                bad.push({ id: doc.id, data: d, reason: `Duplicate of ${existing.id} (same invoiceId+amount, "${existing.vendorName}" has legal suffix)` });
+                continue;
+            } else if (!existingHasSuffix && currentHasSuffix) {
+                // Current has legal suffix → existing is duplicate, swap
+                bad.push({ id: existing.id, data: d, reason: `Duplicate of ${doc.id} (same invoiceId+amount, "${d.vendorName}" has legal suffix)` });
+                seenByIdAmt.set(idAmtKey, { id: doc.id, vendorName: d.vendorName });
+                continue;
+            }
+            // Both or neither have suffix — keep both (may be legitimate)
+        }
+        seenByIdAmt.set(idAmtKey, { id: doc.id, vendorName: d.vendorName });
 
         const reasons = detectProblems(d);
         if (reasons.length > 0) bad.push({ id: doc.id, data: d, reason: reasons.join(' + ') });
