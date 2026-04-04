@@ -81,6 +81,9 @@ app.post('/api/intake', rateLimit(20, 60_000), async (req, res) => {
             originalFileUrl: null
         };
 
+        // dueDate fallback: use invoice date if due date missing
+        if (!parsedData.dueDate) parsedData.dueDate = parsedData.dateCreated;
+
         let validationWarnings = inv.validationWarnings || [];
         let systemStatus = validationWarnings.length > 0 ? 'Needs Action' : 'Unpaid';
 
