@@ -449,17 +449,41 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
             const idFuzzyMatch = (cleanNewId.length > 3 && cleanOldId.length > 3 && (cleanOldId.includes(cleanNewId) || cleanNewId.includes(cleanOldId)));
             const isZapierGhost = (!data.fileUrl && data.subtotalAmount === undefined);
 
-            const isDuplicateMatch = (strongIdMatch && vendorFuzzyMatch && amtMatches) || 
-                                     genericDateMatch || 
-                                     (idFuzzyMatch && vendorFuzzyMatch && amtMatches) || 
-                                     (isZapierGhost && vendorFuzzyMatch && amtMatches && data.dateCreated === docAiPayload.dateCreated);
+            // COMPANY SUFFIX RULE: invoiceId + amount match even if vendor names differ
+            // If one has a legal entity suffix (AS, OÜ, GmbH, etc.) — that's the real name.
+            // The other is likely a brand/product name extracted from the PDF (e.g. "VOLVO" vs "Info-Auto AS").
+            const LEGAL_SUFFIXES = /\b(AS|OÜ|OY|AB|GmbH|AG|SIA|UAB|BV|NV|Ltd|LLC|Inc|S\.?A\.?|Sp\.?\s*z\s*o\.?\s*o\.?|SARL|SAS|e\.K\.)\b/i;
+            const strongIdAmtMatch = (strongIdMatch && amtMatches && !vendorFuzzyMatch);
+            const existingHasSuffix = LEGAL_SUFFIXES.test(data.vendorName || '');
+            const incomingHasSuffix = LEGAL_SUFFIXES.test(docAiPayload.vendorName || '');
+
+            const isDuplicateMatch = (strongIdMatch && vendorFuzzyMatch && amtMatches) ||
+                                     genericDateMatch ||
+                                     (idFuzzyMatch && vendorFuzzyMatch && amtMatches) ||
+                                     (isZapierGhost && vendorFuzzyMatch && amtMatches && data.dateCreated === docAiPayload.dateCreated) ||
+                                     strongIdAmtMatch; // same invoiceId + amount, different vendor = likely same invoice
 
             if (isDuplicateMatch) {
                 const dbNoFile = !data.fileUrl || data.fileUrl === 'BODY_TEXT_NO_ATTACHMENT';
                 // Incoming payload is "better" if it has a real PDF OR if it contains advanced DocAI metadata (subtotal/tax) that Zapier missed.
                 const incomingIsBetter = (fileUrl && fileUrl !== 'BODY_TEXT_NO_ATTACHMENT') || docAiPayload.subtotalAmount !== undefined || docAiPayload.taxAmount !== undefined;
 
-                if (dbNoFile && incomingIsBetter) {
+                // COMPANY SUFFIX RULE: if same invoiceId+amount but different vendor names,
+                // prefer the name with a legal entity suffix (AS, OÜ, GmbH, etc.)
+                if (strongIdAmtMatch && !vendorFuzzyMatch) {
+                    if (incomingHasSuffix && !existingHasSuffix) {
+                        // Incoming has proper company name — replace existing
+                        console.log(`[Accountant Agent] ⚔️ COMPANY NAME UPGRADE: "${data.vendorName}" → "${docAiPayload.vendorName}" (has legal suffix). Destroying ${doc.id}.`);
+                        ghostDocIdToDestroy = doc.id;
+                    } else if (existingHasSuffix && !incomingHasSuffix) {
+                        // Existing already has proper name — skip incoming
+                        console.log(`[Accountant Agent] 🛑 DUPLICATE: "${docAiPayload.vendorName}" rejected — "${data.vendorName}" already has legal suffix.`);
+                        isDuplicate = true;
+                    } else {
+                        // Both or neither have suffix — keep existing
+                        isDuplicate = true;
+                    }
+                } else if (dbNoFile && incomingIsBetter) {
                     console.log(`[Accountant Agent] ⚔️ GHOST ASSASSINATION: Destroying skeleton duplicate ${doc.id} in favor of full DocAI payload!`);
                     ghostDocIdToDestroy = doc.id;
                 } else {
