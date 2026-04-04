@@ -36,7 +36,7 @@ function App() {
         }
     }, [companies, selectedCompanyId]);
 
-    const [limitCount, setLimitCount] = useState<number>(50);
+    // Load all invoices — no pagination needed for <1000 records
     const [invoices, setInvoices] = useState<Invoice[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -70,7 +70,6 @@ function App() {
 
         const unsubscribe = subscribeToInvoices(
             selectedCompanyId,
-            limitCount,
             (data) => {
                 setInvoices(data);
                 setIsLoading(false);
@@ -84,7 +83,7 @@ function App() {
         );
 
         return () => unsubscribe();
-    }, [selectedCompanyId, t, limitCount]);
+    }, [selectedCompanyId, t]);
 
     const handleEdit = (invoice: Invoice) => {
         setEditingInvoice(invoice);
@@ -348,26 +347,6 @@ function App() {
                         companyName={activeCompany?.name}
                     />
                     
-                    {invoices.length >= limitCount && (
-                        <div style={{ textAlign: 'center', marginTop: '1.5rem', marginBottom: '1.5rem' }}>
-                            <button
-                                onClick={() => setLimitCount(prev => prev + 50)}
-                                style={{
-                                    background: 'var(--surface-color)',
-                                    border: '1px solid var(--border-color)',
-                                    color: 'var(--text-primary)',
-                                    padding: '0.8rem 2rem',
-                                    borderRadius: '50px',
-                                    fontWeight: 600,
-                                    cursor: 'pointer',
-                                    boxShadow: '0 4px 6px rgba(0,0,0,0.05)',
-                                    transition: 'all 0.2s ease'
-                                }}
-                            >
-                                {t('showMore')}
-                            </button>
-                        </div>
-                    )}
                 </div>
             )}
 
