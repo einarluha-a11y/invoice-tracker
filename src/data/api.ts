@@ -1,4 +1,4 @@
-import { collection, onSnapshot, doc, getDoc, getDocs, deleteDoc, updateDoc, setDoc, query, orderBy, where, limit, serverTimestamp } from 'firebase/firestore';
+import { collection, onSnapshot, doc, getDoc, getDocs, deleteDoc, updateDoc, setDoc, query, orderBy, where, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Invoice, InvoiceStatus } from './mockInvoices';
 
@@ -92,7 +92,6 @@ export const parseDate = (rawDate: string): string => {
 
 export const subscribeToInvoices = (
     companyId: string,
-    limitCount: number,
     onData: (invoices: Invoice[]) => void,
     onError: (error: Error) => void
 ) => {
@@ -102,12 +101,10 @@ export const subscribeToInvoices = (
         return () => { };
     }
 
-    // Apply native server-side indexing to prevent O(N) client RAM crashes!
     const q = query(
-        collection(db, 'invoices'), 
+        collection(db, 'invoices'),
         where('companyId', '==', companyId),
-        orderBy('dateCreated', 'desc'),
-        limit(limitCount)
+        orderBy('dateCreated', 'desc')
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
