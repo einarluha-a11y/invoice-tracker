@@ -294,6 +294,30 @@ async function validateAndTeach(invoiceData, companyId) {
     const corrections = [];
     const originalCurrency = invoice.currency; // Track for currency-change detection
 
+    // ── 0. SELF-INVOICE GUARD: clear buyer data from vendor fields ─────────
+    // If invoice's supplierVat or supplierRegistration matches any registered
+    // receiving company → Scout extracted buyer's data, not vendor's. Clear it.
+    if (db) {
+        try {
+            const compSnap = await db.collection('companies').get();
+            const invVat = (invoice.supplierVat || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+            const invReg = (invoice.supplierRegistration || '').replace(/[^0-9]/g, '');
+            for (const cd of compSnap.docs) {
+                const c = cd.data();
+                const cVat = (c.vat || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+                const cReg = (c.regCode || '').replace(/[^0-9]/g, '');
+                if (cVat && invVat && cVat === invVat) {
+                    corrections.push(`Self-invoice guard: cleared buyer VAT ${invoice.supplierVat} (belongs to ${c.name})`);
+                    invoice.supplierVat = '';
+                }
+                if (cReg && invReg && cReg === invReg) {
+                    corrections.push(`Self-invoice guard: cleared buyer Reg ${invoice.supplierRegistration} (belongs to ${c.name})`);
+                    invoice.supplierRegistration = '';
+                }
+            }
+        } catch { /* non-critical */ }
+    }
+
     // ── 1. Parallel load: Charter + Global Rules + Examples ────────────────
     // All three are independent Firestore reads — run in parallel to save ~300ms
     const vatPrefix = (invoice.supplierVat || '').replace(/[^A-Z]/gi, '').slice(0, 2).toUpperCase();
@@ -386,6 +410,35 @@ async function validateAndTeach(invoiceData, companyId) {
                 console.log(`[Teacher] Found ${examples.length} example(s) by VAT/RegNo/patterns match`);
             }
         } catch { /* no match — proceed without examples */ }
+    }
+
+    // ── 2c. SELF-INVOICE GUARD: strip buyer's VAT/Reg from examples ────────
+    // If an example's groundTruth VAT/Reg matches any registered receiving company,
+    // those fields were saved from the buyer section — ignore them.
+    if (examples.length > 0 && companyId && db) {
+        try {
+            const companiesSnap = await db.collection('companies').get();
+            const receiverIds = new Set();
+            companiesSnap.docs.forEach(d => {
+                const c = d.data();
+                if (c.vat) receiverIds.add(c.vat.replace(/[^a-zA-Z0-9]/g, '').toUpperCase());
+                if (c.regCode) receiverIds.add(c.regCode.replace(/[^0-9]/g, ''));
+            });
+
+            for (const ex of examples) {
+                const gt = ex.groundTruth || {};
+                const exVat = (gt.supplierVat || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+                const exReg = (gt.supplierRegistration || '').replace(/[^0-9]/g, '');
+                if (exVat && receiverIds.has(exVat)) {
+                    console.log(`[Teacher] ⚠️ Example "${ex.vendorName}" has buyer VAT ${gt.supplierVat} — ignoring`);
+                    gt.supplierVat = '';
+                }
+                if (exReg && receiverIds.has(exReg)) {
+                    console.log(`[Teacher] ⚠️ Example "${ex.vendorName}" has buyer Reg ${gt.supplierRegistration} — ignoring`);
+                    gt.supplierRegistration = '';
+                }
+            }
+        } catch { /* non-critical */ }
     }
 
     // ── 3. Fill/correct fields from examples ────────────────────────────────
