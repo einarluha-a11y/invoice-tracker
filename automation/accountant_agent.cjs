@@ -207,6 +207,33 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
         }
     }
 
+    // --- 0.6. SELF-INVOICE GUARD: receiver company can never be the vendor ---
+    // All registered companies (that receive invoices) are checked.
+    // If vendor VAT/Reg matches any registered company → data was extracted from buyer section.
+    {
+        const companiesSnap = await getCachedCompanies();
+        const invVat = (docAiPayload.supplierVat || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+        const invReg = (docAiPayload.supplierRegistration || '').replace(/[^0-9]/g, '');
+
+        for (const compDoc of companiesSnap.docs) {
+            const comp = compDoc.data();
+            const compVat = (comp.vat || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+            const compReg = (comp.regCode || '').replace(/[^0-9]/g, '');
+
+            const vatMatch = compVat && invVat && compVat === invVat;
+            const regMatch = compReg && invReg && compReg === invReg;
+
+            if (vatMatch || regMatch) {
+                console.log(`[Accountant Agent] ⚠️ SELF-INVOICE GUARD: vendor VAT/Reg matches receiver "${comp.name}". Clearing buyer data from vendor fields.`);
+                // Clear fields that belong to the buyer, not the vendor
+                if (vatMatch) docAiPayload.supplierVat = '';
+                if (regMatch) docAiPayload.supplierRegistration = '';
+                // Don't clear vendorName — DocAI may have extracted the real vendor elsewhere
+                break;
+            }
+        }
+    }
+
     console.log(`\n[Accountant Agent] 🚀 Beginning Audit for ${docAiPayload.vendorName} (Inv: ${docAiPayload.invoiceId})`);
 
     let systemStatus = docAiPayload.status || 'Pending';
