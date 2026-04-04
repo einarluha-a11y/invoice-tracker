@@ -547,6 +547,18 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
 
     }
 
+    // --- OVERDUE CHECK: if dueDate is in the past and not Paid/Duplicate → Overdue ---
+    if (systemStatus !== 'Paid' && systemStatus !== 'Duplicate' && docAiPayload.dueDate) {
+        const due = new Date(docAiPayload.dueDate);
+        const today = new Date();
+        due.setHours(0, 0, 0, 0);
+        today.setHours(0, 0, 0, 0);
+        if (!isNaN(due.getTime()) && today.getTime() > due.getTime()) {
+            console.log(`[Accountant Agent] ⏰ dueDate ${docAiPayload.dueDate} is past → status Overdue`);
+            systemStatus = 'Overdue';
+        }
+    }
+
     return {
         ...docAiPayload,
         fileUrl,
