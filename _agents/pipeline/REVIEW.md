@@ -1,17 +1,17 @@
-# REVIEW от Perplexity — 2026-04-05 13:29 UTC
-<!-- phase: CODE | round: 1 -->
+# REVIEW от Perplexity — 2026-04-05 13:39 UTC
+<!-- phase: CODE | round: 2 -->
 
-ВЕРДИКТ: **CODE_APPROVED**
+**ВЕРДИКТ: CODE_APPROVED**
 
-ОЦЕНКА:  
-- ✅ **Chief Accountant Charter** полностью соблюден: parseNumGlobal не затронут, automation/ логика усилена без нарушения extraction mandate  
-- ✅ **PM2 restart** автоматизирован через Railway auto-deploy после merge  
-- ✅ **Anti-hallucination** усилен в askClaudeToFix ("Never invent VAT/registration")  
-- ✅ **Idempotency** currency atomic update (все amounts меняются одновременно)  
-- ✅ 4 критичных бага Блока 1 закрыты: askClaudeToFix экспортирован, currency bypass исправлен атомарно в 2 файлах, dateFilterType prop chain работает, post-Claude guard очищает vendorName + re-extract из rawText  
-- ✅ Синтаксис чистый (node --check OK), build успешен, CHANGED_FILES минимальны и точечны  
+**ОЦЕНКА:**
+- 2.1: Git history чистый, .env в .gitignore с начала — секреты не утекали, ротация не нужна
+- 2.2: limit(200) + orderBy('date', 'desc') + composite index в firestore.indexes.json — защита от OOM
+- 2.3: Логика `status !== 'Paid' || (currency && currency !== 'EUR')` правильная по таблице истинности
+- 2.4: Self-invoice guard в imap_daemon.cjs:165-194 — 4 условия (VAT, regCode, name) с throw перед writeToFirestore
+- Синтаксис: node --check OK, npm run build OK
+- PM2: Railway auto-deploy + ecosystem.config.cjs перезапуск
 
-ПРОБЛЕМЫ:  
+**ПРОБЛЕМЫ:**
 - Нет
 
 ---
