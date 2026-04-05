@@ -428,6 +428,13 @@ async function validateAndTeach(invoiceData, companyId) {
         }
     }
 
+    // ── 1a2. Apply Charter rules FIRST (vendor-specific overrides) ──────────
+    // Must run before global fallbacks so vendor-specific rules win.
+    if (charterRules) {
+        const rulesApplied = applyCharterRules(invoice, charterRules);
+        corrections.push(...rulesApplied);
+    }
+
     // ── 1b. Apply global rules ──────────────────────────────────────────────
     const [currencyRuleDoc, termsSnap, taxRuleDoc] = globalRulesResult;
 
@@ -630,11 +637,7 @@ async function validateAndTeach(invoiceData, companyId) {
         }
     }
 
-    // ── 4. Apply Charter rules ──────────────────────────────────────────────
-    if (charterRules) {
-        const rulesApplied = applyCharterRules(invoice, charterRules);
-        corrections.push(...rulesApplied);
-    }
+    // Charter rules already applied in step 1a2 (before global fallbacks)
 
     // ── 4b. LEGAL NAME RULE: vendor name must include company suffix ────────
     // DocAI often extracts logo text ("SMC", "electrobit") instead of the legal name
@@ -812,9 +815,19 @@ function applyCharterRules(invoice, rulesText) {
     const rules = rulesText.split('\n').filter(r => r.trim());
 
     // Helper: check if this rule's vendor matches the current invoice
+    // Strips legal suffixes (OÜ, AS, GmbH, etc.) and compares base names
     function vendorMatch(ruleVendor) {
         if (!invoice.vendorName) return false;
-        return invoice.vendorName.toLowerCase().includes(ruleVendor.toLowerCase());
+        // Use (^|\s|,|\.) instead of \b — \b doesn't work with Unicode (Ü, Ä, etc.)
+        const stripSuffix = (s) => s.toLowerCase()
+            .replace(/[\s\n]+/g, ' ')
+            .replace(/(^|\s|,|\.)(as|oü|ou|oy|ab|gmbh|ag|sia|uab|bv|nv|ltd|llc|inc|mtü|sarl|sas|sp\.?\s*z\s*o\.?\s*o\.?|mb)(\s|$|,|\.)/gi, ' ')
+            .replace(/[^a-z0-9]/gi, '')
+            .trim();
+        const invName = stripSuffix(invoice.vendorName);
+        const ruleName = stripSuffix(ruleVendor);
+        if (!invName || !ruleName || ruleName.length < 3) return false;
+        return invName.includes(ruleName) || ruleName.includes(invName);
     }
 
     for (const rule of rules) {
@@ -829,18 +842,26 @@ function applyCharterRules(invoice, rulesText) {
             continue;
         }
 
-        // Due date rule: Vendor "X": net-30
+        // Due date rule (EN): Vendor "X": net-30
         const dueDateMatch = rule.match(/[Vv]endor\s*[""\u201c\u201d](.+?)[""\u201c\u201d]:\s*net-?(\d+)/i);
-        if (dueDateMatch) {
-            const [, vendor, days] = dueDateMatch;
-            if (vendorMatch(vendor) && invoice.dateCreated) {
-                // Apply if dueDate is empty OR equals dateCreated (= not parsed correctly)
-                const dueDateSuspicious = !invoice.dueDate || isEmpty(invoice.dueDate) || invoice.dueDate === invoice.dateCreated;
-                if (dueDateSuspicious) {
-                    const d = new Date(invoice.dateCreated);
-                    d.setDate(d.getDate() + parseInt(days));
-                    invoice.dueDate = d.toISOString().split('T')[0];
-                    applied.push(`Charter: set dueDate = dateCreated + ${days} days for "${vendor}"`);
+        // Due date rule (RU): Для вендора X срок оплаты = дата инвойса + N дней
+        const dueDateMatchRu = !dueDateMatch && rule.match(/[Дд]ля\s+вендора\s+(.+?)\s+срок\s+оплаты\s*=\s*дата\s+инвойса\s*\+\s*(\d+)\s*дн/i);
+        // Due date rule (ET): Müüja "X": maksetähtaeg = arve kuupäev + N päeva
+        const dueDateMatchEt = !dueDateMatch && !dueDateMatchRu && rule.match(/[Mm]üüja\s*[""\u201c\u201d]?(.+?)[""\u201c\u201d]?:?\s*maksetähtaeg\s*=\s*arve\s+kuupäev\s*\+\s*(\d+)\s*päeva/i);
+
+        const dueMatch = dueDateMatch || dueDateMatchRu || dueDateMatchEt;
+        if (dueMatch) {
+            const [, vendor, days] = dueMatch;
+            const cleanVendor = vendor.replace(/[""\u201c\u201d.]/g, '').trim();
+            if (vendorMatch(cleanVendor) && invoice.dateCreated) {
+                // Charter rule has priority — ALWAYS overrides DocAI extraction
+                const d = new Date(invoice.dateCreated);
+                d.setDate(d.getDate() + parseInt(days));
+                const newDueDate = d.toISOString().split('T')[0];
+                if (invoice.dueDate !== newDueDate) {
+                    const oldDueDate = invoice.dueDate;
+                    invoice.dueDate = newDueDate;
+                    applied.push(`Charter: set dueDate = dateCreated + ${days} days for "${cleanVendor}"${oldDueDate ? ` (was ${oldDueDate})` : ''}`);
                 }
             }
             continue;

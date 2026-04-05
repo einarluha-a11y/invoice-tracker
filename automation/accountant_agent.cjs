@@ -165,11 +165,10 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
     {
         const filename = String(fileUrl || '').toLowerCase();
         const invId = String(docAiPayload.invoiceId || '').toLowerCase();
-        const desc = String(docAiPayload.description || '').toLowerCase();
         const vendor = String(docAiPayload.vendorName || '').toLowerCase();
         const rawText = String(docAiPayload._rawText || '').toLowerCase();
-        // Check rawText too — CMRs often lack "cmr" in filename but have it in document body
-        const allText = `${filename} ${invId} ${desc} ${vendor} ${rawText.slice(0, 500)}`;
+        // Check filename + vendor + header (not description — transport invoices reference CMR numbers in descriptions)
+        const allText = `${filename} ${invId} ${vendor} ${rawText.slice(0, 500)}`;
 
         // Strong CMR markers in document header (early rejection)
         const CMR_HEADERS = [
