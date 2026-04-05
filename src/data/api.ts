@@ -1,4 +1,4 @@
-import { collection, onSnapshot, doc, getDoc, getDocs, deleteDoc, updateDoc, setDoc, query, orderBy, where, serverTimestamp } from 'firebase/firestore';
+import { collection, onSnapshot, doc, getDoc, getDocs, deleteDoc, updateDoc, setDoc, query, orderBy, where, limit, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Invoice, InvoiceStatus } from './mockInvoices';
 
@@ -468,9 +468,13 @@ export const updateInvoice = async (invoiceId: string, data: Partial<Invoice>): 
                 const vendorWords = (d.vendorName || '').toLowerCase().split(/[^a-zöäüõ0-9]+/).filter((w: string) => w.length >= 3);
                 const invoiceDate = d.dateCreated || '';
 
+                // Limit to 200 most recent transactions + order by date DESC
+                // (reconciliation rarely needs matches older than ~6 months)
                 const txSnap = await getDocs(query(
                     collection(db!, 'bank_transactions'),
-                    where('companyId', '==', d.companyId)
+                    where('companyId', '==', d.companyId),
+                    orderBy('date', 'desc'),
+                    limit(200)
                 ));
 
                 const isForeignCurrency = d.currency && d.currency !== 'EUR';
