@@ -18,6 +18,8 @@ const { stageDocument, markStagingResult } = require('./core/staging.cjs');
 const { saveBankTransaction } = require('./core/bank_dedup.cjs');
 // Strict reconciliation rules (shared with repairman_agent, api.ts)
 const { canReconcile: strictCanReconcile, matchReference, vendorOverlap } = require('./core/reconcile_rules.cjs');
+// Number parsing — single source of truth for European/US decimal formats
+const { cleanNum } = require('./core/utils.cjs');
 
 // --- DYNAMIC DICTIONARY ENGINE (Node.js Memory Cache) ---
 const companyAliasCache = {};
@@ -117,13 +119,8 @@ async function writeToFirestore(dataArray) {
             await db.runTransaction(async (t) => {
             const docRef = invoicesRef.doc(); // Auto-generate ID
 
-            // Format amount as number
-            let numAmount = 0;
-            if (typeof data.amount === 'string') {
-                numAmount = parseFloat(data.amount.replace(/[^0-9.-]+/g, '')) || 0;
-            } else if (typeof data.amount === 'number') {
-                numAmount = data.amount;
-            }
+            // Format amount as number (European/US decimal aware via cleanNum)
+            const numAmount = cleanNum(data.amount);
 
             // Formulate data
             const vendorName = data.vendorName || 'Unknown Vendor';
@@ -204,22 +201,41 @@ async function writeToFirestore(dataArray) {
             let isDuplicate = false;
             let existingDocId = null;
 
-            // 0. Check by file source: if same file was already saved → duplicate
-            // Extract the base filename from the storage URL (ignoring the timestamp prefix)
+            // 0. Check by file source: if same file was already saved → duplicate.
+            // Denorm fileBasename as indexed field for O(1) lookup via composite index
+            // (companyId, fileBasename). Falls back to full scan for legacy records
+            // that don't have the field yet.
+            let currentFileBasename = '';
             if (data.fileUrl) {
-                const fileBasename = data.fileUrl.match(/\d+_([^?]+)/)?.[1] || '';
-                if (fileBasename) {
-                    const sameCompanySnap = await invoicesRef
+                currentFileBasename = (data.fileUrl.match(/\d+_([^?]+)/)?.[1] || '').toLowerCase();
+                if (currentFileBasename) {
+                    // Fast path: composite index on (companyId, fileBasename)
+                    const indexedSnap = await invoicesRef
                         .where('companyId', '==', data.companyId)
+                        .where('fileBasename', '==', currentFileBasename)
+                        .limit(1)
                         .get();
-                    for (const doc of sameCompanySnap.docs) {
-                        const existingFile = doc.data().fileUrl || '';
-                        const existingBasename = existingFile.match(/\d+_([^?]+)/)?.[1] || '';
-                        if (existingBasename && existingBasename === fileBasename) {
-                            console.log(`[Firestore] Duplicate caught by filename match: ${fileBasename}`);
-                            isDuplicate = true;
-                            existingDocId = doc.id;
-                            break;
+                    if (!indexedSnap.empty) {
+                        console.log(`[Firestore] Duplicate caught by filename match (indexed): ${currentFileBasename}`);
+                        isDuplicate = true;
+                        existingDocId = indexedSnap.docs[0].id;
+                    } else {
+                        // Fallback for legacy records without fileBasename field.
+                        // Only runs if the indexed query returned nothing.
+                        const legacySnap = await invoicesRef
+                            .where('companyId', '==', data.companyId)
+                            .where('fileBasename', '==', null)
+                            .limit(500)
+                            .get();
+                        for (const doc of legacySnap.docs) {
+                            const existingFile = doc.data().fileUrl || '';
+                            const existingBasename = (existingFile.match(/\d+_([^?]+)/)?.[1] || '').toLowerCase();
+                            if (existingBasename && existingBasename === currentFileBasename) {
+                                console.log(`[Firestore] Duplicate caught by filename match (legacy scan): ${currentFileBasename}`);
+                                isDuplicate = true;
+                                existingDocId = doc.id;
+                                break;
+                            }
                         }
                     }
                 }
@@ -346,6 +362,7 @@ async function writeToFirestore(dataArray) {
                 createdAt: admin.firestore.FieldValue.serverTimestamp(),
                 companyId: data.companyId || null,
                 fileUrl: data.fileUrl || null,
+                fileBasename: currentFileBasename || null,  // Indexed for O(1) dedup via (companyId, fileBasename)
                 stagingId: data.stagingId || null  // Link to raw_documents entry for source tracing
             });
 
@@ -462,9 +479,9 @@ async function scoutTeacherPipeline(content, mimeType, companyId, customRules) {
             tempParsed[0].validationWarnings.push('TEACHER: Not all 11 mandatory fields filled');
 
             // Step 3: Claude "second opinion" for math mismatch (once per invoice)
-            const sub = parseFloat(tempParsed[0].subtotalAmount) || 0;
-            const tax = parseFloat(tempParsed[0].taxAmount) || 0;
-            const amt = parseFloat(tempParsed[0].amount) || 0;
+            const sub = cleanNum(tempParsed[0].subtotalAmount);
+            const tax = cleanNum(tempParsed[0].taxAmount);
+            const amt = cleanNum(tempParsed[0].amount);
             if (amt > 0 && sub > 0 && Math.abs(sub + tax - amt) > 0.50) {
                 try {
                     const { askClaudeToFix } = require('./document_ai_service.cjs');
@@ -569,7 +586,7 @@ async function reconcilePayment(reference, description, paidAmount, totalBankDra
 
         const assessCandidate = (doc, isPaid) => {
             const data = doc.data();
-            const invoiceAmount = parseFloat(data.amount) || 0;
+            const invoiceAmount = cleanNum(data.amount);
 
             // STRICT RULE: reference match (exact OR strong substring) + vendor word overlap.
             // This replaces the liberal "amount + vendorName contains" scoring that caused
@@ -622,7 +639,7 @@ async function reconcilePayment(reference, description, paidAmount, totalBankDra
                 console.log(`[Reconciliation] Priority Match Winner: €${paidAmount} -> ${matchedDoc.data().vendorName} (Invoice: ${matchedDoc.data().invoiceId})`);
                 
                 // Rule 13: FX Overwrite Check for Priority Winner
-                const originalAmount = parseFloat(matchedDoc.data().amount) || 1;
+                const originalAmount = cleanNum(matchedDoc.data().amount) || 1;
                 if (foreignAmount !== null && Math.abs(originalAmount - foreignAmount) <= 0.05 && Math.abs(originalAmount - paidAmount) > 0.05) {
                     const fxRatio = paidAmount / originalAmount;
                     console.log(`[Reconciliation] 💱 FX OVERWRITE: Priority Winner matched foreign bank amount. Adjusting payload to ${paidAmount} EUR (Ratio: ${fxRatio.toFixed(3)})`);
@@ -682,7 +699,7 @@ async function reconcilePayment(reference, description, paidAmount, totalBankDra
                     if (daysDiff <= 14) {
                         matchedDoc = doc;
                         isCrossCurrencyMatch = true;
-                        const originalAmount = parseFloat(doc.data().amount) || 1;
+                        const originalAmount = cleanNum(doc.data().amount) || 1;
                         const fxRatio = paidAmount / originalAmount;
 
                         console.log(`[Reconciliation] 💱 FX OVERWRITE by Date: ${data.vendorName} on ${pDate}. Adjusting from ${data.amount} ${data.currency} to ${paidAmount} EUR.`);
@@ -824,22 +841,25 @@ async function processBankStatement(csvText, companyId = null) {
         for (const row of records) {
             const state = row['State'] || '';
             let amountStr = row['Amount'] || row['Total amount'] || '';
-            let amount = parseFloat(amountStr.replace(/,/g, ''));
-            if (isNaN(amount) || amount >= 0) continue; // Only process outgoing (negative)
+            // Detect sign BEFORE cleanNum strips minus (cleanNum preserves minus but safer to check raw)
+            const isNegative = String(amountStr).trim().startsWith('-');
+            let amount = cleanNum(amountStr);
+            if (isNegative) amount = -Math.abs(amount);
+            if (!amount || amount >= 0) continue; // Only process outgoing (negative)
 
             // Calculate exact target invoice amount vs total bank drain
             const rawExtractedAmount = Math.abs(amount);
-            
+
             // Extract the transactional Fee if present (e.g., "0.20")
             let feeStr = row['Fee'] || row['Bank Fee'] || row['Комиссия'] || row['Teenustasu'] || '0';
-            const bankFee = Math.abs(parseFloat(feeStr.replace(/,/g, ''))) || 0;
+            const bankFee = Math.abs(cleanNum(feeStr));
 
             let invoiceTargetAmount = rawExtractedAmount;
             let totalBankDrain = rawExtractedAmount;
 
-            // If the CSV provides "Total amount" (99.35) and "Amount" (99.15), invoiceTargetAmount is 99.15 
+            // If the CSV provides "Total amount" (99.35) and "Amount" (99.15), invoiceTargetAmount is 99.15
             const explicitTargetStr = row['Amount'] || '';
-            const explicitTarget = Math.abs(parseFloat(explicitTargetStr.replace(/,/g, ''))) || 0;
+            const explicitTarget = Math.abs(cleanNum(explicitTargetStr));
             
             if (explicitTarget > 0 && explicitTarget !== rawExtractedAmount) {
                 invoiceTargetAmount = explicitTarget;
@@ -858,8 +878,8 @@ async function processBankStatement(csvText, companyId = null) {
             // Rule 13: Extract Foreign Metadata
             let origAmountStr = row['Original amount'] || row['Original Amount'] || row['Target amount'] || row['Original Amount/Currency'] || '';
             // If the bank fuses amount and currency "6.20 USD"
-            let foreignAmountNum = parseFloat(origAmountStr.replace(/[^0-9.]/g, ''));
-            const foreignAmount = isNaN(foreignAmountNum) ? null : Math.abs(foreignAmountNum);
+            const foreignAmountNum = cleanNum(origAmountStr);
+            const foreignAmount = foreignAmountNum ? Math.abs(foreignAmountNum) : null;
             const foreignCurrency = (row['Original Currency'] || row['original currency'] || row['Target currency'] || '').trim();
 
             await reconcilePayment(reference, description, invoiceTargetAmount, totalBankDrain, bankFee, dateStr, foreignAmount, foreignCurrency, companyId);

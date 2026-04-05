@@ -7,9 +7,6 @@ const { enrichCompanyData } = require('./company_enrichment.cjs');
 const { cleanNum } = require('./core/utils.cjs');
 const { saveBankTransaction } = require('./core/bank_dedup.cjs');
 
-// parseAmount = cleanNum (backward compat alias)
-const parseAmount = cleanNum;
-
 // ── Companies cache (TTL 5 min) — avoids re-reading all companies per invoice ──
 let _companiesCache = null;
 let _companiesCacheTime = 0;
@@ -52,13 +49,13 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
                                           .where('status', 'in', ['Unpaid', 'Pending', 'OOTEL', 'NEEDS_REVIEW', 'Needs Action', 'Overdue'])
                                           .get();
             let matched = false;
-            const payAmt = Math.abs(parseAmount(docAiPayload.amount));
+            const payAmt = Math.abs(cleanNum(docAiPayload.amount));
 
             if (!snap.empty) {
                 // Pass 1: Try exact match on remainingAmount (full payment of remaining)
                 for (const doc of snap.docs) {
                     const invData = doc.data();
-                    const remaining = invData.remainingAmount ?? Math.abs(parseAmount(invData.amount));
+                    const remaining = invData.remainingAmount ?? Math.abs(cleanNum(invData.amount));
 
                     if (Math.abs(remaining - payAmt) < 0.50 && vendorMatches(invData, docAiPayload)) {
                         console.log(`[Accountant Agent] 🪙 FULL PAYMENT MATCH! Reconciling Invoice ${invData.invoiceId} (${invData.vendorName}) as 'Paid'!`);
@@ -86,7 +83,7 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
                 if (!matched) {
                     for (const doc of snap.docs) {
                         const invData = doc.data();
-                        const remaining = invData.remainingAmount ?? Math.abs(parseAmount(invData.amount));
+                        const remaining = invData.remainingAmount ?? Math.abs(cleanNum(invData.amount));
 
                         if (payAmt > 0 && payAmt < remaining && vendorMatches(invData, docAiPayload)) {
                             const newRemaining = parseFloat((remaining - payAmt).toFixed(2));
@@ -262,7 +259,7 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
             fileUrl = null;
 
             const hasVendor    = !!(docAiPayload.vendorName && docAiPayload.vendorName !== 'Unknown' && docAiPayload.vendorName !== 'UNKNOWN VENDOR' && docAiPayload.vendorName !== 'Not_Found');
-            const hasAmount    = parseAmount(docAiPayload.amount) > 0;
+            const hasAmount    = cleanNum(docAiPayload.amount) > 0;
             const hasInvoiceId = !!(docAiPayload.invoiceId && !String(docAiPayload.invoiceId).startsWith('DRAFT-') && String(docAiPayload.invoiceId).length > 2);
             const hasVat       = !!(docAiPayload.supplierVat && !['Not_Found','NOT_FOUND_ON_INVOICE','not_found',''].includes(String(docAiPayload.supplierVat).trim()));
             const hasReg       = !!(docAiPayload.supplierRegistration && !['Not_Found','NOT_FOUND_ON_INVOICE','not_found',''].includes(String(docAiPayload.supplierRegistration).trim()));
@@ -320,7 +317,7 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
     }
 
     // --- 1.5. PRE-FLIGHT AUDIT: Zero-Value Enforcement ---
-    const numericAmount = parseAmount(docAiPayload.amount);
+    const numericAmount = cleanNum(docAiPayload.amount);
     
     if (isNaN(numericAmount) || numericAmount === 0 || !docAiPayload.vendorName || docAiPayload.vendorName === 'Unknown') {
         console.error(`[Accountant Agent] 🛑 CRITICAL REJECTION: Non-compliant payload (Amount: ${numericAmount}, Vendor: ${docAiPayload.vendorName}). System blocks junk interpretations.`);
@@ -397,7 +394,7 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
         // Missing VAT is only a CRITICAL issue if the invoice actually charges VAT (taxAmount > 0).
         // VAT-exempt suppliers (leasing, financial services, small businesses below threshold)
         // legitimately have no VAT number — do not quarantine them for this.
-        const invoiceChargesVat = docAiPayload.taxAmount && parseFloat(docAiPayload.taxAmount) > 0;
+        const invoiceChargesVat = docAiPayload.taxAmount && cleanNum(docAiPayload.taxAmount) > 0;
         if (!docAiPayload.supplierVat || docAiPayload.supplierVat === "Not_Found" || docAiPayload.supplierVat === "NOT_FOUND_ON_INVOICE" || String(docAiPayload.supplierVat).trim() === "") {
             docAiPayload.supplierVat = "";
             warnings.push("INFO: Supplier VAT not found — can be filled manually.");
@@ -424,7 +421,7 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
                 const pData = pendingDoc.data();
                 if (!vendorMatches(pData, docAiPayload)) continue;
 
-                const pRemaining = pData.remainingAmount ?? Math.abs(parseAmount(pData.amount));
+                const pRemaining = pData.remainingAmount ?? Math.abs(cleanNum(pData.amount));
 
                 if (Math.abs(pRemaining - creditAmount) <= 0.05) {
                     // Exact match — mark original as Paid
@@ -476,7 +473,7 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
             const cleanNewId = String(docAiPayload.invoiceId || '').replace(/[^a-zA-Z0-9]/g, '');
             const cleanOldId = String(data.invoiceId || '').replace(/[^a-zA-Z0-9]/g, '');
             
-            const amtMatches = Math.abs((parseFloat(data.amount)||0) - parseFloat(docAiPayload.amount)) < 0.05;
+            const amtMatches = Math.abs(cleanNum(data.amount) - cleanNum(docAiPayload.amount)) < 0.05;
             
             const newVendor = String(docAiPayload.vendorName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
             const oldVendor = String(data.vendorName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -633,4 +630,4 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
     };
 }
 
-module.exports = { auditAndProcessInvoice, parseAmount };
+module.exports = { auditAndProcessInvoice };

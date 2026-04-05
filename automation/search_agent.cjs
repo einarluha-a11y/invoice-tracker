@@ -5,7 +5,7 @@ const { simpleParser } = require('mailparser');
 const { v4: uuidv4 } = require('uuid');
 const pdfParse = require('pdf-parse');
 const { processInvoiceWithDocAI } = require('./document_ai_service.cjs');
-const { parseAmount } = require('./accountant_agent.cjs');
+const { cleanNum } = require('./core/utils.cjs');
 
 // Avoid circular dependency with accountant_agent by just creating the DB insert locally,
 // or we can use accountant_agent if careful. Let's just do a clean native insertion!
@@ -98,9 +98,9 @@ async function findAndInjectMissingInvoice(vendorName, targetAmount, companyId) 
                                     continue;
                                 }
                                 
-                                // Do the exact mathematical lock-in (shared parseAmount from accountant_agent)
-                                const invAmt = Math.abs(parseAmount(inv.amount));
-                                const payAmt = Math.abs(parseAmount(targetAmount));
+                                // Do the exact mathematical lock-in (shared cleanNum from core/utils)
+                                const invAmt = Math.abs(cleanNum(inv.amount));
+                                const payAmt = Math.abs(cleanNum(targetAmount));
                                 
                                 if (Math.abs(invAmt - payAmt) < 0.05) {
                                     console.log(`[Search Agent] 🎯 BULLSEYE! Missing Invoice ${inv.invoiceId} recovered structurally!`);

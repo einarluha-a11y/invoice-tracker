@@ -17,6 +17,7 @@ require('dotenv').config({ path: __dirname + '/.env' });
 const { parse } = require('csv-parse/sync');
 const { admin, db } = require('./core/firebase.cjs');
 const { saveBankTransaction } = require('./core/bank_dedup.cjs');
+const { cleanNum } = require('./core/utils.cjs');
 
 const SAVE = process.argv.includes('--save');
 
@@ -92,21 +93,23 @@ async function main() {
 
         for (const row of records) {
             let amountStr = row['Amount'] || row['Total amount'] || '';
-            let amount = parseFloat(amountStr.replace(/,/g, ''));
-            if (isNaN(amount) || amount >= 0) continue; // Only outgoing
+            const isNegative = String(amountStr).trim().startsWith('-');
+            let amount = cleanNum(amountStr);
+            if (isNegative) amount = -Math.abs(amount);
+            if (!amount || amount >= 0) continue; // Only outgoing
 
             const rawAmount = Math.abs(amount);
 
             // Fee
             let feeStr = row['Fee'] || row['Bank Fee'] || row['Комиссия'] || row['Teenustasu'] || '0';
-            const bankFee = Math.abs(parseFloat(feeStr.replace(/,/g, ''))) || 0;
+            const bankFee = Math.abs(cleanNum(feeStr));
 
             // Invoice target vs total drain
             let invoiceTargetAmount = rawAmount;
             let totalBankDrain = rawAmount;
 
             const explicitTargetStr = row['Amount'] || '';
-            const explicitTarget = Math.abs(parseFloat(explicitTargetStr.replace(/,/g, ''))) || 0;
+            const explicitTarget = Math.abs(cleanNum(explicitTargetStr));
 
             if (explicitTarget > 0 && explicitTarget !== rawAmount) {
                 invoiceTargetAmount = explicitTarget;
@@ -122,8 +125,8 @@ async function main() {
 
             // Foreign currency
             let origAmountStr = row['Original amount'] || row['Original Amount'] || row['Target amount'] || '';
-            let foreignAmountNum = parseFloat(origAmountStr.replace(/[^0-9.]/g, ''));
-            const foreignAmount = isNaN(foreignAmountNum) ? null : Math.abs(foreignAmountNum);
+            const foreignAmountNum = cleanNum(origAmountStr);
+            const foreignAmount = foreignAmountNum ? Math.abs(foreignAmountNum) : null;
             const foreignCurrency = (row['Original Currency'] || row['original currency'] || row['Target currency'] || '').trim();
 
             const txData = {

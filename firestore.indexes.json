@@ -32,6 +32,14 @@
         { "fieldPath": "companyId", "order": "ASCENDING" },
         { "fieldPath": "date", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "invoices",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "companyId", "order": "ASCENDING" },
+        { "fieldPath": "fileBasename", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []
