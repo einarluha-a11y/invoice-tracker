@@ -4,6 +4,7 @@ const pdfParse = require('pdf-parse');
 require('dotenv').config({ path: __dirname + '/.env' });
 
 const { db } = require('./core/firebase.cjs');
+const { cleanNum } = require('./core/utils.cjs');
 
 const rl = readline.createInterface({
     input: process.stdin,
@@ -75,7 +76,7 @@ async function getVendorAliases(companyId) {
 async function reconcileDryRunOrFix(reference, vendorName, paidAmount, paymentDateStr, companyId, isFix) {
     console.log(`\n🔍 Analyzing Target: €${paidAmount} paid to [${vendorName}] on ${paymentDateStr || 'Unknown date'}`);
     
-    paidAmount = Math.abs(parseFloat(paidAmount)) || 0;
+    paidAmount = Math.abs(cleanNum(paidAmount));
     if (paidAmount === 0) {
         console.log(`   🔸 SKIPPED: Amount is 0 or invalid.`);
         return;
@@ -113,7 +114,7 @@ async function reconcileDryRunOrFix(reference, vendorName, paidAmount, paymentDa
     
     const assessCandidate = (doc, isPaid) => {
         const data = doc.data();
-        const invoiceAmount = parseFloat(data.amount) || 0;
+        const invoiceAmount = cleanNum(data.amount);
         
         // Use 0.50 tolerance to safely absorb Revolut's €0.20/€0.25 transfer fees mapped to total transit.
         const isAmountMatch = Math.abs(invoiceAmount - paidAmount) <= 0.50;

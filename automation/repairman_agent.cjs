@@ -32,6 +32,7 @@ const {
     logRepair, incrementRepairAttempts, getRepairAttempts, markRepairPending,
     getStagedDocument,
 } = require('./core/staging.cjs');
+const { cleanNum } = require('./core/utils.cjs');
 
 // ─── CLI Arguments ───────────────────────────────────────────────────────────
 
@@ -276,7 +277,7 @@ const { canReconcile, matchReference, vendorOverlap } = require('./core/reconcil
  * Returns 'Paid' if found, null otherwise.
  */
 async function checkBankTransactions(invoiceId, oldData, newData) {
-    const amount = parseFloat(newData.amount || oldData.amount) || 0;
+    const amount = cleanNum(newData.amount || oldData.amount);
     if (amount <= 0) return null;
 
     const companyId = oldData.companyId;
@@ -501,9 +502,9 @@ async function repairInvoice(invoiceId, invoiceData) {
     const OUR_COMPANIES = ['global technics', 'ideacom'];
 
     function detectQcIssues() {
-        const qcAmount = parseFloat(updates.amount ?? newData.amount ?? invoiceData.amount ?? 0);
-        const qcSub = parseFloat(updates.subtotalAmount ?? newData.subtotalAmount ?? invoiceData.subtotalAmount ?? 0);
-        const qcTax = parseFloat(updates.taxAmount ?? newData.taxAmount ?? invoiceData.taxAmount ?? 0);
+        const qcAmount = cleanNum(updates.amount ?? newData.amount ?? invoiceData.amount);
+        const qcSub = cleanNum(updates.subtotalAmount ?? newData.subtotalAmount ?? invoiceData.subtotalAmount);
+        const qcTax = cleanNum(updates.taxAmount ?? newData.taxAmount ?? invoiceData.taxAmount);
         const qcVendor = (updates.vendorName || newData.vendorName || invoiceData.vendorName || '').toLowerCase();
         const issues = [];
         if (qcAmount > 0 && qcSub > 0 && Math.abs(qcSub + qcTax - qcAmount) > 0.50)
@@ -758,7 +759,7 @@ async function runAudit() {
         const oldStatus = data.status;
 
         if (oldStatus !== 'Paid' && oldStatus !== 'Duplicate') {
-            const invoiceAmount = parseFloat(data.amount) || 0;
+            const invoiceAmount = cleanNum(data.amount);
 
             // Credit notes (negative amounts) are always Paid
             if (invoiceAmount < 0) {
@@ -780,7 +781,7 @@ async function runAudit() {
                 for (const tx of companyTxs) {
                     if (invoiceDate && tx.date && tx.date < invoiceDate) continue;
 
-                    const txAmount = parseFloat(tx.amount) || 0;
+                    const txAmount = cleanNum(tx.amount);
                     if (Math.abs(txAmount - invoiceAmount) > 0.50) continue;
 
                     const txVendorFull = (tx.counterparty || '').toLowerCase();

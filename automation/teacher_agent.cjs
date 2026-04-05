@@ -1082,8 +1082,8 @@ async function runTeachMode(filePath, vendorHint) {
         if (input.trim() !== '') {
             // Convert numeric fields
             if (['amount', 'subtotalAmount', 'taxAmount'].includes(field)) {
-                const num = parseFloat(input.replace(',', '.'));
-                corrected[field] = isNaN(num) ? input.trim() : num;
+                const num = cleanNum(input);
+                corrected[field] = num || input.trim();
             } else {
                 corrected[field] = input.trim();
             }
