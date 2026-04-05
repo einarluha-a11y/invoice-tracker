@@ -19,7 +19,11 @@ function cleanNum(str) {
     } else if (s.includes(',')) {
         s = s.replace(',', '.');
     }
-    return parseFloat(s) || 0;
+    // At this point s is a plain US-format decimal string. Use Number() for
+    // strict parsing — rejects trailing garbage ("10abc" → NaN), then fall
+    // back to 0 via isFinite check (handles NaN and ±Infinity).
+    const n = Number(s);
+    return isFinite(n) ? n : 0;
 }
 
 module.exports = { cleanNum };

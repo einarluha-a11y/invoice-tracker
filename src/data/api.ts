@@ -1,6 +1,6 @@
 import { collection, onSnapshot, doc, getDoc, getDocs, deleteDoc, updateDoc, setDoc, query, orderBy, where, limit, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Invoice, InvoiceStatus } from './mockInvoices';
+import type { Invoice, InvoiceStatus } from './types';
 
 export interface RawInvoiceRow {
     id: string;

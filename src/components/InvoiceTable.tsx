@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { Invoice, InvoiceStatus } from '../data/mockInvoices';
+import type { Invoice, InvoiceStatus } from '../data/types';
 import { InvoicePdfViewer } from './InvoicePdfViewer';
 import './InvoiceTable.css';
 

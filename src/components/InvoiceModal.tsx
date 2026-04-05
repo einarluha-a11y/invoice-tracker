@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Invoice, InvoiceStatus } from '../data/mockInvoices';
+import type { Invoice, InvoiceStatus } from '../data/types';
 import { useTranslation } from 'react-i18next';
 
 interface InvoiceModalProps {
