@@ -653,6 +653,19 @@ async function validateAndTeach(invoiceData, companyId) {
 
     // Charter rules already applied in step 1a2 (before global fallbacks)
 
+    // ── 4a. VENDOR NAME CLEANUP: strip trailing \n + city lines ─────────────
+    // DocAI sometimes extracts multi-line text as vendorName:
+    //   "FFC LOGISTICS\nKOHTLA-JÄRVE" → "FFC LOGISTICS"
+    //   "NUNNER LOGISTICS OÜ\nTALLINN\nEE123456" → "NUNNER LOGISTICS OÜ"
+    // Keep only the first non-empty line.
+    if (invoice.vendorName && invoice.vendorName.includes('\n')) {
+        const firstLine = invoice.vendorName.split('\n').map(s => s.trim()).find(s => s.length > 0);
+        if (firstLine && firstLine !== invoice.vendorName) {
+            corrections.push(`Vendor cleanup: stripped multi-line (kept "${firstLine}")`);
+            invoice.vendorName = firstLine;
+        }
+    }
+
     // ── 4b. LEGAL NAME RULE: vendor name must include company suffix ────────
     // DocAI often extracts logo text ("SMC", "electrobit") instead of the legal name
     // ("SMC Automation OÜ", "Electrobit OÜ"). Search rawText lines for full name.
@@ -720,7 +733,12 @@ async function validateAndTeach(invoiceData, companyId) {
                     mathWrong = true; // wildly off — likely wrong currency
                 } else {
                     corrections.push(`WARNING: Math mismatch: ${invoice.subtotalAmount} + ${invoice.taxAmount} = ${computed} ≠ ${invoice.amount}`);
+                    // Non-blocking flag for UI badge — does not affect status
+                    invoice.mathMismatch = true;
                 }
+            } else if (invoice.mathMismatch) {
+                // Math now correct — clear stale flag
+                delete invoice.mathMismatch;
             }
         }
 

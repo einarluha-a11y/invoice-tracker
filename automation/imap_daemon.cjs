@@ -16,6 +16,8 @@ const { admin, db, bucket } = require('./core/firebase.cjs');
 const { stageDocument, markStagingResult } = require('./core/staging.cjs');
 // Bank transaction dedup
 const { saveBankTransaction } = require('./core/bank_dedup.cjs');
+// Strict reconciliation rules (shared with repairman_agent, api.ts)
+const { canReconcile: strictCanReconcile, matchReference, vendorOverlap } = require('./core/reconcile_rules.cjs');
 
 // --- DYNAMIC DICTIONARY ENGINE (Node.js Memory Cache) ---
 const companyAliasCache = {};
@@ -569,34 +571,40 @@ async function reconcilePayment(reference, description, paidAmount, totalBankDra
             const data = doc.data();
             const invoiceAmount = parseFloat(data.amount) || 0;
 
-            // Global tolerance ±0.50 EUR covers bank transfer fees (Revolut €0.20, etc.)
+            // STRICT RULE: reference match (exact OR strong substring) + vendor word overlap.
+            // This replaces the liberal "amount + vendorName contains" scoring that caused
+            // false Paid matches (PRONTO pl21-25 → pl21-27 + pl21-28, NUNNER → FFC cross-vendor).
+            const refMatch = matchReference(data.invoiceId, reference);
+            const vendorOk = vendorOverlap(data.vendorName, bankDesc);
+
+            // Ettemaksuteatis / FX fallback: allow vendor-only match with tighter amount tolerance
+            // ONLY for prepayment references, where invoiceId naturally differs from tx ref.
+            const allowVendorOnly = isEttemaksPayment;
+
+            // Amount check: exact ±0.50 tolerance (covers bank fees) OR foreign amount match
             const isAmountMatch = Math.abs(invoiceAmount - paidAmount) <= 0.50 ||
                                   (foreignAmount !== null && Math.abs(invoiceAmount - foreignAmount) <= 0.50);
 
-            const dbId = normalizeAlphaNum(data.invoiceId);
-            const dbDigits = extractDigits(data.invoiceId);
+            if (!isAmountMatch) return;
 
-            const vendorWords = (data.vendorName || '').toLowerCase().split(/[^a-z0-9]/).filter(w => w.length >= 3);
-            const vNameMatch = vendorWords.some(word => bankDesc.includes(word));
-
-            let refMatchScore = 0;
-            if (dbId) {
-                if (dbId === bankRefClean) refMatchScore = 150;
-                else if (dbDigits.length >= 4 && refDigits.length >= 4 && (dbDigits === refDigits)) refMatchScore = 100;
-                // Min 5 chars for substring to prevent short historic IDs ('2603') from hijacking new active IDs ('260399843')
-                else if (dbId.length >= 5 && bankRefClean.includes(dbId)) refMatchScore = 50;
-            }
-
-            if (isAmountMatch) {
-                if (refMatchScore > 0 || vNameMatch) {
-                    let totalScore = refMatchScore;
-                    if (vNameMatch) totalScore += 25;
-                    // Extreme priority bias: Unpaid identical bills ALWAYS beat Paid identical bills
-                    if (!isPaid) totalScore += 500;   
-                    
-                    candidates.push({ doc, isPaid, totalScore });
+            // Must have BOTH reference match AND vendor overlap (strict mode).
+            // Exception: prepayment (ettemaks) — vendor-only match allowed.
+            const qualifies = (refMatch && vendorOk) || (allowVendorOnly && vendorOk);
+            if (!qualifies) {
+                if (!refMatch && vendorOk) {
+                    console.log(`[Reconciliation] SKIP vendor-only match: ${data.invoiceId} (${data.vendorName}) — ref "${reference}" doesn't match invoiceId "${data.invoiceId}"`);
                 }
+                return;
             }
+
+            let totalScore = 0;
+            if (refMatch === 'exact') totalScore += 150;
+            else if (refMatch === 'strong') totalScore += 75;
+            if (vendorOk) totalScore += 25;
+            // Extreme priority bias: Unpaid identical bills ALWAYS beat Paid identical bills
+            if (!isPaid) totalScore += 500;
+
+            candidates.push({ doc, isPaid, totalScore });
         };
 
         paidDocs.forEach(d => assessCandidate(d, true));
@@ -652,8 +660,8 @@ async function reconcilePayment(reference, description, paidAmount, totalBankDra
 
             for (const doc of pendingDocs) {
                 const data = doc.data();
-                const vendorWords = (data.vendorName || '').toLowerCase().split(/[^a-z0-9]/).filter(w => w.length >= 3);
-                const isNameMatch = vendorWords.some(word => bankDesc.includes(word));
+                // STRICT: require vendor word overlap via central rule (stopword-aware)
+                const isNameMatch = vendorOverlap(data.vendorName, bankDesc);
 
                 if (isNameMatch && data.dateCreated) {
                     // Try parsing database dateCreated
