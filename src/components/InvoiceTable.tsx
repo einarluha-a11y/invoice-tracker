@@ -377,7 +377,17 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                                 </td>
                                 <td data-label={t('table.amount')} className="amount">
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', alignItems: 'flex-start' }}>
-                                        <span style={{ fontWeight: 600 }}>{formatCurrency(invoice.amount, invoice.currency)}</span>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                            <span style={{ fontWeight: 600 }}>{formatCurrency(invoice.amount, invoice.currency)}</span>
+                                            {(invoice as any).mathMismatch && (
+                                                <span
+                                                    title="Subtotal + Tax ≠ Amount — требует ручной проверки"
+                                                    style={{ fontSize: '0.65rem', fontWeight: 700, padding: '2px 5px', borderRadius: '3px', background: '#fff3cd', color: '#856404', border: '1px solid #ffc107', cursor: 'help' }}
+                                                >
+                                                    ⚠ MATH
+                                                </span>
+                                            )}
+                                        </div>
                                         {invoice.subtotalAmount !== undefined && (
                                             <div style={{ display: 'flex', flexDirection: 'column', fontSize: '0.7rem', fontWeight: 400, color: 'var(--text-secondary)', marginTop: '2px' }}>
                                                 <span>Sub: {formatCurrency(invoice.subtotalAmount, invoice.originalForeignCurrency || invoice.currency)}</span>

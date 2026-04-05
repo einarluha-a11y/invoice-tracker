@@ -268,9 +268,11 @@ async function getOriginalFile(invoiceData) {
 
 // ─── Bank Transaction Check ─────────────────────────────────────────────────
 
+const { canReconcile, matchReference, vendorOverlap } = require('./core/reconcile_rules.cjs');
+
 /**
  * Check bank_transactions archive for a matching payment.
- * Matches by: amount (±0.50), vendor name (fuzzy), date range (±60 days from invoice date).
+ * Uses strict canReconcile rule (reference + vendor overlap + amount + idempotency).
  * Returns 'Paid' if found, null otherwise.
  */
 async function checkBankTransactions(invoiceId, oldData, newData) {
@@ -280,53 +282,91 @@ async function checkBankTransactions(invoiceId, oldData, newData) {
     const companyId = oldData.companyId;
     if (!companyId) return null;
 
-    // Query transactions for this company
     const snap = await db.collection('bank_transactions')
         .where('companyId', '==', companyId)
         .get();
 
     if (snap.empty) return null;
 
-    const vendorName = (newData.vendorName || oldData.vendorName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-    const invoiceNum = (newData.invoiceId || oldData.invoiceId || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const invoice = {
+        invoiceId: newData.invoiceId || oldData.invoiceId,
+        vendorName: newData.vendorName || oldData.vendorName,
+        amount,
+    };
 
     const invoiceDate = newData.dateCreated || oldData.dateCreated || '';
 
     for (const doc of snap.docs) {
         const tx = doc.data();
-        const txAmount = parseFloat(tx.amount) || 0;
-
-        // Amount match (±0.50 for bank fees)
-        if (Math.abs(txAmount - amount) > 0.50) continue;
-
         // Date guard: payment cannot be before invoice was created
         if (invoiceDate && tx.date && tx.date < invoiceDate) continue;
 
-        const txVendor = (tx.counterparty || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-        const txRef = (tx.reference || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        // Skip if this tx is already matched to a different invoice (idempotency)
+        if (tx.matchedInvoiceId && tx.matchedInvoiceId !== invoiceId) continue;
 
-        // Reference match: invoice number appears in bank reference
-        const refMatch = invoiceNum.length > 3 &&
-            (txRef.includes(invoiceNum) || invoiceNum.includes(txRef));
-
-        // Vendor-only match: amount + vendor match, BUT bank reference must not
-        // contain a DIFFERENT invoice number (prevents matching recurring invoices)
-        const vendorMatch = vendorName.length > 3 && txVendor.length > 3 &&
-            (vendorName.includes(txVendor) || txVendor.includes(vendorName));
-
-        // If bank tx has a reference with a different invoice-like number, skip
-        if (vendorMatch && !refMatch && txRef.length > 3) {
-            // Bank reference contains some ID that is NOT our invoice → different invoice
-            continue;
-        }
-
-        if (vendorMatch || refMatch) {
-            console.log(`  [Repairman] 🏦 Found matching bank transaction: €${txAmount} to "${tx.counterparty}" ref="${tx.reference}" on ${tx.date}`);
+        const result = canReconcile(invoice, { ...tx, matchedInvoiceId: null });
+        if (result.ok) {
+            console.log(`  [Repairman] 🏦 Strict match: €${tx.amount} to "${tx.counterparty}" ref="${tx.reference}" (${result.kind}/${result.payment})`);
             return 'Paid';
         }
     }
 
     return null;
+}
+
+/**
+ * Audit all Paid invoices — verify each has a legitimately matched bank transaction.
+ * Reverts false Paid statuses to Overdue. Dry-run default; pass --fix to apply.
+ */
+async function checkAllPaidInvoices({ fix = false } = {}) {
+    console.log(`\n${'═'.repeat(60)}`);
+    console.log(`Audit Paid invoices ${fix ? '(LIVE)' : '(DRY RUN)'}`);
+    console.log(`${'═'.repeat(60)}\n`);
+
+    const paidSnap = await db.collection('invoices').where('status', '==', 'Paid').get();
+    let checked = 0, reverted = 0, suspicious = 0, ok = 0;
+
+    for (const invDoc of paidSnap.docs) {
+        const d = invDoc.data();
+        checked++;
+
+        const txSnap = await db.collection('bank_transactions')
+            .where('matchedInvoiceId', '==', invDoc.id)
+            .get();
+
+        if (txSnap.empty) {
+            console.log(`[audit] ${invDoc.id} (${d.vendorName} / ${d.invoiceId}): Paid without bank link`);
+            suspicious++;
+            continue;
+        }
+
+        const tx = txSnap.docs[0].data();
+        const refOk = matchReference(d.invoiceId, tx.reference);
+        const vendorOk = vendorOverlap(d.vendorName, tx.counterparty);
+
+        if (refOk && vendorOk) {
+            ok++;
+            continue;
+        }
+
+        console.log(`[audit] REVERT ${invDoc.id}: ${d.vendorName} / ${d.invoiceId} ← tx ${txSnap.docs[0].id} (ref=${tx.reference}, cp=${tx.counterparty}) refOk=${!!refOk} vendorOk=${vendorOk}`);
+        reverted++;
+
+        if (fix) {
+            try {
+                await invDoc.ref.update({ status: 'Overdue' });
+                await txSnap.docs[0].ref.update({ matchedInvoiceId: null });
+            } catch (err) {
+                console.error(`    ERROR reverting: ${err.message}`);
+            }
+        }
+    }
+
+    console.log(`\n${'─'.repeat(60)}`);
+    console.log(`Checked: ${checked} | OK: ${ok} | Reverted: ${reverted} | Suspicious (no link): ${suspicious}`);
+    if (!fix && reverted > 0) console.log(`DRY RUN — run with --audit-paid --fix to apply`);
+    console.log(`${'═'.repeat(60)}\n`);
+    return { checked, ok, reverted, suspicious };
 }
 
 // ─── Core Repair Function ───────────────────────────────────────────────────
@@ -949,7 +989,14 @@ async function main() {
 
 // Run as CLI or as library
 if (require.main === module) {
-    main().catch(err => { console.error('Fatal:', err.message); process.exit(1); });
+    // Special mode: --audit-paid
+    if (hasFlag('--audit-paid')) {
+        checkAllPaidInvoices({ fix: hasFlag('--fix') })
+            .then(() => process.exit(0))
+            .catch(err => { console.error('Fatal:', err.message); process.exit(1); });
+    } else {
+        main().catch(err => { console.error('Fatal:', err.message); process.exit(1); });
+    }
 }
 
-module.exports = { repairInvoice, findBadInvoices };
+module.exports = { repairInvoice, findBadInvoices, checkAllPaidInvoices };

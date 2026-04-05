@@ -457,19 +457,19 @@ export const updateInvoice = async (invoiceId: string, data: Partial<Invoice>): 
     }
 
     // ── Post-save reconciliation: check bank_transactions for payment ──────
-    // After manual edit, check if this invoice was already paid.
+    // STRICT RULES (same as automation/core/reconcile_rules.cjs):
+    //  1. Reference: exact OR strong substring (≥5 chars, one fully contains other)
+    //  2. Vendor: ≥1 common word ≥3 chars after stripping legal suffixes + stopwords
+    //  3. Amount: ±0.50 tolerance OR partial
+    //  4. Idempotency: skip if tx.matchedInvoiceId is set to a different invoice
     try {
         const freshSnap = await getDoc(invoiceRef);
         if (freshSnap.exists()) {
             const d = freshSnap.data();
             if (d.companyId && (d.status !== 'Paid' || (d.currency && d.currency !== 'EUR'))) {
                 const invoiceAmount = parseFloat(d.amount) || 0;
-                const invoiceNum = (d.invoiceId || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-                const vendorWords = (d.vendorName || '').toLowerCase().split(/[^a-zöäüõ0-9]+/).filter((w: string) => w.length >= 3);
                 const invoiceDate = d.dateCreated || '';
 
-                // Limit to 200 most recent transactions + order by date DESC
-                // (reconciliation rarely needs matches older than ~6 months)
                 const txSnap = await getDocs(query(
                     collection(db!, 'bank_transactions'),
                     where('companyId', '==', d.companyId),
@@ -479,36 +479,62 @@ export const updateInvoice = async (invoiceId: string, data: Partial<Invoice>): 
 
                 const isForeignCurrency = d.currency && d.currency !== 'EUR';
 
+                // Helpers mirroring automation/core/reconcile_rules.cjs
+                const STOPWORDS = new Set(['logistics','transport','trans','cargo','freight','services','service','group','holding','international','company','solutions','systems','consulting','global','trade','trading','auto','motors','store']);
+                const LEGAL_SUFFIXES = /\b(o[uü]|as|sa|sia|sp\.?\s*z\s*o\.?\s*o\.?|gmbh|llc|ltd|inc|ag|bv|srl|spa)\b/gi;
+                const CITIES = /\b(tallinn|tartu|narva|p[aä]rnu|kohtla[\s-]?j[aä]rve|warsaw|warszawa|riga|vilnius|helsinki|stockholm|moscow|kiev|kyiv)\b/gi;
+                const tokenize = (s: string): string[] => (s || '').toLowerCase().replace(/\n/g,' ').replace(LEGAL_SUFFIXES,' ').replace(CITIES,' ').replace(/https?:\/\/\S+/g,' ').replace(/[^a-zа-яёõäöü0-9\s]/gi,' ').split(/\s+/).filter(w => w.length >= 3 && !STOPWORDS.has(w));
+                const matchRef = (invId: string, txRef: string): false | 'exact' | 'strong' => {
+                    if (!invId || !txRef) return false;
+                    const a = String(invId).replace(/[\s\-\/]/g, '').toLowerCase();
+                    const b = String(txRef).replace(/[\s\-\/]/g, '').toLowerCase();
+                    if (!a || !b) return false;
+                    if (a === b) return 'exact';
+                    if (a.length >= 5 && b.length >= 5) {
+                        const [sh, lg] = a.length < b.length ? [a, b] : [b, a];
+                        if (lg.includes(sh)) return 'strong';
+                    }
+                    return false;
+                };
+                const vendorOverlap = (a: string, b: string): boolean => {
+                    const sa = new Set(tokenize(a));
+                    const sb = new Set(tokenize(b));
+                    if (sa.size === 0 || sb.size === 0) return false;
+                    for (const x of sa) if (sb.has(x)) return true;
+                    return false;
+                };
+
                 for (const txDoc of txSnap.docs) {
                     const tx = txDoc.data();
                     const txAmount = parseFloat(tx.amount) || 0;
+
+                    // Idempotency: skip if tx is already matched to another invoice
+                    if (tx.matchedInvoiceId && tx.matchedInvoiceId !== invoiceRef.id) continue;
+
+                    // Date guard
                     if (invoiceDate && tx.date && tx.date < invoiceDate) continue;
 
-                    const txVendor = (tx.counterparty || '').toLowerCase();
-                    const txRef = (tx.reference || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-
-                    const refMatch = invoiceNum.length > 3 && (txRef.includes(invoiceNum) || invoiceNum.includes(txRef));
-                    const vendorMatch = vendorWords.length > 0 && vendorWords.some((w: string) => txVendor.includes(w));
-                    const isEttemaks = (tx.reference || '').toLowerCase().includes('ettemaks');
-
-                    // Amount check: skip if amounts don't match (unless foreign currency)
+                    // Amount check
                     if (!isForeignCurrency && Math.abs(txAmount - invoiceAmount) > 0.50) continue;
 
-                    if (vendorMatch && !refMatch && txRef.length > 3 && !isEttemaks) continue;
-                    if (vendorMatch || refMatch) {
-                        // FX conversion: replace amount with EUR from bank statement
-                        const updatePayload: any = { status: 'Paid', previousStatus: d.status };
-                        if (isForeignCurrency) {
-                            updatePayload.originalForeignAmount = invoiceAmount;
-                            updatePayload.originalForeignCurrency = d.currency;
-                            updatePayload.amount = txAmount;
-                            updatePayload.currency = 'EUR';
-                            console.log(`[Post-Save Reconciliation] FX: ${d.invoiceId} ${invoiceAmount} ${d.currency} → ${txAmount} EUR`);
-                        }
-                        await updateDoc(invoiceRef, updatePayload);
-                        console.log(`[Post-Save Reconciliation] Invoice ${d.invoiceId} → Paid (matched bank tx €${txAmount})`);
-                        break;
+                    // Strict: need BOTH reference match AND vendor overlap
+                    const refOk = matchRef(d.invoiceId, tx.reference);
+                    const vendorOk = vendorOverlap(d.vendorName, tx.counterparty);
+                    if (!refOk || !vendorOk) continue;
+
+                    const updatePayload: any = { status: 'Paid', previousStatus: d.status };
+                    if (isForeignCurrency) {
+                        updatePayload.originalForeignAmount = invoiceAmount;
+                        updatePayload.originalForeignCurrency = d.currency;
+                        updatePayload.amount = txAmount;
+                        updatePayload.currency = 'EUR';
+                        console.log(`[Post-Save Reconciliation] FX: ${d.invoiceId} ${invoiceAmount} ${d.currency} → ${txAmount} EUR`);
                     }
+                    await updateDoc(invoiceRef, updatePayload);
+                    // Mark tx as matched for idempotency
+                    await updateDoc(txDoc.ref, { matchedInvoiceId: invoiceRef.id });
+                    console.log(`[Post-Save Reconciliation] Invoice ${d.invoiceId} → Paid (strict match: ${refOk}/${tx.reference}, €${txAmount})`);
+                    break;
                 }
             }
         }
