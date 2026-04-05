@@ -263,6 +263,53 @@ async function getFewShotExamples(vendorHint = null, maxExamples = 2) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  CURRENCY CHANGE RULE — single source of truth
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * CRITICAL RULE: whenever currency changes, re-extract amount in the new currency.
+ * Never keep the old-currency number with a new-currency label.
+ *
+ * Use this helper EVERYWHERE instead of direct `invoice.currency = X`.
+ *
+ * @param {object} invoice — the invoice being modified (mutated in place)
+ * @param {string} newCurrency — target ISO code (e.g. "EUR")
+ * @param {string} source — label for correction log (e.g. "Charter rule", "Example")
+ * @param {Array<string>} corrections — corrections array to append to
+ * @returns {boolean} true if currency was changed
+ */
+function setCurrencySafely(invoice, newCurrency, source, corrections) {
+    if (!newCurrency || !invoice.currency || invoice.currency === newCurrency) return false;
+    const oldCurrency = invoice.currency;
+    invoice.currency = newCurrency;
+    corrections.push(`${source}: currency ${oldCurrency} → ${newCurrency}`);
+
+    if (invoice.amount <= 0) return true;
+    const rawText = invoice._rawText || '';
+    if (!rawText) return true;
+
+    // Find all amounts labeled with the new currency in the document
+    const re = new RegExp(`([\\d\\s]+[,.]\\d{2})\\s*${newCurrency}\\b`, 'gi');
+    const amounts = [...rawText.matchAll(re)].map(m => cleanNum(m[1])).filter(n => n > 0);
+
+    if (amounts.length > 0) {
+        // The largest amount labeled with new currency is usually the total
+        const newAmount = Math.max(...amounts);
+        if (Math.abs(newAmount - invoice.amount) > 0.01) {
+            corrections.push(`${source}: amount ${invoice.amount} ${oldCurrency} → ${newAmount} ${newCurrency} (re-extracted from text)`);
+            invoice.amount = newAmount;
+            invoice.subtotalAmount = newAmount;
+            invoice.taxAmount = 0;
+        }
+    } else {
+        corrections.push(`WARNING: ${source} changed currency ${oldCurrency} → ${newCurrency} but no matching amount in rawText. Cleared amount.`);
+        invoice.amount = 0;
+        invoice.subtotalAmount = 0;
+        invoice.taxAmount = 0;
+    }
+    return true;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  PIPELINE MODE — validateAndTeach (called by imap_daemon after Scout)
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -438,12 +485,11 @@ async function validateAndTeach(invoiceData, companyId) {
     // ── 1b. Apply global rules ──────────────────────────────────────────────
     const [currencyRuleDoc, termsSnap, taxRuleDoc] = globalRulesResult;
 
-    // VAT country → currency
+    // VAT country → currency (uses safe setter: re-extracts amount from text)
     if (currencyRuleDoc && currencyRuleDoc.exists) {
         const rule = currencyRuleDoc.data();
         if (rule.count >= 2 && rule.value && invoice.currency !== rule.value) {
-            corrections.push(`Global rule: VAT ${vatPrefix} → currency ${invoice.currency} → ${rule.value} (${rule.count} edits)`);
-            invoice.currency = rule.value;
+            setCurrencySafely(invoice, rule.value, `Global rule VAT ${vatPrefix}`, corrections);
         }
     }
 
@@ -550,11 +596,10 @@ async function validateAndTeach(invoiceData, companyId) {
         }
 
         // Static vendor fields: examples ALWAYS override DocAI (manual correction = trusted)
-        const STATIC_FIELDS = ['supplierVat', 'supplierRegistration', 'currency'];
-        const oldCurrency = invoice.currency;
-        for (const field of STATIC_FIELDS) {
+        // Currency uses setCurrencySafely() to auto re-extract amount from text.
+        const STATIC_SIMPLE_FIELDS = ['supplierVat', 'supplierRegistration'];
+        for (const field of STATIC_SIMPLE_FIELDS) {
             if (!gt[field] || isEmpty(gt[field])) continue;
-
             if (invoice[field] !== gt[field]) {
                 if (!isEmpty(invoice[field])) {
                     corrections.push(`Corrected ${field}: ${invoice[field]} → ${gt[field]} (from example)`);
@@ -564,40 +609,9 @@ async function validateAndTeach(invoiceData, companyId) {
                 invoice[field] = gt[field];
             }
         }
-
-        // CRITICAL RULE: if currency was changed, the amount MUST also be re-extracted.
-        // Never keep a number extracted in the old currency under the new currency label.
-        if (oldCurrency && invoice.currency && oldCurrency !== invoice.currency && invoice.amount > 0) {
-            const rawText = invoice._rawText || invoiceData._rawText || '';
-            const newCur = invoice.currency;
-            let foundAmount = null, foundSub = null, foundTax = null;
-
-            if (rawText) {
-                // Find total amounts labeled with the new currency
-                // Patterns: "Wartość brutto 4 050,00 EUR", "Total 4050.00 EUR", "4 050,00 EUR"
-                const re = new RegExp(`([\\d\\s]+[,.]\\d{2})\\s*${newCur}\\b`, 'gi');
-                const amounts = [...rawText.matchAll(re)].map(m => cleanNum(m[1])).filter(n => n > 0);
-                if (amounts.length > 0) {
-                    // The largest amount in the new currency is usually the total (brutto/do zapłaty)
-                    foundAmount = Math.max(...amounts);
-                    // Subtotal is usually the same or smaller; tax is the difference if there is one
-                    foundSub = foundAmount;
-                    foundTax = 0;
-                }
-            }
-
-            if (foundAmount && Math.abs(foundAmount - invoice.amount) > 0.01) {
-                corrections.push(`Amount re-extracted after currency change: ${invoice.amount} ${oldCurrency} → ${foundAmount} ${newCur}`);
-                invoice.amount = foundAmount;
-                invoice.subtotalAmount = foundSub;
-                invoice.taxAmount = foundTax;
-            } else if (!foundAmount) {
-                // Cannot find amount in new currency → clear it rather than keep wrong value
-                corrections.push(`WARNING: currency changed ${oldCurrency} → ${newCur} but no matching amount found in text. Cleared amount.`);
-                invoice.amount = 0;
-                invoice.subtotalAmount = 0;
-                invoice.taxAmount = 0;
-            }
+        // Currency: use safe setter (re-extracts amount from rawText in new currency)
+        if (gt.currency && !isEmpty(gt.currency) && invoice.currency !== gt.currency) {
+            setCurrencySafely(invoice, gt.currency, 'Example', corrections);
         }
 
         // Amount fix: if any example has same invoiceId and DocAI amount is wildly different,
@@ -923,31 +937,13 @@ function applyCharterRules(invoice, rulesText) {
         }
 
         // Currency rule: Vendor "X": currency = "EUR"
+        // Uses setCurrencySafely() — auto re-extracts amount from text in new currency
         const currMatch = rule.match(/[Vv]endor\s*[""\u201c\u201d](.+?)[""\u201c\u201d]:\s*currency\s*=\s*[""\u201c\u201d](.+?)[""\u201c\u201d]/i);
         if (currMatch) {
             const [, vendor, curr] = currMatch;
             if (vendorMatch(vendor) && invoice.currency !== curr && !lockedFields.has('currency')) {
-                const oldCurrency = invoice.currency;
-                applied.push(`Charter: corrected currency ${oldCurrency} → ${curr} for "${vendor}"`);
-                invoice.currency = curr;
+                setCurrencySafely(invoice, curr, `Charter rule for "${vendor}"`, applied);
                 lockedFields.add('currency');
-
-                // CRITICAL: when currency changes, re-extract amount in the new currency.
-                // Never keep a number extracted in the old currency under the new label.
-                if (invoice.amount > 0 && invoice._rawText) {
-                    const rawText = invoice._rawText;
-                    const re = new RegExp(`([\\d\\s]+[,.]\\d{2})\\s*${curr}\\b`, 'gi');
-                    const amounts = [...rawText.matchAll(re)].map(m => cleanNum(m[1])).filter(n => n > 0);
-                    if (amounts.length > 0) {
-                        const newAmount = Math.max(...amounts);
-                        if (Math.abs(newAmount - invoice.amount) > 0.01) {
-                            applied.push(`Amount re-extracted after Charter currency change: ${invoice.amount} ${oldCurrency} → ${newAmount} ${curr}`);
-                            invoice.amount = newAmount;
-                            invoice.subtotalAmount = newAmount;
-                            invoice.taxAmount = 0;
-                        }
-                    }
-                }
             }
             continue;
         }
