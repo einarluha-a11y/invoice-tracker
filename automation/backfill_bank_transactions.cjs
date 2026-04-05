@@ -16,6 +16,7 @@
 require('dotenv').config({ path: __dirname + '/.env' });
 const { parse } = require('csv-parse/sync');
 const { admin, db } = require('./core/firebase.cjs');
+const { saveBankTransaction } = require('./core/bank_dedup.cjs');
 
 const SAVE = process.argv.includes('--save');
 
@@ -125,14 +126,6 @@ async function main() {
             const foreignAmount = isNaN(foreignAmountNum) ? null : Math.abs(foreignAmountNum);
             const foreignCurrency = (row['Original Currency'] || row['original currency'] || row['Target currency'] || '').trim();
 
-            // Deduplicate by unique key
-            const txKey = `${companyId}|${dateStr}|${invoiceTargetAmount}|${description}|${reference}`;
-            if (seenTx.has(txKey)) {
-                totalDupes++;
-                continue;
-            }
-            seenTx.add(txKey);
-
             const txData = {
                 companyId,
                 date: dateStr || null,
@@ -148,7 +141,17 @@ async function main() {
             };
 
             if (SAVE) {
-                await db.collection('bank_transactions').add(txData);
+                // saveBankTransaction uses deterministic ID — Firestore rejects duplicates atomically
+                const result = await saveBankTransaction(db, txData);
+                if (result.duplicate) {
+                    totalDupes++;
+                    continue;
+                }
+            } else {
+                // Dry-run: still use in-memory Set to report expected dedup count
+                const txKey = `${companyId}|${dateStr}|${invoiceTargetAmount}|${description}|${reference}`;
+                if (seenTx.has(txKey)) { totalDupes++; continue; }
+                seenTx.add(txKey);
             }
 
             statementSaved++;

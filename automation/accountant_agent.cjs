@@ -5,6 +5,7 @@ const { validateVat } = require('./vies_validator.cjs');
 const { admin, db } = require('./core/firebase.cjs');
 const { enrichCompanyData } = require('./company_enrichment.cjs');
 const { cleanNum } = require('./core/utils.cjs');
+const { saveBankTransaction } = require('./core/bank_dedup.cjs');
 
 // parseAmount = cleanNum (backward compat alias)
 const parseAmount = cleanNum;
@@ -141,9 +142,9 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
         } catch(err) {
             console.error(err);
         }
-        // ── Save transaction to bank_transactions archive ──────────────
+        // ── Save transaction to bank_transactions archive (with dedup) ──
         try {
-            await db.collection('bank_transactions').add({
+            await saveBankTransaction(db, {
                 companyId,
                 date: docAiPayload.dateCreated || null,
                 amount: payAmt,
