@@ -13,6 +13,8 @@
  *  4. Idempotency: tx.matchedInvoiceId must be null/undefined
  */
 
+const { cleanNum } = require('./utils.cjs');
+
 const LEGAL_SUFFIXES = /\b(o[uü]|as|sa|sia|sp\.?\s*z\s*o\.?\s*o\.?|gmbh|llc|ltd|inc|ag|bv|srl|spa)\b/gi;
 const CITIES = /\b(tallinn|tartu|narva|p[aä]rnu|kohtla[\s-]?j[aä]rve|warsaw|warszawa|riga|vilnius|helsinki|stockholm|moscow|kiev|kyiv)\b/gi;
 const VENDOR_STOPWORDS = new Set([
@@ -74,9 +76,10 @@ function vendorOverlap(a, b) {
  * Returns: 'full' | 'partial' | false
  */
 function matchAmount(invoiceAmount, txAmount) {
-    const inv = parseFloat(invoiceAmount);
-    const tx = parseFloat(txAmount);
-    if (isNaN(inv) || isNaN(tx) || tx <= 0 || inv <= 0) return false;
+    // cleanNum handles European "1.200,50", US "1,200.50", null, and currency prefixes
+    const inv = cleanNum(invoiceAmount);
+    const tx = cleanNum(txAmount);
+    if (tx <= 0 || inv <= 0) return false;
     if (Math.abs(inv - tx) <= 0.05) return 'full';
     if (tx < inv) return 'partial';
     return false; // tx > invoice amount → not our payment

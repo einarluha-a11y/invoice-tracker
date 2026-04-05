@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { InvoiceTable, SortField, SortDirection } from './components/InvoiceTable';
 import { Login } from './components/Login';
 import { useAuth } from './context/AuthContext';
-import { InvoiceStatus, Invoice, mockInvoices } from './data/mockInvoices';
+import type { InvoiceStatus, Invoice } from './data/types';
 import { subscribeToInvoices, deleteInvoice, updateInvoice } from './data/api';
 import { db } from './firebase';
 import { Settings } from './components/Settings';
