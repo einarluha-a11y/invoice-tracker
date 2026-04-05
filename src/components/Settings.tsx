@@ -145,7 +145,7 @@ export function Settings({ onBack }: SettingsProps) {
     const handleSave = async (e: React.MouseEvent) => {
         e.preventDefault();
         if (!formData.name || !formData.emailAddress) {
-            alert(t('settingsPage.errorPrefix') + ": Имя и Email обязательны.");
+            alert(t('settingsPage.errorPrefix') + ": " + t('settingsPage.requiredFieldsError'));
             return;
         }
         const idToProcess = editingId;

@@ -101,7 +101,7 @@ export function InvoiceModal({ invoice, onClose, onSave }: InvoiceModalProps) {
                             </label>
 
                             <label style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-                                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>Arve nr</span>
+                                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>{t('modal.invoiceNumber')}</span>
                                 <input type="text" value={invoiceNumber} onChange={e => setInvoiceNumber(e.target.value)}
                                     className="settings-input"
                                     style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 'var(--radius-md)', padding: '0.8rem 1rem', color: '#fff', transition: 'all 0.2s', boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.1)' }}
@@ -156,14 +156,14 @@ export function InvoiceModal({ invoice, onClose, onSave }: InvoiceModalProps) {
 
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                                 <label style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-                                    <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>VAT</span>
+                                    <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>{t('modal.vat')}</span>
                                     <input type="text" value={supplierVat} onChange={e => setSupplierVat(e.target.value)}
                                         className="settings-input"
                                         style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 'var(--radius-md)', padding: '0.8rem 1rem', color: '#fff' }}
                                     />
                                 </label>
                                 <label style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-                                    <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>Рег. код</span>
+                                    <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>{t('modal.registrationCode')}</span>
                                     <input type="text" value={supplierRegistration} onChange={e => setSupplierRegistration(e.target.value)}
                                         className="settings-input"
                                         style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 'var(--radius-md)', padding: '0.8rem 1rem', color: '#fff' }}
@@ -172,14 +172,14 @@ export function InvoiceModal({ invoice, onClose, onSave }: InvoiceModalProps) {
                             </div>
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                                 <label style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-                                    <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>Sub</span>
+                                    <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>{t('modal.subtotal')}</span>
                                     <input type="number" step="0.01" value={subtotalAmount} onChange={e => setSubtotalAmount(e.target.value)}
                                         className="settings-input"
                                         style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 'var(--radius-md)', padding: '0.8rem 1rem', color: '#fff', fontFamily: 'monospace' }}
                                     />
                                 </label>
                                 <label style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-                                    <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>Tax</span>
+                                    <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>{t('modal.tax')}</span>
                                     <input type="number" step="0.01" value={taxAmount} onChange={e => setTaxAmount(e.target.value)}
                                         className="settings-input"
                                         style={{ width: '100%', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 'var(--radius-md)', padding: '0.8rem 1rem', color: '#fff', fontFamily: 'monospace' }}
