@@ -14,6 +14,8 @@ const { parse } = require('csv-parse/sync');
 const { admin, db, bucket } = require('./core/firebase.cjs');
 // Staging layer — saves raw docs before processing for re-run without IMAP
 const { stageDocument, markStagingResult } = require('./core/staging.cjs');
+// Bank transaction dedup
+const { saveBankTransaction } = require('./core/bank_dedup.cjs');
 
 // --- DYNAMIC DICTIONARY ENGINE (Node.js Memory Cache) ---
 const companyAliasCache = {};
@@ -777,9 +779,9 @@ async function reconcilePayment(reference, description, paidAmount, totalBankDra
             console.log(`[Reconciliation] No pending invoice match for payment €${paidAmount} (Ref: ${reference}, Desc: ${description})`);
         }
 
-        // ── Save transaction to bank_transactions archive ──────────────
+        // ── Save transaction to bank_transactions archive (with dedup) ──
         try {
-            await db.collection('bank_transactions').add({
+            await saveBankTransaction(db, {
                 companyId: companyId || null,
                 date: paymentDateStr || null,
                 amount: paidAmount,
