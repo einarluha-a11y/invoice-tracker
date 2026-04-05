@@ -813,6 +813,8 @@ async function validateAndTeach(invoiceData, companyId) {
 function applyCharterRules(invoice, rulesText) {
     const applied = [];
     const rules = rulesText.split('\n').filter(r => r.trim());
+    // Track which (field, vendor) combinations were already set — first matching rule wins
+    const lockedFields = new Set();
 
     // Helper: check if this rule's vendor matches the current invoice
     // Strips legal suffixes (OÜ, AS, GmbH, etc.) and compares base names
@@ -853,8 +855,9 @@ function applyCharterRules(invoice, rulesText) {
         if (dueMatch) {
             const [, vendor, days] = dueMatch;
             const cleanVendor = vendor.replace(/[""\u201c\u201d.]/g, '').trim();
-            if (vendorMatch(cleanVendor) && invoice.dateCreated) {
+            if (vendorMatch(cleanVendor) && invoice.dateCreated && !lockedFields.has('dueDate')) {
                 // Charter rule has priority — ALWAYS overrides DocAI extraction
+                // First matching rule locks the field, subsequent rules ignored
                 const d = new Date(invoice.dateCreated);
                 d.setDate(d.getDate() + parseInt(days));
                 const newDueDate = d.toISOString().split('T')[0];
@@ -863,6 +866,7 @@ function applyCharterRules(invoice, rulesText) {
                     invoice.dueDate = newDueDate;
                     applied.push(`Charter: set dueDate = dateCreated + ${days} days for "${cleanVendor}"${oldDueDate ? ` (was ${oldDueDate})` : ''}`);
                 }
+                lockedFields.add('dueDate');
             }
             continue;
         }
@@ -871,9 +875,10 @@ function applyCharterRules(invoice, rulesText) {
         const currMatch = rule.match(/[Vv]endor\s*[""\u201c\u201d](.+?)[""\u201c\u201d]:\s*currency\s*=\s*[""\u201c\u201d](.+?)[""\u201c\u201d]/i);
         if (currMatch) {
             const [, vendor, curr] = currMatch;
-            if (vendorMatch(vendor) && invoice.currency !== curr) {
+            if (vendorMatch(vendor) && invoice.currency !== curr && !lockedFields.has('currency')) {
                 applied.push(`Charter: corrected currency ${invoice.currency} → ${curr} for "${vendor}"`);
                 invoice.currency = curr;
+                lockedFields.add('currency');
             }
             continue;
         }
@@ -882,9 +887,10 @@ function applyCharterRules(invoice, rulesText) {
         const descMatch = rule.match(/[Vv]endor\s*[""\u201c\u201d](.+?)[""\u201c\u201d]:\s*description\s*=\s*[""\u201c\u201d](.+?)[""\u201c\u201d]/i);
         if (descMatch) {
             const [, vendor, desc] = descMatch;
-            if (vendorMatch(vendor) && isEmpty(invoice.description)) {
+            if (vendorMatch(vendor) && isEmpty(invoice.description) && !lockedFields.has('description')) {
                 invoice.description = desc;
                 applied.push(`Charter: set description = "${desc}" for "${vendor}"`);
+                lockedFields.add('description');
             }
             continue;
         }
