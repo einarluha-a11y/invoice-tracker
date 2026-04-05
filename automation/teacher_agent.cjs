@@ -927,9 +927,27 @@ function applyCharterRules(invoice, rulesText) {
         if (currMatch) {
             const [, vendor, curr] = currMatch;
             if (vendorMatch(vendor) && invoice.currency !== curr && !lockedFields.has('currency')) {
-                applied.push(`Charter: corrected currency ${invoice.currency} → ${curr} for "${vendor}"`);
+                const oldCurrency = invoice.currency;
+                applied.push(`Charter: corrected currency ${oldCurrency} → ${curr} for "${vendor}"`);
                 invoice.currency = curr;
                 lockedFields.add('currency');
+
+                // CRITICAL: when currency changes, re-extract amount in the new currency.
+                // Never keep a number extracted in the old currency under the new label.
+                if (invoice.amount > 0 && invoice._rawText) {
+                    const rawText = invoice._rawText;
+                    const re = new RegExp(`([\\d\\s]+[,.]\\d{2})\\s*${curr}\\b`, 'gi');
+                    const amounts = [...rawText.matchAll(re)].map(m => cleanNum(m[1])).filter(n => n > 0);
+                    if (amounts.length > 0) {
+                        const newAmount = Math.max(...amounts);
+                        if (Math.abs(newAmount - invoice.amount) > 0.01) {
+                            applied.push(`Amount re-extracted after Charter currency change: ${invoice.amount} ${oldCurrency} → ${newAmount} ${curr}`);
+                            invoice.amount = newAmount;
+                            invoice.subtotalAmount = newAmount;
+                            invoice.taxAmount = 0;
+                        }
+                    }
+                }
             }
             continue;
         }
