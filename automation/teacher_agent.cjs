@@ -388,7 +388,7 @@ async function validateAndTeach(invoiceData, companyId) {
     // All three are independent Firestore reads — run in parallel to save ~300ms
     const vatPrefix = (invoice.supplierVat || '').replace(/[^A-Z]/gi, '').slice(0, 2).toUpperCase();
 
-    const [charterResult, globalRulesResult, examplesResult] = await Promise.all([
+    const [charterResult, globalRulesResult, examplesResult, globalUiRulesResult] = await Promise.all([
         // Charter (company customAiRules)
         (companyId && db)
             ? db.collection('companies').doc(companyId).get().catch(() => null)
@@ -408,12 +408,24 @@ async function validateAndTeach(invoiceData, companyId) {
         (invoice.vendorName && !isEmpty(invoice.vendorName))
             ? loadExamples(invoice.vendorName).catch(() => [])
             : Promise.resolve([]),
+
+        // Global UI rules (from Settings → Reeglid) — applies to ALL companies
+        db
+            ? db.collection('config').doc('global_ai_rules').get().catch(() => null)
+            : Promise.resolve(null),
     ]);
 
-    // ── 1a. Extract Charter rules ───────────────────────────────────────────
+    // ── 1a. Extract Charter rules + append global UI rules ──────────────────
     let charterRules = '';
     if (charterResult && charterResult.exists) {
         charterRules = charterResult.data().customAiRules || '';
+    }
+    // Global rules from Settings UI apply to ALL receiving companies
+    if (globalUiRulesResult && globalUiRulesResult.exists) {
+        const globalText = globalUiRulesResult.data().customAiRules || '';
+        if (globalText.trim()) {
+            charterRules = charterRules ? `${globalText}\n${charterRules}` : globalText;
+        }
     }
 
     // ── 1b. Apply global rules ──────────────────────────────────────────────

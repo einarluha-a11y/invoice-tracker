@@ -27,6 +27,8 @@ export function Settings({ onBack }: SettingsProps) {
     const [rulesLoading, setRulesLoading] = useState(true);
     const [showRules, setShowRules] = useState(false);
     const [newRuleText, setNewRuleText] = useState<string>('');
+    const [editingRuleIdx, setEditingRuleIdx] = useState<number | null>(null);
+    const [editingRuleText, setEditingRuleText] = useState<string>('');
 
     useEffect(() => {
         if (!db) return;
@@ -71,6 +73,37 @@ export function Settings({ onBack }: SettingsProps) {
         } catch (error) {
             console.error("Failed to update rules", error);
             alert(t('settingsPage.deleteRuleError'));
+        }
+    };
+
+    const handleStartEditRule = (ruleIndex: number) => {
+        setEditingRuleIdx(ruleIndex);
+        setEditingRuleText(rulesList[ruleIndex] || '');
+    };
+
+    const handleCancelEditRule = () => {
+        setEditingRuleIdx(null);
+        setEditingRuleText('');
+    };
+
+    const handleSaveEditedRule = async () => {
+        if (editingRuleIdx === null || !db) return;
+        const trimmed = editingRuleText.trim();
+        if (!trimmed) return;
+        const rulesArray = globalRules.split('\n').filter(r => r.trim() !== '');
+        rulesArray[editingRuleIdx] = trimmed;
+        try {
+            const rulesRef = doc(db, 'config', 'global_ai_rules');
+            await setDoc(rulesRef, {
+                customAiRules: rulesArray.join('\n'),
+                updatedAt: serverTimestamp(),
+                updatedBy: 'manual'
+            }, { merge: true });
+            setEditingRuleIdx(null);
+            setEditingRuleText('');
+        } catch (error) {
+            console.error("Failed to update rule", error);
+            alert(t('settingsPage.errorPrefix') + " " + error);
         }
     };
 
@@ -181,12 +214,47 @@ export function Settings({ onBack }: SettingsProps) {
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginBottom: '1rem' }}>
                                 {rulesList.map((ruleText, idx) => (
                                     <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', background: 'var(--surface-color)', padding: '0.8rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
-                                        <span style={{ fontSize: '0.9rem', color: 'var(--text-primary)', lineHeight: 1.4 }}>{ruleText}</span>
-                                        <button onClick={() => handleDeleteSingleRule(idx)}
-                                            style={{ background: 'none', border: 'none', color: 'var(--danger-color)', cursor: 'pointer', padding: '0.2rem', marginLeft: '1rem', opacity: 0.7 }}
-                                            title={t('settingsPage.deleteRuleTooltip')}>
-                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                                        </button>
+                                        {editingRuleIdx === idx ? (
+                                            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                                <textarea rows={3}
+                                                    value={editingRuleText}
+                                                    onChange={e => setEditingRuleText(e.target.value)}
+                                                    autoFocus
+                                                    style={{
+                                                        width: '100%', boxSizing: 'border-box', padding: '0.5rem',
+                                                        borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)',
+                                                        background: 'var(--background-color)', color: 'var(--text-primary)',
+                                                        fontSize: '0.9rem', lineHeight: 1.4, resize: 'vertical', fontFamily: 'inherit'
+                                                    }}
+                                                />
+                                                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                                    <button onClick={handleSaveEditedRule} disabled={!editingRuleText.trim()}
+                                                        style={{ background: 'var(--header-accent)', color: 'white', border: 'none', padding: '0.4rem 0.9rem', borderRadius: 'var(--radius-sm)', cursor: editingRuleText.trim() ? 'pointer' : 'not-allowed', fontSize: '0.85rem', opacity: editingRuleText.trim() ? 1 : 0.5 }}>
+                                                        {t('settingsPage.saveRuleBtn') || 'Save'}
+                                                    </button>
+                                                    <button onClick={handleCancelEditRule}
+                                                        style={{ background: 'none', border: '1px solid var(--border-color)', color: 'var(--text-secondary)', padding: '0.4rem 0.9rem', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: '0.85rem' }}>
+                                                        {t('settingsPage.cancelRuleBtn') || 'Cancel'}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <>
+                                                <span style={{ fontSize: '0.9rem', color: 'var(--text-primary)', lineHeight: 1.4, flex: 1 }}>{ruleText}</span>
+                                                <div style={{ display: 'flex', gap: '0.4rem', marginLeft: '1rem' }}>
+                                                    <button onClick={() => handleStartEditRule(idx)}
+                                                        style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '0.2rem', opacity: 0.7 }}
+                                                        title={t('settingsPage.editRuleTooltip') || 'Edit rule'}>
+                                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                                                    </button>
+                                                    <button onClick={() => handleDeleteSingleRule(idx)}
+                                                        style={{ background: 'none', border: 'none', color: 'var(--danger-color)', cursor: 'pointer', padding: '0.2rem', opacity: 0.7 }}
+                                                        title={t('settingsPage.deleteRuleTooltip')}>
+                                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                                                    </button>
+                                                </div>
+                                            </>
+                                        )}
                                     </div>
                                 ))}
                                 <button onClick={handleClearAllRules}
