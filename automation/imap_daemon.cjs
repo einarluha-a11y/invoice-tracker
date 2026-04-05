@@ -438,10 +438,20 @@ async function scoutTeacherPipeline(content, mimeType, companyId, customRules) {
                     const fixes = await askClaudeToFix(rawText, tempParsed[0],
                         [`sub(${sub}) + tax(${tax}) = ${(sub+tax).toFixed(2)} ≠ amount(${amt})`]);
                     if (fixes && Object.keys(fixes).length > 0) {
-                        if (fixes.amount !== undefined) tempParsed[0].amount = fixes.amount;
-                        if (fixes.subtotalAmount !== undefined) tempParsed[0].subtotalAmount = fixes.subtotalAmount;
-                        if (fixes.taxAmount !== undefined) tempParsed[0].taxAmount = fixes.taxAmount;
-                        if (fixes.currency !== undefined) tempParsed[0].currency = fixes.currency;
+                        // CURRENCY RULE: if Claude changes currency, amount must be re-extracted
+                        // from rawText in the new currency. Apply currency + amount together.
+                        if (fixes.currency !== undefined && fixes.currency !== tempParsed[0].currency) {
+                            tempParsed[0].currency = fixes.currency;
+                            // Claude's own amount in the new currency is authoritative here
+                            if (fixes.amount !== undefined) tempParsed[0].amount = fixes.amount;
+                            if (fixes.subtotalAmount !== undefined) tempParsed[0].subtotalAmount = fixes.subtotalAmount;
+                            if (fixes.taxAmount !== undefined) tempParsed[0].taxAmount = fixes.taxAmount;
+                            console.log(`[Claude QC] Currency ${sub > 0 ? '→' : 'set to'} ${fixes.currency}, amount=${fixes.amount}`);
+                        } else {
+                            if (fixes.amount !== undefined) tempParsed[0].amount = fixes.amount;
+                            if (fixes.subtotalAmount !== undefined) tempParsed[0].subtotalAmount = fixes.subtotalAmount;
+                            if (fixes.taxAmount !== undefined) tempParsed[0].taxAmount = fixes.taxAmount;
+                        }
                         if (fixes.isPaid) tempParsed[0].status = 'Paid';
                         console.log(`[Claude QC] Applied fixes in Scout pipeline`);
                     }

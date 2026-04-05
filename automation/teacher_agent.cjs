@@ -753,26 +753,45 @@ async function validateAndTeach(invoiceData, companyId) {
         }
 
         // Re-apply self-invoice guard after Claude (Claude also confuses buyer/supplier)
+        // Checks VAT, Reg, AND vendorName — receiver company can never be vendor
         if (db) {
             try {
                 const compSnap2 = await db.collection('companies').get();
                 const buyerIds2 = new Set();
+                const buyerNames2 = new Set();
                 const postVat = (invoice.supplierVat || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
                 const postReg = (invoice.supplierRegistration || '').replace(/[^0-9]/g, '');
-                let vatCleared2 = false, regCleared2 = false;
+                const postName = (invoice.vendorName || '').toLowerCase().replace(/[^a-zöäüõ0-9]/g, '');
+                let vatCleared2 = false, regCleared2 = false, nameCleared2 = false;
 
                 for (const cd of compSnap2.docs) {
                     const c = cd.data();
                     const cVat = (c.vat || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
                     const cReg = (c.regCode || '').replace(/[^0-9]/g, '');
+                    const cName = (c.name || '').toLowerCase().replace(/[^a-zöäüõ0-9]/g, '');
                     if (cVat) buyerIds2.add(cVat);
                     if (cReg) buyerIds2.add(cReg);
-                    if ((cVat && postVat && cVat === postVat) || (cReg && postVat && postVat.endsWith(cReg))) { invoice.supplierVat = ''; vatCleared2 = true; }
-                    if (cReg && postReg && cReg === postReg) { invoice.supplierRegistration = ''; regCleared2 = true; }
+                    if (cName) buyerNames2.add(cName);
+                    if ((cVat && postVat && cVat === postVat) || (cReg && postVat && postVat.endsWith(cReg))) {
+                        corrections.push(`Post-Claude guard: cleared buyer VAT (belongs to ${c.name})`);
+                        invoice.supplierVat = '';
+                        vatCleared2 = true;
+                    }
+                    if (cReg && postReg && cReg === postReg) {
+                        corrections.push(`Post-Claude guard: cleared buyer Reg (belongs to ${c.name})`);
+                        invoice.supplierRegistration = '';
+                        regCleared2 = true;
+                    }
+                    // vendorName check — Claude might have put buyer name here
+                    if (cName && postName && (cName === postName || postName.includes(cName) || cName.includes(postName)) && postName.length > 3) {
+                        corrections.push(`Post-Claude guard: cleared buyer vendor name "${invoice.vendorName}" (belongs to ${c.name})`);
+                        invoice.vendorName = '';
+                        nameCleared2 = true;
+                    }
                 }
 
                 // Re-extract from rawText after clearing Claude's buyer data
-                if (regCleared2 || vatCleared2) {
+                if (regCleared2 || vatCleared2 || nameCleared2) {
                     if (regCleared2) {
                         const regMs = rawText.matchAll(/(?:Reg\.?\s*(?:nr|code|kood)|Rg-?kood)[.:\s]+(\d{6,10})/gi);
                         for (const m of regMs) { if (!buyerIds2.has(m[1])) { invoice.supplierRegistration = m[1]; break; } }
@@ -780,6 +799,19 @@ async function validateAndTeach(invoiceData, companyId) {
                     if (vatCleared2) {
                         const vatMs = rawText.matchAll(/(?:KMKR|KMKN|VAT)[.\s:]*([A-Z]{2}\d{6,12})/gi);
                         for (const m of vatMs) { if (!buyerIds2.has(m[1].toUpperCase())) { invoice.supplierVat = m[1]; break; } }
+                    }
+                    if (nameCleared2) {
+                        // Find first non-buyer non-generic line in raw text
+                        const lines = rawText.split('\n').map(l => l.trim()).filter(l => l.length > 3);
+                        for (const line of lines) {
+                            const lineLower = line.toLowerCase().replace(/[^a-zöäüõ0-9]/g, '');
+                            if (buyerNames2.has(lineLower)) continue;
+                            if (/^\d|^arve|^kuup|^maks|^viitenumber|^swedbank|^seb|^lhv/i.test(line)) continue;
+                            if (line.length > 80) continue;
+                            invoice.vendorName = line;
+                            corrections.push(`Post-Claude guard: re-extracted supplier name "${line}" from text`);
+                            break;
+                        }
                     }
                 }
             } catch { /* non-critical */ }
