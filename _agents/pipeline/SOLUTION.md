@@ -1,105 +1,154 @@
 # SOLUTION
 
-PHASE: CODE
+PHASE: ARCHITECTURE
 ROUND: 1
-TASK: Аудит — исправить 6 находок (parseFloat vs cleanNum, дубли функций, dead code, dedup scan, /api/chat, ecosystem hardening)
+TASK: Разбить imap_daemon.cjs (1572 строки) на тематические модули
 
 ## ARCHITECTURE
 
-(одобрено round 1 без замечаний)
+### Текущее состояние
 
-Единая функция cleanNum, удаление parseAmount alias, замена всех небезопасных parseFloat. Composite индекс (companyId, fileBasename) для O(1) dedup. Haiku restore для /api/chat. PM2 hardening. Удаление 3 dead файлов.
+`automation/imap_daemon.cjs` — 1572 строки, 14 функций, 9 тематических блоков:
 
-## CODE
+| Блок | Строки | Функции |
+|------|--------|---------|
+| Vendor aliases cache | 24-73 | `getVendorAliases` |
+| Storage upload | 74-100 | `uploadToStorage` |
+| Legacy AI parse (Haiku) | 101-108 | `parseInvoiceDataWithAI` |
+| Firestore writer + dedup | 109-461 | `writeToFirestore` |
+| Scout→Teacher pipeline | 462-526 | `scoutTeacherPipeline` |
+| Reconciliation engine | 527-831 | `reconcilePayment` (300+ строк) |
+| Bank statement CSV | 832-896 | `processBankStatement` |
+| Bank AI parser | 897-959 | `parseBankStatementWithAI` |
+| IMAP email processor | 960-1393 | `checkEmailForInvoices` (430+ строк) |
+| Poll orchestrator | 1394-1430 | `pollAllCompanyInboxes` |
+| Flag task runner | 1431-1488 | `checkAndRunFlagTasks` |
+| Boot + loops | 1490-1570 | `pollLoop`, `auditLoop`, `sweepStatuses` |
 
-### 1. ecosystem.config.cjs — hardening
+### Внешние зависимости от файла
 
-Добавлены для обоих процессов: `restart_delay: 5000`, `max_restarts: 10`, `exp_backoff_restart_delay: 100`, `max_memory_restart` (500M/1G), `error_file`/`out_file`. Защищает от infinite restart loop.
+- `automation/firestore_writer.cjs` — импортирует `writeToFirestore`
+- Нигде больше imap_daemon не импортируется (grep чистый)
+- Запускается как PM2 процесс (`ecosystem.config.cjs` → `invoice-imap`)
 
-### 2. Dead code cleanup — `git rm`
+### Целевая архитектура
 
-Удалены: `automation/supreme_supervisor.cjs`, `automation/overseer_agent.cjs`, `automation/ai_retry.cjs`. Никто не импортирует (проверено grep). Упоминаются только в исторических Charter docs.
+Разбиваем на **6 модулей + тонкая точка входа**:
 
-### 3. /api/chat — восстановлен через Claude Haiku
+```
+automation/
+├── imap_daemon.cjs          (точка входа, ~60 строк: require + pollLoop + auditLoop)
+├── core/
+│   ├── firebase.cjs         (уже существует)
+│   ├── bank_dedup.cjs       (уже существует)
+│   ├── reconcile_rules.cjs  (уже существует)
+│   ├── utils.cjs            (уже существует)
+│   ├── staging.cjs          (уже существует)
+│   ├── vendor_aliases.cjs   ← NEW: getVendorAliases + кэш
+│   └── storage.cjs          ← NEW: uploadToStorage
+├── pipeline/
+│   ├── invoice_processor.cjs    ← NEW: scoutTeacherPipeline + writeToFirestore
+│   └── payment_processor.cjs    ← NEW: reconcilePayment + processBankStatement
+│                                (имя под будущую Dropbox интеграцию — один модуль
+│                                 на "любые source → reconciliation")
+├── daemon/
+│   ├── imap_listener.cjs        ← NEW: checkEmailForInvoices + pollAllCompanyInboxes
+│   ├── status_sweeper.cjs       ← NEW: sweepStatuses + auditLoop
+│   └── flag_runner.cjs          ← NEW: checkAndRunFlagTasks
+```
 
-`automation/api_server.cjs`: заменён stub 501 на рабочий endpoint, использует `@anthropic-ai/sdk` (уже в deps) + `ANTHROPIC_API_KEY`. Model `claude-haiku-4-5-20251001`, max_tokens 400, rate limit 30/min сохранён. System prompt извлекает filter criteria в JSON. Защита: input.slice(500), try/catch вокруг JSON parse, fallback на 500/503 с human-readable reply.
+### Почему такая группировка
 
-### 4. Dedup fileBasename — O(1) lookup через composite индекс
+1. **`core/vendor_aliases.cjs`** — shared utility с TTL кэшем. Используется в `reconcilePayment` (через payment_processor). Малый (~50 строк), отдельно потому что кэш должен быть singleton.
 
-`automation/imap_daemon.cjs` writeToFirestore:
-- Fast path: `where('companyId', '==', X).where('fileBasename', '==', Y).limit(1)` → составной индекс
-- Fallback: для legacy записей без `fileBasename` — ограниченный scan 500 docs
-- `fileBasename` сохраняется как denormalized поле при create (lowercase)
+2. **`core/storage.cjs`** — тонкая обёртка над Firebase Storage upload. Используется в checkEmailForInvoices при приёме attachments. Отдельно чтобы в будущем Dropbox processor мог её переиспользовать.
 
-`firestore.indexes.json`: добавлен composite индекс `invoices(companyId ASC, fileBasename ASC)`.
+3. **`pipeline/invoice_processor.cjs`** — `scoutTeacherPipeline` + `writeToFirestore` + все dedup checks. Это "путь инвойса" — от extraction до Firestore. Используется:
+   - imap_listener (после парсинга PDF attachment)
+   - repairman_agent (re-extract)
+   - dropbox_processor в будущем
 
-### 5. cleanNum refactor — замена parseFloat
+4. **`pipeline/payment_processor.cjs`** — `reconcilePayment` + `processBankStatement` + `parseBankStatementWithAI`. Это "путь платежа" — от CSV/bank statement до matching с инвойсами. По твоему замечанию, модуль называется `payment_processor` (не `bank_statement_processor`) — он охватит и будущий Dropbox source.
 
-**Удалено:**
-- `parseAmount = cleanNum` alias в accountant_agent.cjs
-- `module.exports.parseAmount` из accountant_agent.cjs
-- import `parseAmount` в search_agent.cjs → заменён на `cleanNum` из `core/utils.cjs`
+5. **`daemon/imap_listener.cjs`** — только IMAP часть: connection, fetch, attachment extraction, вызов invoice_processor или payment_processor по типу вложения. Чистая "доставка" без бизнес-логики.
 
-**Заменены небезопасные parseFloat на cleanNum (14 мест в 7 файлах):**
-- `automation/imap_daemon.cjs`: numAmount сборка, scoutTeacher sub/tax/amt, reconcile invoiceAmount + originalAmount (2×), CSV bank statement rows (amount, bankFee, explicitTarget, foreignAmountNum)
-- `automation/accountant_agent.cjs`: invoiceChargesVat, amtMatches (двойной parseFloat)
-- `automation/repairman_agent.cjs`: checkBankTransactions amount, QC amount/sub/tax, audit invoiceAmount + txAmount
-- `automation/teacher_agent.cjs`: interactive input parsing
-- `automation/backfill_bank_transactions.cjs`: CSV row parsing (amount + sign, bankFee, explicitTarget, foreignAmount)
-- `automation/import_csv_bank_transactions.cjs`: same CSV pattern
-- `automation/reconcile_bank_statement.cjs`: paidAmount normalization, invoiceAmount read
+6. **`daemon/status_sweeper.cjs`** — `sweepStatuses` + `auditLoop` (bidirectional self-healing). Периодический фоновый процесс.
 
-**Оставлены (безопасные float→float нормализации):**
-- `parseFloat((X + Y).toFixed(2))` паттерны в teacher/accountant/document_ai — input уже числовой
-- `parseFloat(pct)` для UI score в teacher CLI eval (input — это `.toFixed(1)` string, всегда валидный)
+7. **`daemon/flag_runner.cjs`** — `checkAndRunFlagTasks` (флаговые триггеры от Claude/Cowork).
 
-**Обработка знака для bank rows:** cleanNum корректно парсит `-1.200,50`, но для явного флага outgoing/incoming определяется по `startsWith('-')` до очистки regex.
+8. **`automation/imap_daemon.cjs`** — превращается в тонкую точку входа (~60 строк):
+   ```js
+   require('dotenv').config({ path: __dirname + '/.env' });
+   const { pollLoop } = require('./daemon/imap_listener.cjs');
+   const { auditLoop } = require('./daemon/status_sweeper.cjs');
+   const { checkAndRunFlagTasks } = require('./daemon/flag_runner.cjs');
 
-### 6. Unit tests
+   if (require.main === module) {
+       checkAndRunFlagTasks().then(() => {
+           pollLoop();
+           auditLoop();
+       });
+   }
+   ```
 
-**Новый файл `automation/tests/cleannum.test.cjs` (21 test, все passing):**
-- European: `1.200,50`, `1200,50`, `12.345.678,90`
-- US: `1,200.50`, `1,234,567.89`
-- Currency prefixes: `€500.50`, `$ 1,200.50`, `1.200,50 EUR`
-- Numeric passthrough: `500.50`, `0`
-- Edge cases: null, undefined, empty, whitespace, non-numeric
-- Negative: `-500.50`, `-1.200,50`
-- **Критический тест:** демонстрация что `parseFloat('1.200,50') === 1.2` (BUG), а `cleanNum('1.200,50') === 1200.50` (correct)
+### Обратная совместимость
 
-Existing reconcile tests: 23/23 pass без изменений.
+1. **`firestore_writer.cjs`** — обновить источник re-export:
+   ```js
+   const { writeToFirestore } = require('./pipeline/invoice_processor.cjs');
+   module.exports = { writeToFirestore };
+   ```
+   Все внешние consumers продолжают работать без изменений.
 
-### 7. CLAUDE.md — добавлена команда
+2. **`ecosystem.config.cjs`** — `script: './automation/imap_daemon.cjs'` остаётся как есть.
 
-`node automation/tests/cleannum.test.cjs` в разделе Node / npm / сборка.
+3. **`imap_daemon.cjs` module.exports** — старый экспорт
+   ```js
+   { checkEmailForInvoices, parseInvoiceDataWithAI, writeToFirestore, reconcilePayment, pollAllCompanyInboxes }
+   ```
+   заменяется на re-exports из новых модулей (на случай если кто-то импортирует напрямую — grep сейчас показывает только firestore_writer, но подстраховка нужна).
 
-## Верификация
+### План реализации (CODE phase)
 
-- ✅ `node --check` на всех 10 изменённых файлах → OK
-- ✅ `node automation/tests/cleannum.test.cjs` → 21/21 passed
-- ✅ `node automation/tests/reconcile.test.cjs` → 23/23 passed (regression test)
-- ✅ `npm run build` → clean dist/ generated
-- ✅ grep `parseFloat` оставшиеся — только safe `.toFixed()` паттерны и CLI UI
+**Порядок — от листьев к корню (минимизирует одновременно ломающиеся файлы):**
 
-## Затронутые файлы
+1. **`core/vendor_aliases.cjs`** — вынести `getVendorAliases` + кэш (self-contained)
+2. **`core/storage.cjs`** — вынести `uploadToStorage`
+3. **`pipeline/invoice_processor.cjs`** — `scoutTeacherPipeline` + `writeToFirestore` (зависит от storage, reconcile_rules, bank_dedup)
+4. **`pipeline/payment_processor.cjs`** — `reconcilePayment` + `processBankStatement` + `parseBankStatementWithAI` (зависит от vendor_aliases, reconcile_rules, bank_dedup)
+5. **`daemon/imap_listener.cjs`** — `checkEmailForInvoices` + `pollAllCompanyInboxes` (зависит от invoice_processor, payment_processor, storage)
+6. **`daemon/status_sweeper.cjs`** — `sweepStatuses` + `auditLoop`
+7. **`daemon/flag_runner.cjs`** — `checkAndRunFlagTasks`
+8. **`imap_daemon.cjs`** — сократить до thin entry point
+9. **`firestore_writer.cjs`** — обновить source of writeToFirestore
 
-**Изменены:**
-- `automation/imap_daemon.cjs` (cleanNum + fileBasename dedup)
-- `automation/accountant_agent.cjs` (parseAmount alias removed)
-- `automation/repairman_agent.cjs` (cleanNum)
-- `automation/teacher_agent.cjs` (cleanNum in CLI input)
-- `automation/backfill_bank_transactions.cjs` (cleanNum)
-- `automation/import_csv_bank_transactions.cjs` (cleanNum)
-- `automation/reconcile_bank_statement.cjs` (cleanNum)
-- `automation/search_agent.cjs` (parseAmount → cleanNum)
-- `automation/api_server.cjs` (Haiku restore)
-- `ecosystem.config.cjs` (PM2 hardening)
-- `firestore.indexes.json` (composite index)
-- `CLAUDE.md` (new test command)
+### Верификация
 
-**Новые:**
-- `automation/tests/cleannum.test.cjs`
+- `node --check` всех новых + изменённых файлов
+- `node automation/tests/reconcile.test.cjs` (23 теста — regression)
+- `node automation/tests/cleannum.test.cjs` (21 тест — regression)
+- `npm run build` — frontend unaffected
+- **Smoke test:** `node -e "require('./automation/firestore_writer.cjs').writeToFirestore"` должен вернуть function (verify re-export chain)
+- **Smoke test 2:** `node -e "require('./automation/imap_daemon.cjs')"` без `require.main === module` не должен стартовать pollLoop (проверяем что импорт безопасен)
 
-**Удалены:**
-- `automation/supreme_supervisor.cjs`
-- `automation/overseer_agent.cjs`
-- `automation/ai_retry.cjs`
+### Риски
+
+1. **Круговые зависимости** — risk: invoice_processor может понадобиться checkBankTransactions из payment_processor (или наоборот). Mitigation: reconcile_rules уже вынесен в core, проверить граф через grep перед коммитом.
+
+2. **Инициализация Firebase/Storage** — каждый новый модуль требует `const { admin, db, bucket } = require('../core/firebase.cjs')`. core/firebase singleton уже обеспечивает, что повторный require безопасен.
+
+3. **Shared state кэша vendorAliases** — если модуль кэша require'ится из двух мест, кэш должен быть один. Node.js module cache гарантирует singleton для require того же файла — safe.
+
+4. **Ghost imports** — какой-то скрипт в automation/ может импортировать `checkEmailForInvoices` или `reconcilePayment` напрямую из imap_daemon.cjs. Проверил grep — только firestore_writer импортирует writeToFirestore. Но добавим re-exports в thin imap_daemon.cjs на всякий случай.
+
+5. **Regression в reconcilePayment** — функция критична (мы её только что ужесточали). Код переносим 1-в-1, без семантических изменений. Тесты reconcile.test.cjs ловят основные кейсы.
+
+6. **Размер диффа** — будет большой (1572 строки перемещаются). Review потребует времени, но каждый модуль читается изолированно.
+
+### Что НЕ меняем
+
+- Семантику `reconcilePayment`, `writeToFirestore`, `scoutTeacherPipeline` (только перемещение)
+- Ecosystem.config.cjs (имена PM2 процессов)
+- Firestore schema
+- Тесты (reconcile.test.cjs и cleannum.test.cjs остаются как есть)
+- Внешний API `firestore_writer.cjs` (остаётся единственная точка для внешних consumers)
