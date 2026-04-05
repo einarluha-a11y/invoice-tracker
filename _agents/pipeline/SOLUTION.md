@@ -1,91 +1,87 @@
 # SOLUTION
 
 PHASE: CODE
-ROUND: 2
-TASK: Блок 2 аудита — безопасность и оптимизация (secrets check, reconciliation limit, imap self-invoice guard)
+ROUND: 3
+TASK: Блок 3 аудита — косметика (i18n, dead code review, memory update, firestore.rules allowlist)
 
 ## ARCHITECTURE
 
-Блок 1 (Round 1) одобрен Perplexity как CODE_APPROVED.
-Блок 2 — 4 задачи из пункта REVIEW round 1:
-- 2.1 Проверка git history на утечку секретов + guidance по ротации
-- 2.2 `limit(100)` в reconciliation query (api.ts)
-- 2.3 Починить `||` vs `&&` в reconciliation logic
-- 2.4 Self-invoice guard в imap_daemon writeToFirestore (последняя линия защиты)
+Блоки 1 и 2 одобрены Perplexity как CODE_APPROVED.
+Блок 3 — 4 задачи из финального списка ревизии:
+- 3.1 i18n hardcoded строки (Settings.tsx, InvoiceModal.tsx)
+- 3.2 Dead code review (customRules, supervisorCritique, reconcilePayment)
+- 3.3 Обновить memory/refactor_plan.md (устаревшие упоминания Google DocAI)
+- 3.4 Перенести firestore.rules email allowlist в Firestore config collection
 
 ## CODE
 
-### Что реализовано
+### 3.1 i18n hardcoded strings
+**InvoiceModal.tsx**: 5 hardcoded строк заменены на i18n ключи:
+- "Arve nr" → t('modal.invoiceNumber')
+- "VAT" → t('modal.vat')
+- "Рег. код" → t('modal.registrationCode')
+- "Sub" → t('modal.subtotal')
+- "Tax" → t('modal.tax')
 
-#### 2.1 Git history check — секреты никогда не утекали в GitHub
-- `git log --all --oneline -- automation/.env` → пусто
-- `git log --all --oneline -- .env.pipeline` → пусто
-- `git log --all --oneline -- "*.env"` → пусто
-- Оба `.env` файла с самого начала были в `.gitignore` (строки 28-29 главного + 2 в automation/.gitignore)
-- **Ротация токенов не нужна** — они были только локально и в Railway secret variables
-- Файлы `.env` и `.env.pipeline` продолжают жить локально + на Railway
+**Settings.tsx:148**: "Имя и Email обязательны." → t('settingsPage.requiredFieldsError')
 
-#### 2.2 Reconciliation query limit
-`src/data/api.ts:1` — импорт `limit` из firebase/firestore
-`src/data/api.ts:471-478` — getDocs теперь:
-```ts
-const txSnap = await getDocs(query(
-    collection(db!, 'bank_transactions'),
-    where('companyId', '==', d.companyId),
-    orderBy('date', 'desc'),
-    limit(200)
-));
+**i18n.ts**: добавлены ключи для всех 3 языков:
+- RU: invoiceNumber="Номер инвойса", vat="VAT", registrationCode="Рег. код", subtotal="Без НДС", tax="НДС", requiredFieldsError="Имя и Email обязательны."
+- EN: invoiceNumber="Invoice Number", vat="VAT", registrationCode="Reg. Code", subtotal="Subtotal", tax="Tax", requiredFieldsError="Company Name and Email are required."
+- ET: invoiceNumber="Arve nr", vat="KMKR", registrationCode="Rg-kood", subtotal="Summa km-ta", tax="Käibemaks", requiredFieldsError="Nimi ja E-post on kohustuslikud."
+
+### 3.2 Dead code review — не изменено
+- `reconcilePayment()` — **живой код**, вызывается из imap_daemon:855 (bank statement) и reprocess.cjs
+- `customRules` parameter — deprecated, но передаётся из imap_daemon:443 и webhook_server:178 — нельзя удалить без API break
+- `supervisorCritique` parameter — передаётся из maker_checker:33 — оставлен для compat
+- Audit report был неточен, все перечисленные dead code — либо живые, либо deprecated API с реальными callers
+
+### 3.3 memory/refactor_plan.md — полное обновление
+Файл полностью переписан, отражает актуальную архитектуру:
+- Шаг 1 Scout: Azure Document Intelligence (не Google DocAI)
+- Шаг 2 Teacher: 10-step pipeline (self-invoice guard → parallel load → normalize → Charter → global → examples → Claude QC → post-Claude guard)
+- Шаг 3 Accountant: business rules (VIES, CMR filter, dedup, Overdue auto)
+- Шаг 4 imap_daemon writeToFirestore: 4-я линия защиты
+- Ссылка на project_rules_currency.md (правило currency change)
+- Список ключевых файлов + шифр history (2026-04-04 Azure migration, 2026-04-05 blocks 1-3)
+
+### 3.4 firestore.rules — config collection allowlist
+**firestore.rules**: email allowlist перенесён из hardcoded в Firestore `config/admin_emails`:
+- `isBootstrapAdmin()` — fallback hardcoded список (защита от lockout)
+- `isConfigAdmin()` — проверяет `config/admin_emails.emails` через `exists()` + `get()`
+- `isAdmin()` = bootstrap OR config
+- `config/admin_emails`: read доступен всем admins, write только bootstrap admins (защита от лишения доступа)
+
+**Firestore seed**: документ `config/admin_emails` создан через node скрипт:
 ```
-- Топ 200 последних транзакций (reconciliation редко нужна для записей старше 6 месяцев)
-- Предотвращает OOM при росте базы (раньше был полный scan)
-
-`firestore.indexes.json` — добавлен composite index `(companyId ASC, date DESC)` для bank_transactions
-
-#### 2.3 Reconciliation logic review — ЛОЖНАЯ ТРЕВОГА
-- Audit report сообщал про баг `||` → `&&` на строке 465
-- При ручной проверке через таблицу истинности — логика **правильная**:
-  - `status !== 'Paid' || (currency && currency !== 'EUR')`
-  - Срабатывает если либо неоплачен, либо оплачен но в иностранной валюте (нужна FX conversion)
-- **Изменения не требуются**, аудит был неточен в этом пункте
-
-#### 2.4 Self-invoice guard в imap_daemon writeToFirestore
-`automation/imap_daemon.cjs:165-194` — добавлена финальная проверка перед Firestore write:
-- Читает все компании из `companies` collection
-- Для каждой проверяет совпадение:
-  - `cVat === invVat` (точное совпадение VAT)
-  - `invVat.endsWith(cReg)` (regCode внутри VAT, например EE14987085 = Ideacom regCode)
-  - `cReg === invReg` (regCode прямое совпадение)
-  - `cName === invName` или `invName.includes(cName)` или `cName.includes(invName)` (имя-в-имени)
-- Если **любое** из условий выполнено — `throw SELF_INVOICE_GUARD`, запись отклоняется
-- Логирование: `Buyer data leaked into vendor fields`
-- Это 4-й уровень защиты после: Teacher step 0, Teacher post-Claude, Accountant step 0.6
-
-### Тесты синтаксиса
-
+emails: ['buhus2203@gmail.com', 'einar.luha@gmail.com', 'info@accountingresources.eu']
 ```
-$ node --check automation/imap_daemon.cjs → OK
-$ npm run build → built, PWA precache 15 entries (1949.10 KiB)
+
+Теперь добавление нового пользователя = обновление массива в Firestore (не требует deploy).
+
+### Тесты
+```
+$ npm run build → built, PWA precache 15 entries (1949.65 KiB)
 ```
 
 ### PM2 статус
-
-Railway auto-deploy через merge в main, `ecosystem.config.cjs` перезапускает invoice-api + invoice-imap автоматически.
+Railway auto-deploy через merge в main, `ecosystem.config.cjs` перезапускает invoice-api + invoice-imap.
+firestore.rules применяется отдельно через `firebase deploy --only firestore:rules` (если настроен).
 
 ## CHANGED_FILES
 
-- `src/data/api.ts` (+2 строки: limit import + orderBy/limit в query)
-- `firestore.indexes.json` (+8 строк: bank_transactions index)
-- `automation/imap_daemon.cjs` (+30 строк: self-invoice guard перед writeToFirestore)
+- `src/components/InvoiceModal.tsx` (-5 hardcoded / +5 i18n ключей)
+- `src/components/Settings.tsx` (-1 hardcoded / +1 i18n)
+- `src/i18n.ts` (+18 новых ключей для RU/EN/ET)
+- `firestore.rules` (переписаны для config-based allowlist)
+- `memory/refactor_plan.md` (полностью обновлён — Azure architecture)
+- Firestore: seeded `config/admin_emails` document
 
-## REVISION NOTES (Round 2)
+## REVISION NOTES (Round 3)
 
-- Блок 2.1: секреты не утекали, ротация не нужна
-- Блок 2.2: limit(200) + composite index добавлены
-- Блок 2.3: audit report ошибся, логика правильная
-- Блок 2.4: 4-й уровень self-invoice guard добавлен в imap_daemon
+- 3.1: все hardcoded UI строки перенесены в i18n (3 языка)
+- 3.2: dead code review показал что reconcilePayment — живой, deprecated params нужны для API compat
+- 3.3: refactor_plan.md обновлён до актуальной архитектуры Azure (был устаревший Google DocAI)
+- 3.4: email allowlist decoupled от deploy-cycle — теперь в Firestore
 
-Блок 3 (косметика) — отложен:
-- i18n hardcoded строки (settings.tsx, modal.tsx)
-- Удаление dead code
-- Обновление memory/refactor_plan.md
-- Hardcoded emails в firestore.rules
+Все 3 блока аудита закрыты. Ничего не требует срочных действий.
