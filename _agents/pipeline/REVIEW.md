@@ -1,20 +1,15 @@
-# REVIEW от Perplexity — 2026-04-05 16:44 UTC
-<!-- phase: CODE | round: 1 -->
+# REVIEW от Perplexity — 2026-04-05 17:50 UTC
+<!-- phase: ARCHITECTURE | round: 1 -->
 
-**ВЕРДИКТ: CODE_APPROVED**
-
-**ОЦЕНКА:**
-- Полная реализация **идемпотности** через SHA-1 хеш (companyId+date+amount+reference+counterparty) с атомарным `.create()` + catch `ALREADY_EXISTS` (gRPC code 6)
-- **Нормализация** полей (даты DD.MM.YYYY→YYYY-MM-DD, суммы fixed 2, null→`__empty__`, trim+lowercase) — защита от format drift
-- **Общий helper** `saveBankTransaction()` в 3 call sites: accountant_agent.cjs:146, imap_daemon.cjs:784, backfill_bank_transactions.cjs:151
-- **Cleanup CLI** с survivor preference (matchedInvoiceId > oldest savedAt) — 135 дублей удалено, база чистая (593→458)
-- **Синтаксис** проверен `node --check` во всех файлах
-- **PM2 restart** после automation/ через Railway auto-deploy
-- **parseNumGlobal** не требуется (bank tx amounts уже normalized)
-- **Anti-hallucination** через deterministic ID (нет 0.00 fileless записей)
-
-**ПРОБЛЕМЫ:**
-- Нет
+ВЕРДИКТ: CHANGES_NEEDED  
+ОЦЕНКА: Решение логично усиливает reconciliation rules, устраняя выявленные баги с ложными матчами (кросс-вендор, один tx на два инвойса, fuzzy includes). Полностью соответствует Chief Accountant Charter (Paid only via bank statement, idempotency, anti-hallucination). Учитывает edge cases (partial payments, vendor name с \n/городом) и риски с логированием для аудита.  
+ЗАМЕЧАНИЯ:  
+1. **Strong substring ≥5 chars** — уточнить алгоритм: `tx.reference.includes(invoiceId) || invoiceId.includes(tx.reference.slice(-invoiceId.length))` или Levenshtein distance <2 для robustness (избежать false positive на "26/4211003536" vs "26/4211005197").  
+2. **Vendor word overlap** — детализировать: split by non-alpha, strip "OÜ/AS/Sp. z o.o./GmbH/LLC/INC/URL/city names", Jaccard similarity ≥0.3 (1+ слово ≥4 chars). Тест на NUNNER vs FFC LOGISTICS.  
+3. **repairman_agent.cjs** — добавить batch audit существующих false Paid: `checkAllPaidInvoices() { for each Paid: if !strictMatch(bankTx) → revert to Overdue + log }` — запустить после deploy.  
+4. **Math validation** — tolerance ±0.05 OK, но добавить в UI badge "MATH_MISMATCH" с hover="subtotal+tax≠amount". Не в Accountant extraction (там hallucination risk).  
+5. **Tests** — добавить unit tests для reconcilePayment() на 4 реальных кейса (PRONTO pl21-25/27/28, NUNNER 5750/4500) + partial payment.  
+6. **Firestore index** — нужен composite index на `bank_transactions(matchedInvoiceId, status)` для idempotency query efficiency.
 
 ---
 *Автоматическое ревью через GitHub Actions (.github/workflows/perplexity_review.yml)*
