@@ -810,7 +810,64 @@ async function validateAndTeach(invoiceData, companyId) {
  *   'Vendor "X": description = "Y"'              → default description
  *   'Vendor "X": currency = "EUR"'               → force currency
  */
+/**
+ * Normalize rules text from any language (RU/ET/EN) to canonical English format.
+ * Runs on every loaded rule line — if it matches a known non-English pattern,
+ * replaces with the canonical English equivalent so the parser only needs to
+ * understand one form. Unknown/untranslatable lines are kept as-is.
+ */
+function normalizeRulesText(rulesText) {
+    if (!rulesText) return '';
+    return rulesText.split('\n').map(line => {
+        const trimmed = line.trim();
+        if (!trimmed) return line;
+
+        // ── Due date rules ──────────────────────────────────────────────────
+        // RU: "Для вендора X срок оплаты = дата инвойса + N дней"
+        // RU: "Для вендоров X и Y срок оплаты = дата инвойса + N дней" (multiple)
+        const ruDueMulti = trimmed.match(/^[Дд]ля\s+вендор(?:а|ов|у)?\s+(.+?)\s+срок\s+оплаты\s*=\s*дата\s+инвойса\s*\+\s*(\d+)\s*дн/i);
+        if (ruDueMulti) {
+            const [, vendors, days] = ruDueMulti;
+            // Handle "X и Y", "X, Y", "X and Y"
+            const names = vendors.split(/\s+и\s+|\s*,\s*|\s+and\s+/i).map(n => n.trim()).filter(Boolean);
+            return names.map(n => `Vendor "${n}": net-${days}`).join('\n');
+        }
+        // ET: 'Müüja "X": maksetähtaeg = arve kuupäev + N päeva'
+        const etDue = trimmed.match(/^[Mm]üüja\s*[""\u201c\u201d]?(.+?)[""\u201c\u201d]?:?\s*maksetähtaeg\s*=\s*arve\s+kuupäev\s*\+\s*(\d+)\s*päeva/i);
+        if (etDue) return `Vendor "${etDue[1].trim()}": net-${etDue[2]}`;
+
+        // ── Currency rules ──────────────────────────────────────────────────
+        // RU: 'Для вендора X валюта = "EUR"'
+        const ruCurr = trimmed.match(/^[Дд]ля\s+вендор(?:а|ов|у)?\s+(.+?)\s+валюта\s*=\s*[""\u201c\u201d]?([A-Z]{3})[""\u201c\u201d]?/i);
+        if (ruCurr) return `Vendor "${ruCurr[1].trim()}": currency = "${ruCurr[2].toUpperCase()}"`;
+        // ET: 'Müüja "X": valuuta = "EUR"'
+        const etCurr = trimmed.match(/^[Mm]üüja\s*[""\u201c\u201d]?(.+?)[""\u201c\u201d]?:?\s*valuuta\s*=\s*[""\u201c\u201d]?([A-Z]{3})[""\u201c\u201d]?/i);
+        if (etCurr) return `Vendor "${etCurr[1].trim()}": currency = "${etCurr[2].toUpperCase()}"`;
+
+        // ── Description rules ───────────────────────────────────────────────
+        // RU: 'Для вендора X описание = "Y"'
+        const ruDesc = trimmed.match(/^[Дд]ля\s+вендор(?:а|ов|у)?\s+(.+?)\s+описание\s*=\s*[""\u201c\u201d](.+?)[""\u201c\u201d]/i);
+        if (ruDesc) return `Vendor "${ruDesc[1].trim()}": description = "${ruDesc[2]}"`;
+        // ET: 'Müüja "X": kirjeldus = "Y"'
+        const etDesc = trimmed.match(/^[Mm]üüja\s*[""\u201c\u201d]?(.+?)[""\u201c\u201d]?:?\s*kirjeldus\s*=\s*[""\u201c\u201d](.+?)[""\u201c\u201d]/i);
+        if (etDesc) return `Vendor "${etDesc[1].trim()}": description = "${etDesc[2]}"`;
+
+        // ── Vendor name correction ──────────────────────────────────────────
+        // RU: 'Если видишь "OLD", правильное название "NEW"'
+        const ruName = trimmed.match(/^[Ее]сли\s+видишь\s+[""\u201c\u201d](.+?)[""\u201c\u201d],?\s*правильное\s+(?:официальное\s+)?название\s+[""\u201c\u201d](.+?)[""\u201c\u201d]/i);
+        if (ruName) return `If you see "${ruName[1]}", the correct name is "${ruName[2]}".`;
+        // ET: 'Kui näed "OLD", õige nimi on "NEW"'
+        const etName = trimmed.match(/^[Kk]ui\s+näed\s+[""\u201c\u201d](.+?)[""\u201c\u201d],?\s*õige\s+(?:ametlik\s+)?nimi\s+on\s+[""\u201c\u201d](.+?)[""\u201c\u201d]/i);
+        if (etName) return `If you see "${etName[1]}", the correct name is "${etName[2]}".`;
+
+        // Already canonical or unknown → keep as-is
+        return line;
+    }).join('\n');
+}
+
 function applyCharterRules(invoice, rulesText) {
+    // Normalize RU/ET rules to canonical English form first
+    rulesText = normalizeRulesText(rulesText);
     const applied = [];
     const rules = rulesText.split('\n').filter(r => r.trim());
     // Track which (field, vendor) combinations were already set — first matching rule wins
@@ -844,14 +901,8 @@ function applyCharterRules(invoice, rulesText) {
             continue;
         }
 
-        // Due date rule (EN): Vendor "X": net-30
-        const dueDateMatch = rule.match(/[Vv]endor\s*[""\u201c\u201d](.+?)[""\u201c\u201d]:\s*net-?(\d+)/i);
-        // Due date rule (RU): Для вендора X срок оплаты = дата инвойса + N дней
-        const dueDateMatchRu = !dueDateMatch && rule.match(/[Дд]ля\s+вендора\s+(.+?)\s+срок\s+оплаты\s*=\s*дата\s+инвойса\s*\+\s*(\d+)\s*дн/i);
-        // Due date rule (ET): Müüja "X": maksetähtaeg = arve kuupäev + N päeva
-        const dueDateMatchEt = !dueDateMatch && !dueDateMatchRu && rule.match(/[Mm]üüja\s*[""\u201c\u201d]?(.+?)[""\u201c\u201d]?:?\s*maksetähtaeg\s*=\s*arve\s+kuupäev\s*\+\s*(\d+)\s*päeva/i);
-
-        const dueMatch = dueDateMatch || dueDateMatchRu || dueDateMatchEt;
+        // Due date rule (canonical): Vendor "X": net-30
+        const dueMatch = rule.match(/[Vv]endor\s*[""\u201c\u201d](.+?)[""\u201c\u201d]:\s*net-?(\d+)/i);
         if (dueMatch) {
             const [, vendor, days] = dueMatch;
             const cleanVendor = vendor.replace(/[""\u201c\u201d.]/g, '').trim();
