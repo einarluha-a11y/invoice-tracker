@@ -1,110 +1,172 @@
 # SOLUTION
 
-PHASE: CODE
+PHASE: ARCHITECTURE
 ROUND: 1
-TASK: Усилить reconciliation rules — не допускать ложных match
+TASK: Аудит — исправить 6 находок (parseFloat vs cleanNum, дубли функций, dead code, dedup scan, /api/chat, ecosystem hardening)
 
 ## ARCHITECTURE
 
-(одобрено в round 2)
+### Верификация находок (все подтверждены через grep)
 
-Strict reconciliation: reference match (exact OR strong substring ≥5 chars, одна строка полностью содержит другую) + vendor word overlap (≥3 chars, после stripping legal suffixes, cities, stopwords) + amount tolerance + idempotency (skip if tx.matchedInvoiceId уже установлен). Центральный модуль `automation/core/reconcile_rules.cjs` — единый источник правил.
+1. **parseFloat вместо cleanNum**: 48 использований parseFloat в automation/**/*.cjs. Из них ~20 на `.toFixed(2)` pattern (безопасные — конвертируют вычисленный float) и ~28 на неконтролируемых строках из Firestore/CSV/OCR.
+2. **Дубли функций**: `cleanNum` (core/utils.cjs), `parseAmount = cleanNum` (accountant_agent.cjs:11 — backward-compat alias), `parseNumGlobal` — упоминается в Charter как имя, но не существует в коде.
+3. **Dead code**: automation/supreme_supervisor.cjs, automation/overseer_agent.cjs, automation/ai_retry.cjs существуют, НЕ импортируются нигде, НЕ в ecosystem.config.cjs. Чистый dead weight.
+4. (пропущено в аудите)
+5. **Dedup full scan** — imap_daemon.cjs:212-224: `where('companyId', '==', X).get()` → full scan всех инвойсов компании ради match по fileBasename. При 1000+ инвойсах = 1000 doc reads per save.
+6. **/api/chat 501** — api_server.cjs:12-14 возвращает 501. Frontend AiChat.tsx:75 всё ещё fetch'ит этот endpoint. User имеет рабочий ANTHROPIC_API_KEY (используется в teacher/scout).
+7. **ecosystem.config.cjs**: нет restart_delay, max_restarts, exp_backoff_restart_delay. watch:true уже есть, но может привести к loop при краше.
 
-## CODE
+### Решения
 
-### 1. automation/core/reconcile_rules.cjs (новый файл, 107 строк)
+#### 1+2. parseFloat → cleanNum + консолидация имён
 
-Экспортирует:
-- `matchReference(invId, txRef)` → `'exact' | 'strong' | false`
-  - Нормализует (lowercase, strip `\s-/`)
-  - exact: a === b
-  - strong: обе ≥5 chars И одна полностью содержит другую (`long.includes(short)`)
-  - Никакого ratio: "pl2125" vs "pl2128" → нет containment → false, защищает PRONTO кейс
-- `vendorOverlap(a, b)` → boolean
-  - Tokenize: lower + \n→space + strip LEGAL_SUFFIXES + strip CITIES + strip URLs + alphanumeric
-  - Filter: ≥3 chars + не stopword
-  - Возвращает true если есть общий token
-  - FFC LOGISTICS vs Nunner Logistics → {ffc} vs {nunner} (logistics в stopwords) → false ✅
-- `matchAmount(invoice, tx)` → `'full' | 'partial' | false` (±0.05 для full)
-- `canReconcile(invoice, tx)` — композиция: `{ok, reason, kind, payment}`
-  - Порядок проверок: missing input → matched already → ref → vendor → amount → ok
+**Единое имя:** `cleanNum` (core/utils.cjs). Причины:
+- Нейтральное, отражает действие
+- Уже в core/utils.cjs — shared module
+- `parseAmount` — alias только для backward compat в одном файле
+- `parseNumGlobal` — не существует, это артефакт старого Charter
 
-LEGAL_SUFFIXES: OÜ/OU/AS/SA/SIA/Sp. z o.o./GmbH/LLC/Ltd/Inc/AG/BV/SRL/SPA (case insensitive, word boundary)
-CITIES: Tallinn/Tartu/Narva/Pärnu/Kohtla-Järve/Warsaw/Warszawa/Riga/Vilnius/Helsinki/Stockholm/Moscow/Kiev/Kyiv
-VENDOR_STOPWORDS: logistics/transport/cargo/freight/services/group/holding/international/company/solutions/systems/consulting/global/trade/trading/auto/motors/store
+**Что меняем:**
+- `parseAmount` alias в accountant_agent.cjs → удаляем, заменяем все parseAmount(...) → cleanNum(...)
+- Все небезопасные parseFloat в automation/*.cjs → cleanNum
+- Безопасные parseFloat(X.toFixed(2)) → остаются (это float→float нормализация, не парсинг строки)
+- Charter (project rules memory) обновить: `parseNumGlobal` → `cleanNum`
 
-### 2. automation/tests/reconcile.test.cjs (новый файл, 157 строк)
+**Точный список файлов для замены (неsafe parseFloat):**
+- `automation/imap_daemon.cjs` — 12 мест (строки 123, 465-467, 572, 625, 685, 781, 827, 835, 842, 861)
+- `automation/accountant_agent.cjs` — 3 места (400, 479, 588) + parseAmount alias удалить
+- `automation/repairman_agent.cjs` — 6 мест (279, 504-506, 761, 783)
+- `automation/teacher_agent.cjs` — 1 место (1085 — user input)
+- `automation/backfill_bank_transactions.cjs` — 4 места (95, 102, 109, 125)
+- `automation/import_csv_bank_transactions.cjs` — 4 места (77, 84, 91, 107)
+- `automation/reconcile_bank_statement.cjs` — 2 места (78, 116)
+- `automation/search_agent.cjs` — 2 места (через parseAmount import из accountant)
 
-23 assert-based теста (passed: 23/23):
-- **matchReference** (7): exact, case-insensitive, separators, real PRONTO false positive rejected, real NUNNER diff ids rejected, strong substring allowed для Allstore B03494, short strings, empty
-- **vendorOverlap** (6): FFC/NUNNER stopword filter, PRONTO pass, Allstore pass, vendorName с \n strip, empty conservative false, only stopwords false
-- **matchAmount** (5): exact, tolerance, partial, over-amount, invalid
-- **canReconcile** (5): real PRONTO false match rejected, real FFC cross-vendor rejected, idempotency, valid match, valid partial
+**Что НЕ трогаем:**
+- `core/utils.cjs:22` — `parseFloat(s)` внутри самого cleanNum (там уже нормализованная строка)
+- Все `parseFloat(X.toFixed(2))` паттерны (teacher_agent 525, 526, 729; accountant 92, 441; document_ai_service 356)
+- Score color (teacher_agent 1261-1267) — UI, входы безопасны
+- `webhook_server.cjs:320` — .toFixed pattern
 
-Run: `node automation/tests/reconcile.test.cjs` → exit 0 если все проходят.
+#### 3. Dead code cleanup
 
-### 3. automation/imap_daemon.cjs — reconcilePayment()
+Удаляем из репозитория:
+- `automation/supreme_supervisor.cjs`
+- `automation/overseer_agent.cjs`
+- `automation/ai_retry.cjs`
 
-- Import `canReconcile, matchReference, vendorOverlap` из `./core/reconcile_rules.cjs`
-- `assessCandidate()` переписан:
-  - БЫЛО: `refMatchScore (fuzzy includes) || vNameMatch (any word includes)` → добавлял кандидата
-  - СТАЛО: `(refMatch && vendorOk)` обязательны (кроме ettemaks — vendor-only)
-  - Score: exact=150, strong=75, vendor=+25, unpaid priority=+500
-  - Логирует skipped vendor-only cases для аудита
-- Cross-currency fallback block: заменён `vendorWords.some(...)` на `vendorOverlap(data.vendorName, bankDesc)`
+Проверяем через grep что никто не импортирует, потом `git rm`.
 
-### 4. automation/repairman_agent.cjs
+#### 5. Dedup по fileBasename — composite индекс или denorm поле
 
-- Import `canReconcile, matchReference, vendorOverlap` из `./core/reconcile_rules.cjs`
-- `checkBankTransactions()` переписан: вместо fuzzy `includes` использует `canReconcile({invoiceId, vendorName, amount}, tx)`. Добавлена проверка `tx.matchedInvoiceId && !== invoiceId → skip` (idempotency).
-- Новая функция `checkAllPaidInvoices({fix})`:
-  - Обходит все `status === 'Paid'` invoices
-  - Для каждого ищет matched bank tx via `where('matchedInvoiceId', '==', inv.id)`
-  - Если нет → suspicious (лог)
-  - Если есть но не проходит `matchReference + vendorOverlap` → revert to Overdue + clear matchedInvoiceId
-  - Dry-run default, `--fix` для apply
-- CLI entry: `if (hasFlag('--audit-paid'))` → запускает checkAllPaidInvoices вместо main()
-- Export: добавлен `checkAllPaidInvoices`
+**Два варианта:**
 
-### 5. src/data/api.ts — post-save reconciliation
+A. **Composite index + where clause:**
+```
+// Store fileBasename as denormalized field on save
+const fileBasename = (data.fileUrl.match(/\d+_([^?]+)/)?.[1] || '').toLowerCase();
+// Index: invoices(companyId, fileBasename)
+const existing = await invoicesRef
+    .where('companyId', '==', data.companyId)
+    .where('fileBasename', '==', fileBasename)
+    .limit(1)
+    .get();
+```
+Плюс: O(1) lookup. Минус: нужен firestore.indexes.json update + миграция (backfill fileBasename для существующих).
 
-- Старый fuzzy match (`txRef.includes(invoiceNum) || invoiceNum.includes(txRef)` + любое vendor word contains) заменён на strict:
-  - Inline TypeScript копия helpers из reconcile_rules.cjs (STOPWORDS, LEGAL_SUFFIXES, CITIES, tokenize, matchRef, vendorOverlap)
-  - Требует ОБА refOk && vendorOk
-  - Idempotency: `if (tx.matchedInvoiceId && tx.matchedInvoiceId !== invoiceRef.id) continue`
-  - При успешном match — обновляет `tx.matchedInvoiceId = invoiceRef.id` (закрепляет tx)
-- Логика FX conversion сохранена
+B. **Deterministic document ID через hash** (как bank_dedup):
+Использовать `companyId + fileBasename` → SHA-1 → doc ID. Атомарный `.create()` catches ALREADY_EXISTS. Но инвойсы уже имеют свой ID schema — нельзя менять.
 
-### 6. automation/teacher_agent.cjs
+**Выбираем A.** Добавляем `fileBasename` field в writeToFirestore, composite index в firestore.indexes.json, backfill script (optional — existing данные просто не будут иметь поля, новый код будет строить постепенно). Для edge case когда у существующего инвойса нет `fileBasename` — fallback на старую логику full scan, но только если query вернул пусто.
 
-- **Vendor cleanup блок (новый, 4a):** если `vendorName.includes('\n')` → берём первую непустую линию (fixes FFC LOGISTICS\nKOHTLA-JÄRVE)
-- **Math mismatch flag:** в существующем math check блоке — если subtotal + tax ≠ amount (≤0.05 tolerance, ratio в диапазоне) → устанавливает `invoice.mathMismatch = true` (non-blocking, для UI badge). Stale flag очищается если математика теперь правильная.
+#### 6. /api/chat — восстановить через Claude Haiku
 
-### 7. src/components/InvoiceTable.tsx — MATH badge
+AiChat.tsx продолжает использовать /api/chat для natural language filter queries ("show me overdue invoices from Tallinn last month"). У нас уже есть ANTHROPIC_API_KEY в Railway. Восстанавливаем endpoint:
 
-- В колонке amount рядом с суммой: если `(invoice as any).mathMismatch === true` → жёлтый inline badge "⚠ MATH" с tooltip "Subtotal + Tax ≠ Amount — требует ручной проверки"
-- Стиль: background #fff3cd, border #ffc107, color #856404, fontSize 0.65rem
+```
+// api_server.cjs
+const Anthropic = require('@anthropic-ai/sdk');
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-### 8. CLAUDE.md
+app.post('/api/chat', rateLimit(30, 60_000), async (req, res) => {
+    const msg = String(req.body?.message || '').slice(0, 500);
+    if (!msg) return res.status(400).json({ error: 'empty message' });
+    try {
+        const r = await anthropic.messages.create({
+            model: 'claude-haiku-4-5-20251001',
+            max_tokens: 400,
+            system: `You are an invoice tracker filter assistant. Extract filter criteria from user query.
+Return JSON: { reply: "human response", filters: { status?, vendor?, dateFrom?, dateTo?, amountMin?, amountMax? } }
+Status values: Paid, Pending, Overdue. Dates: YYYY-MM-DD.`,
+            messages: [{ role: 'user', content: msg }],
+        });
+        const text = r.content[0]?.text || '{}';
+        const m = text.match(/\{[\s\S]*\}/);
+        const parsed = m ? JSON.parse(m[0]) : { reply: text };
+        res.json(parsed);
+    } catch (err) {
+        console.error('[api/chat]', err.message);
+        res.status(500).json({ error: 'AI chat failed', reply: 'Извините, попробуйте позже' });
+    }
+});
+```
 
-Добавлены команды:
-- `node repairman_agent.cjs --audit-paid [--fix]`
-- `node automation/tests/reconcile.test.cjs`
+Rate limit уже есть. Безопасность: входные данные обрезаются до 500 chars, JSON parsing в try/catch.
 
-## Верификация
+#### 7. ecosystem.config.cjs hardening
 
-1. **Syntax check:** `node --check` прошёл на всех CJS файлах
-2. **Unit tests:** 23/23 passed
-3. **Build:** `npm run build` успешен, dist готов
-4. **Dry run audit:** запустим после deploy на production для выявления оставшихся false Paid
+```
+module.exports = {
+  apps: [
+    {
+      name: 'invoice-api',
+      script: './automation/api_server.cjs',
+      watch: true,
+      ignore_watch: ['node_modules', 'automation/logs', 'automation/dlq', '*.json', '*.flag', '*.log'],
+      restart_delay: 5000,
+      max_restarts: 10,
+      exp_backoff_restart_delay: 100,
+      max_memory_restart: '500M',
+      error_file: './logs/invoice-api-error.log',
+      out_file: './logs/invoice-api-out.log',
+    },
+    { ... same for invoice-imap ... }
+  ]
+};
+```
 
-## Затронутые файлы
+Защищает от infinite restart loop при систематическом краше (например, если DB недоступна).
 
-- `automation/core/reconcile_rules.cjs` (new)
-- `automation/tests/reconcile.test.cjs` (new)
-- `automation/imap_daemon.cjs`
-- `automation/repairman_agent.cjs`
-- `automation/teacher_agent.cjs`
-- `src/data/api.ts`
-- `src/components/InvoiceTable.tsx`
-- `CLAUDE.md`
+### План реализации (CODE phase)
+
+**Порядок — от мелкого к крупному:**
+
+1. **ecosystem.config.cjs** — добавить restart flags (5 строк)
+2. **Dead code cleanup** — `git rm` 3 файлов + проверить что не импортируются
+3. **/api/chat restore** — api_server.cjs Haiku call + package.json (если @anthropic-ai/sdk ещё не в deps) + .env var check
+4. **Dedup fileBasename** — denorm поле в writeToFirestore + firestore.indexes.json (composite companyId+fileBasename) + fallback
+5. **cleanNum refactor** — замена parseFloat → cleanNum по всем файлам (механический рефакторинг)
+6. **Charter memory update** — обновить `project_architecture.md` / `project_rules_currency.md`: `parseNumGlobal` → `cleanNum`
+
+### Риски
+
+1. **cleanNum behavior на edge cases** — вход "0" → returns 0 (safe). Negative "-500" → works. Scientific notation "1e5" — parseFloat пропустит, cleanNum тоже (оба regex-strip делают). Тесты: unit tests нужны.
+2. **Firestore composite index build time** — несколько минут после deploy, но запросы работают. Fallback на full scan чтобы не было downtime.
+3. **AiChat Haiku cost** — 30 req/min rate limit × Haiku input token cost минимален. OK.
+4. **Dead code — вдруг импортируется через динамический require?** — grep покажет все строковые упоминания. Если ничего не найдено — безопасно удалять.
+
+### Верификация
+
+- Unit tests для cleanNum: европейский "1.200,50", US "1,200.50", negative, null/undefined, "0", empty, currency-prefixed "€500"
+- `node --check` всех изменённых файлов
+- `npm run build` — TS check InvoiceTable + любые типы
+- Manual test /api/chat локально через curl
+- Syntax ecosystem.config.cjs
+- `node repairman_agent.cjs --dry-run` — smoke test что всё читается
+
+### Что НЕ меняем
+
+- Схему invoices/bank_transactions (кроме добавления `fileBasename` поля)
+- Логику reconciliation (только что прошли pipeline)
+- Teacher Charter rules
+- i18n, UI layout
