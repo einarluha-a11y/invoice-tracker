@@ -394,4 +394,72 @@ async function processInvoiceWithDocAI(buffer, mimeType = 'application/pdf', sup
     }
 }
 
-module.exports = { processInvoiceWithDocAI, cleanNum, parseDocAiDate, inferDescription };
+/**
+ * askClaudeToFix — "second opinion" via Claude Haiku when Scout+Teacher
+ * produced data that fails QC checks (math mismatch, unknown vendor,
+ * wrong currency, etc.). Called from repairman_agent and imap_daemon.
+ *
+ * @param {string} rawText — full document text from Azure
+ * @param {object} current — current known fields (vendorName, invoiceId, amounts, currency, dates)
+ * @param {string[]} issues — list of QC issues to fix
+ * @returns {Promise<object|null>} — JSON with corrected fields, or null on error
+ */
+async function askClaudeToFix(rawText, current, issues) {
+    if (!process.env.ANTHROPIC_API_KEY) {
+        require('dotenv').config({ path: require('path').join(__dirname, '.env'), override: true });
+    }
+    if (!rawText || !process.env.ANTHROPIC_API_KEY) return null;
+
+    const Anthropic = require('@anthropic-ai/sdk');
+    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const snippet = rawText.slice(0, 3000);
+
+    const prompt = `You are fixing fields on an already-extracted invoice.
+
+Current fields (from Scout/Teacher):
+${JSON.stringify(current, null, 2)}
+
+Quality control issues to fix:
+${issues.map((i, idx) => `${idx + 1}. ${i}`).join('\n')}
+
+Invoice raw text (from OCR):
+${snippet}
+
+Return ONLY a JSON object with fields that need correction. Omit fields that are already correct.
+Possible fields to return:
+- vendorName (string): legal supplier name with company suffix (OÜ, AS, GmbH, etc.)
+- invoiceId (string)
+- amount (number): total to pay, in invoice's currency
+- subtotalAmount (number): net amount without VAT
+- taxAmount (number): VAT amount
+- currency (string): ISO code (EUR, USD, PLN, ...)
+- dateCreated (string): YYYY-MM-DD
+- dueDate (string): YYYY-MM-DD
+- supplierVat (string): country code + digits (e.g. EE102076039)
+- supplierRegistration (string): digits only
+- isPaid (boolean): true if invoice states it is already paid (e.g. "Tasumistingimus: Kaardimakse")
+
+Rules:
+- If currency in the raw text differs from current, return BOTH new currency AND new amount.
+- Never invent VAT/registration numbers — only use what's in the text.
+- If you cannot fix an issue, omit that field.
+
+Return ONLY the JSON object, nothing else.`;
+
+    try {
+        const resp = await client.messages.create({
+            model: 'claude-haiku-4-5-20251001',
+            max_tokens: 600,
+            messages: [{ role: 'user', content: prompt }],
+        });
+        const text = resp.content[0]?.text || '';
+        const match = text.match(/\{[\s\S]*\}/);
+        if (!match) return null;
+        return JSON.parse(match[0]);
+    } catch (err) {
+        console.warn(`[askClaudeToFix] ${err.message}`);
+        return null;
+    }
+}
+
+module.exports = { processInvoiceWithDocAI, cleanNum, parseDocAiDate, inferDescription, askClaudeToFix };

@@ -332,6 +332,7 @@ function App() {
                         statusFilter={statusFilter}
                         startDate={startDate}
                         endDate={endDate}
+                        dateFilterType={dateFilterType}
                         sortField={sortField}
                         sortDirection={sortDirection}
                         onSort={(field) => {

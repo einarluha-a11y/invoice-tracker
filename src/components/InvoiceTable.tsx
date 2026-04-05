@@ -12,6 +12,7 @@ interface InvoiceTableProps {
     statusFilter: InvoiceStatus | 'All' | 'Unpaid';
     startDate?: string;
     endDate?: string;
+    dateFilterType?: 'created' | 'due';
     sortField: SortField;
     sortDirection: SortDirection;
     onSort: (field: SortField) => void;
@@ -23,7 +24,7 @@ interface InvoiceTableProps {
 export type SortField = keyof Invoice;
 export type SortDirection = 'asc' | 'desc';
 
-export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, endDate, sortField, sortDirection, onSort, onEdit, onDelete, companyName }: InvoiceTableProps) {
+export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, endDate, dateFilterType = 'created', sortField, sortDirection, onSort, onEdit, onDelete, companyName }: InvoiceTableProps) {
     const { t, i18n } = useTranslation();
     const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
     const [visibleLimit, setVisibleLimit] = useState(100);
@@ -88,11 +89,13 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                 }
 
                 let matchesDate = true;
+                // Respect dateFilterType from parent: 'created' or 'due'
+                const compareDate = dateFilterType === 'due' ? (invoice.dueDate || '') : invoice.dateCreated;
                 if (startDate) {
-                    matchesDate = invoice.dateCreated >= startDate;
+                    matchesDate = compareDate >= startDate;
                 }
                 if (endDate) {
-                    matchesDate = matchesDate && invoice.dateCreated <= endDate;
+                    matchesDate = matchesDate && compareDate <= endDate;
                 }
 
                 return matchesSearch && matchesStatus && matchesDate;
@@ -111,12 +114,12 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
 
         return sortDirection === 'asc' ? comparison : -comparison;
             });
-    }, [invoices, searchTerm, statusFilter, startDate, endDate, sortField, sortDirection]);
+    }, [invoices, searchTerm, statusFilter, startDate, endDate, dateFilterType, sortField, sortDirection]);
 
     // Reset pagination when search or filters change
     useEffect(() => {
         setVisibleLimit(100);
-    }, [searchTerm, statusFilter, startDate, endDate, sortField, sortDirection]);
+    }, [searchTerm, statusFilter, startDate, endDate, dateFilterType, sortField, sortDirection]);
 
     const formatDate = (dateString: string) => {
         const options: Intl.DateTimeFormatOptions = { year: 'numeric', month: 'short', day: 'numeric' };

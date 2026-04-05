@@ -511,10 +511,20 @@ async function repairInvoice(invoiceId, invoiceData) {
 
                 if (fixes && Object.keys(fixes).length > 0) {
                     if (fixes.vendorName) updates.vendorName = fixes.vendorName;
-                    if (fixes.amount !== undefined) updates.amount = fixes.amount;
-                    if (fixes.subtotalAmount !== undefined) updates.subtotalAmount = fixes.subtotalAmount;
-                    if (fixes.taxAmount !== undefined) updates.taxAmount = fixes.taxAmount;
-                    if (fixes.currency !== undefined) updates.currency = fixes.currency;
+                    // CURRENCY RULE: if Claude changes currency, amount must change together.
+                    // Claude's own amount in new currency is authoritative.
+                    const currentCurrency = updates.currency || newData.currency || invoiceData.currency;
+                    if (fixes.currency !== undefined && fixes.currency !== currentCurrency) {
+                        updates.currency = fixes.currency;
+                        if (fixes.amount !== undefined) updates.amount = fixes.amount;
+                        if (fixes.subtotalAmount !== undefined) updates.subtotalAmount = fixes.subtotalAmount;
+                        if (fixes.taxAmount !== undefined) updates.taxAmount = fixes.taxAmount;
+                        console.log(`  [Claude QC] Currency changed to ${fixes.currency}, amount=${fixes.amount}`);
+                    } else {
+                        if (fixes.amount !== undefined) updates.amount = fixes.amount;
+                        if (fixes.subtotalAmount !== undefined) updates.subtotalAmount = fixes.subtotalAmount;
+                        if (fixes.taxAmount !== undefined) updates.taxAmount = fixes.taxAmount;
+                    }
                     if (fixes.invoiceId) updates.invoiceId = fixes.invoiceId;
                     if (fixes.supplierVat) updates.supplierVat = fixes.supplierVat;
                     if (fixes.supplierRegistration) updates.supplierRegistration = fixes.supplierRegistration;
