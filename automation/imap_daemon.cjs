@@ -162,6 +162,36 @@ async function writeToFirestore(dataArray) {
                 throw new Error(`FILE_INTEGRITY_BLOCK: No fileUrl for ${vendorName} / ${invoiceId}. Record not saved.`);
             }
 
+            // --- SELF-INVOICE GUARD (last-resort check before write) ---
+            // Receiver companies (Global Technics, Ideacom, ...) can never be the vendor.
+            // If Teacher/Accountant guards missed it, this final check catches the case.
+            try {
+                const companiesSnap = await db.collection('companies').get();
+                const invVat = (data.supplierVat || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+                const invReg = (data.supplierRegistration || '').replace(/[^0-9]/g, '');
+                const invName = (vendorName || '').toLowerCase().replace(/[^a-zöäüõ0-9]/g, '');
+                for (const cd of companiesSnap.docs) {
+                    const c = cd.data();
+                    const cVat = (c.vat || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+                    const cReg = (c.regCode || '').replace(/[^0-9]/g, '');
+                    const cName = (c.name || '').toLowerCase().replace(/[^a-zöäüõ0-9]/g, '');
+                    const vatLeak = cVat && invVat && (cVat === invVat || invVat.endsWith(cReg || 'XXXXXX'));
+                    const regLeak = cReg && invReg && cReg === invReg;
+                    const nameLeak = cName && invName && invName.length > 3 &&
+                        (cName === invName || invName.includes(cName) || cName.includes(invName));
+                    if (vatLeak || regLeak || nameLeak) {
+                        console.error(`[Firestore] 🛑 SELF-INVOICE GUARD: Buyer data leaked into vendor fields for ${vendorName}/${invoiceId} (matches ${c.name}). Record rejected.`);
+                        throw new Error(`SELF_INVOICE_GUARD: Buyer "${c.name}" data in vendor fields`);
+                    }
+                }
+            } catch (guardErr) {
+                if (guardErr.message && guardErr.message.startsWith('SELF_INVOICE_GUARD')) {
+                    throw guardErr; // re-throw to skip write
+                }
+                // Firestore read errors are non-critical — continue write
+                console.warn(`[Firestore] Self-invoice guard check failed: ${guardErr.message}`);
+            }
+
             // --- DUPLICATE PREVENTION LOGIC ---
             // Queries are run OUTSIDE the transaction: Firestore Admin SDK supports
             // query reads inside transactions, but under concurrent load the snapshot
