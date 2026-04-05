@@ -1489,8 +1489,10 @@ async function pollLoop() {
 }
 
 // ─── Automatic Status Sweep ─────────────────────────────────────────────────
-// Runs every 2 hours. One job only:
-//   Pending → if dueDate < today → Overdue
+// Runs every 2 hours. Bidirectional self-healing based on current dueDate:
+//   Pending → Overdue: if dueDate < today
+//   Overdue → Pending: if dueDate >= today (happens when dueDate was corrected
+//                      by Teacher charter rule or manual edit after stale Overdue)
 //
 // STATUS RULES (3 statuses only):
 //   Paid    — set ONLY by reconcilePayment() when bank statement arrives with matching payment
@@ -1499,23 +1501,36 @@ async function pollLoop() {
 //
 async function sweepStatuses() {
     const today = new Date().toISOString().slice(0, 10);
-    // Check ALL non-Paid, non-Overdue, non-Duplicate invoices
-    // (covers Pending, Needs Action, UNREPAIRABLE, etc.)
     const snap = await db.collection('invoices').get();
-    let fixed = 0;
+    let toOverdue = 0, toPending = 0;
     for (const doc of snap.docs) {
         const data = doc.data();
-        if (data.status === 'Paid' || data.status === 'Overdue' || data.status === 'Duplicate') continue;
-        if (data.dueDate && data.dueDate < today) {
-            await db.collection('invoices').doc(doc.id).update({
+        if (data.status === 'Paid' || data.status === 'Duplicate') continue;
+
+        // Pending → Overdue
+        if (data.status !== 'Overdue' && data.dueDate && data.dueDate < today) {
+            await doc.ref.update({
                 status: 'Overdue',
                 previousStatus: data.status,
                 statusFixedAt: admin.firestore.FieldValue.serverTimestamp(),
             });
-            fixed++;
+            toOverdue++;
+            continue;
+        }
+
+        // Overdue → Pending (self-healing after dueDate correction)
+        if (data.status === 'Overdue' && data.dueDate && data.dueDate >= today) {
+            await doc.ref.update({
+                status: 'Pending',
+                previousStatus: 'Overdue',
+                statusFixedAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+            toPending++;
         }
     }
-    if (fixed > 0) console.log(`[Status Sweep] ${fixed} invoice(s) → Overdue.`);
+    if (toOverdue > 0 || toPending > 0) {
+        console.log(`[Status Sweep] ${toOverdue} → Overdue, ${toPending} → Pending (self-healed after dueDate correction)`);
+    }
 }
 
 // Overlap-safe Post-Flight Auditor daemon
