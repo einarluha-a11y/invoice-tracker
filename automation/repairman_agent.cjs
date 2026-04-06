@@ -199,7 +199,7 @@ function detectProblems(d) {
     if (hasMissingFile)                      reasons.push('Missing File');
     if (hasZeroAmount)                       reasons.push('Zero Amount');
     if (hasUnknownVendor)                    reasons.push('Unknown Vendor');
-    if (isMissingIdentity && hasMissingFile) reasons.push('Missing VAT & RegNo');
+    if (isMissingIdentity) reasons.push('Missing VAT & RegNo');
     if (isStuck)                             reasons.push(`Stuck in ${d.status}`);
     if (hasSameDates)                        reasons.push('dueDate = dateCreated (suspicious)');
     if (hasMissingDescription)               reasons.push('Missing Description');
