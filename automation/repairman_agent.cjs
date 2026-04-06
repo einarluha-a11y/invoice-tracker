@@ -178,6 +178,10 @@ function detectProblems(d) {
                               (!d.supplierRegistration || d.supplierRegistration === 'Not_Found');
     const isStuck = (d.status === 'NEEDS_REVIEW' || d.status === 'DRAFT') && hasMissingFile;
 
+    // Fabricated VAT: country prefix + regCode (hallucinated by Claude)
+    const hasFabricatedVat = d.supplierVat && d.supplierRegistration &&
+        d.supplierVat.length > 2 && d.supplierVat.slice(2) === d.supplierRegistration;
+
     // Data quality checks
     const hasUnknownVendor = isEmpty(d.vendorName);
     const hasSameDates = d.dateCreated && d.dueDate && d.dateCreated === d.dueDate;
@@ -200,6 +204,7 @@ function detectProblems(d) {
     if (hasZeroAmount)                       reasons.push('Zero Amount');
     if (hasUnknownVendor)                    reasons.push('Unknown Vendor');
     if (isMissingIdentity) reasons.push('Missing VAT & RegNo');
+    if (hasFabricatedVat)                    reasons.push('Fabricated VAT (= prefix + regCode)');
     if (isStuck)                             reasons.push(`Stuck in ${d.status}`);
     if (hasSameDates)                        reasons.push('dueDate = dateCreated (suspicious)');
     if (hasMissingDescription)               reasons.push('Missing Description');
@@ -430,6 +435,13 @@ async function repairInvoice(invoiceId, invoiceData) {
     if (scoutIsPaid) newData.isPaid = true;
     const updates = {};
     const isManual = invoiceData.manuallyEdited === true;
+
+    // Clean fabricated VAT before applying updates
+    if (invoiceData.supplierVat && invoiceData.supplierRegistration &&
+        invoiceData.supplierVat.slice(2) === invoiceData.supplierRegistration) {
+        updates.supplierVat = '';
+        console.log(`  [Repairman] 🧹 Cleared fabricated VAT: ${invoiceData.supplierVat}`);
+    }
 
     const UPDATABLE_FIELDS = [
         'vendorName', 'invoiceId', 'description', 'amount', 'currency',
