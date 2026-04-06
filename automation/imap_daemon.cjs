@@ -992,6 +992,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
             // At the end of this email's processing, if still false, we save the UID
             // to guarantee every email is touched at most once.
             let uidSaved = false;
+            let skipCatchAllUid = false; // Set true when Accountant rejects — allow retry after code fix
             const saveUid = async (type = 'processed') => {
                 if (uidSaved) return;
                 try {
@@ -1105,8 +1106,9 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                     const auditedData = await auditAndProcessInvoice(inv, fileUrl, companyId);
                                     
                                     if (!auditedData) {
-                                        console.warn(`[Accountant Agent] 🛑 Invoice rejected (record not saved). Email stays unseen.`);
+                                        console.warn(`[Accountant Agent] 🛑 Invoice rejected (record not saved). Will retry on next poll.`);
                                         await markStagingResult(stagingId, { status: 'rejected', error: 'Accountant rejected record' });
+                                        skipCatchAllUid = true; // Don't save UID — allow retry after code fix
                                         // success stays false → email stays UNSEEN for retry
                                     } else if (auditedData.status === 'Duplicate') {
                                         console.log(`[Accountant Agent] ℹ️ Duplicate detected — skipping.`);
@@ -1335,9 +1337,10 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
             } // end else (no attachments)
 
             // ★ FINAL CATCH-ALL: if none of the paths above saved the UID, save now.
-            // This guarantees every email in the sweep window is processed exactly once,
-            // regardless of which code path was taken.
-            await saveUid('catch_all');
+            // Exception: if Accountant rejected the invoice, skip — allow retry after code fix.
+            if (!skipCatchAllUid) {
+                await saveUid('catch_all');
+            }
         } // end for each email
 
         connection.end();
