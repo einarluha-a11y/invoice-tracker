@@ -203,7 +203,13 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
             /\bpower\s*of\s*attorney\b/, /\bvolikiri\b/, /\bдоверенность\b/,
         ];
 
-        const isNonInvoice = NON_INVOICE_PATTERNS.some(p => p.test(allText));
+        let isNonInvoice = NON_INVOICE_PATTERNS.some(p => p.test(allText));
+
+        // Exception: "arve-saateleht" / "arvesaateleht" = invoice-waybill, a legitimate invoice type
+        if (isNonInvoice && /arve.?saateleht/i.test(allText)) {
+            console.log(`[Accountant Agent] ℹ️ "arve-saateleht" detected — treating as invoice (not waybill)`);
+            isNonInvoice = false;
+        }
 
         // Additional heuristic: if invoiceId looks like "CMR", "PS38 dd.", or contains no digits
         const idLooksWrong = invId && (
@@ -213,7 +219,8 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
         );
 
         if (isNonInvoice || (idLooksWrong && filename.includes('cmr'))) {
-            console.error(`[Accountant Agent] 🛑 NON-INVOICE FILTER: Document rejected — not an invoice (file: ${filename}, id: ${invId})`);
+            const matchedPattern = NON_INVOICE_PATTERNS.find(p => p.test(allText));
+            console.error(`[Accountant Agent] 🛑 NON-INVOICE FILTER: Document rejected — not an invoice (file: ${filename}, id: ${invId}, matched: ${matchedPattern || 'idLooksWrong'})`);
             return null;
         }
     }
