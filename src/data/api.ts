@@ -2,19 +2,6 @@ import { collection, onSnapshot, doc, getDoc, getDocs, deleteDoc, updateDoc, set
 import { db } from '../firebase';
 import type { Invoice, InvoiceStatus } from './types';
 
-export interface RawInvoiceRow {
-    id: string;
-    vendor: string;
-    amount: string;
-    currency: string;
-    datecreated: string;
-    duedate: string;
-    status: string;
-}
-
-// Убрана жесткая привязка к .env
-// Конфигурация теперь управляется через src/config.ts
-
 export const parseStatus = (rawStatus: string, parsedDueDate?: string): InvoiceStatus => {
     const normalized = rawStatus.toLowerCase().trim();
     // Error/NEEDS_REVIEW → Pending (Error status removed from system)
@@ -236,7 +223,9 @@ export const updateInvoice = async (invoiceId: string, data: Partial<Invoice>): 
                 if (vendorWords.length > 1) vendorPatterns.push(vendorWords.slice(0, 2).join(' '));
 
                 const exampleRef = doc(db!, 'invoice_examples', safeKey);
-                await setDoc(exampleRef, {
+                // Check if example already exists — update, don't overwrite createdAt
+                const existingExample = await getDoc(exampleRef);
+                const exampleData: Record<string, any> = {
                     vendorName,
                     vendorPatterns: [...new Set(vendorPatterns)],
                     groundTruth: {
@@ -258,8 +247,11 @@ export const updateInvoice = async (invoiceId: string, data: Partial<Invoice>): 
                     stagingId:  d.stagingId  || null,  // → raw_documents → storageUrl (original PDF)
                     companyId:  d.companyId  || null,
                     updatedAt:  serverTimestamp(),
-                    createdAt:  serverTimestamp(),
-                }, { merge: true });
+                };
+                if (!existingExample.exists()) {
+                    exampleData.createdAt = serverTimestamp();
+                }
+                await setDoc(exampleRef, exampleData, { merge: true });
 
                 console.log(`[Teacher Agent] ✅ Ground-truth saved for: ${vendorName} (${safeKey})`);
 

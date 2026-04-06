@@ -11,7 +11,7 @@ const { cleanNum } = require('./core/utils.cjs');
 // or we can use accountant_agent if careful. Let's just do a clean native insertion!
 async function findAndInjectMissingInvoice(vendorName, targetAmount, companyId) {
     const db = admin.firestore();
-    const bucket = admin.storage().bucket('invoice-tracker-xyz.firebasestorage.app');
+    const bucket = admin.storage().bucket();
     const compDoc = await db.collection('companies').doc(companyId).get();
     
     // We only search for numbers in the vendor string to be safe with IMAP subjects, 
@@ -58,7 +58,7 @@ async function findAndInjectMissingInvoice(vendorName, targetAmount, companyId) 
                     try {
                         const pdfData = await pdfParse(att.content);
                         textExtracted = pdfData.text || "";
-                    } catch(e) {}
+                    } catch(e) { console.warn('[Search] PDF parse failed:', e.message); }
                     
                     // If the text contains the targeted numeric amount OR the vendor name roughly
                     const cleanVendor = vendorName.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();

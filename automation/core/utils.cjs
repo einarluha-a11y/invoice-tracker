@@ -41,4 +41,52 @@ function cleanVendorName(name) {
         .trim();
 }
 
-module.exports = { cleanNum, cleanVendorName };
+// ─── Vendor Aliases (cached) ────────────────────────────────────────────────
+const _aliasCache = {};
+const _aliasCacheTime = {};
+const ALIAS_CACHE_TTL = 1800000; // 30 min
+
+const DEFAULT_ALIASES = {
+    'elron': 'eesti liinirongid as',
+    'www.elron.ee': 'eesti liinirongid as',
+    'claude': 'anthropic',
+    'chatgpt': 'openai',
+    'openai': 'openai',
+    'youtube': 'google',
+    'aws': 'amazon',
+    'bolt': 'inredz',
+    'wolt': 'wolt'
+};
+
+/**
+ * Get vendor aliases for a company. Reads from Firestore with 30-min cache.
+ * Requires `db` from core/firebase.cjs passed as first arg.
+ */
+async function getVendorAliases(db, companyId) {
+    if (!companyId || !db) return { ...DEFAULT_ALIASES };
+
+    const now = Date.now();
+    if (_aliasCache[companyId] && now - _aliasCacheTime[companyId] < ALIAS_CACHE_TTL) {
+        return { ...DEFAULT_ALIASES, ..._aliasCache[companyId] };
+    }
+
+    try {
+        const doc = await db.collection('companies').doc(companyId).get();
+        if (doc.exists && doc.data().vendorAliases) {
+            // Cap cache to 100 entries
+            if (Object.keys(_aliasCache).length >= 100) {
+                const oldest = Object.keys(_aliasCacheTime).sort((a, b) => _aliasCacheTime[a] - _aliasCacheTime[b])[0];
+                delete _aliasCache[oldest];
+                delete _aliasCacheTime[oldest];
+            }
+            _aliasCache[companyId] = doc.data().vendorAliases;
+            _aliasCacheTime[companyId] = now;
+            return { ...DEFAULT_ALIASES, ...doc.data().vendorAliases };
+        }
+    } catch (e) {
+        console.warn('[Utils] Failed to load vendor aliases:', e.message);
+    }
+    return { ...DEFAULT_ALIASES };
+}
+
+module.exports = { cleanNum, cleanVendorName, getVendorAliases };

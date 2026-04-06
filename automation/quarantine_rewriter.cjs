@@ -8,7 +8,7 @@ const os = require('os');
 if (!admin.apps.length) {
     admin.initializeApp({
         credential: admin.credential.cert(require('./google-credentials.json')),
-        storageBucket: 'invoice-tracker-xyz.firebasestorage.app'
+        storageBucket: process.env.FIREBASE_STORAGE_BUCKET || 'invoice-tracker-xyz.firebasestorage.app'
     });
 }
 const db = admin.firestore();

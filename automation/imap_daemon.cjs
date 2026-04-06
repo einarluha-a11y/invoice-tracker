@@ -19,54 +19,10 @@ const { saveBankTransaction } = require('./core/bank_dedup.cjs');
 // Strict reconciliation rules (shared with repairman_agent, api.ts)
 const { canReconcile: strictCanReconcile, matchReference, vendorOverlap } = require('./core/reconcile_rules.cjs');
 // Number parsing — single source of truth for European/US decimal formats
-const { cleanNum } = require('./core/utils.cjs');
+const { cleanNum, getVendorAliases: _getVendorAliases } = require('./core/utils.cjs');
 
-// --- DYNAMIC DICTIONARY ENGINE (Node.js Memory Cache) ---
-const companyAliasCache = {};
-const companyAliasCacheTime = {};
-
-async function getVendorAliases(companyId) {
-    let defaultAliases = {
-        'elron': 'eesti liinirongid as',
-        'www.elron.ee': 'eesti liinirongid as',
-        'claude': 'anthropic',
-        'chatgpt': 'openai',
-        'openai': 'openai',
-        'youtube': 'google',
-        'aws': 'amazon',
-        'bolt': 'inredz',
-        'wolt': 'wolt'
-    };
-    if (!companyId) return defaultAliases;
-
-    const now = Date.now();
-    // Cache TTL: 30 minutes
-    if (companyAliasCache[companyId] && now - companyAliasCacheTime[companyId] < 1800000) {
-        return { ...defaultAliases, ...companyAliasCache[companyId] };
-    }
-
-    try {
-        const doc = await db.collection('companies').doc(companyId).get();
-        if (doc.exists && doc.data().vendorAliases) {
-            // Cap cache to 100 entries to prevent unbounded growth
-            if (Object.keys(companyAliasCache).length >= 100) {
-                const oldestKey = Object.keys(companyAliasCacheTime).sort((a, b) => companyAliasCacheTime[a] - companyAliasCacheTime[b])[0];
-                delete companyAliasCache[oldestKey];
-                delete companyAliasCacheTime[oldestKey];
-            }
-            companyAliasCache[companyId] = doc.data().vendorAliases;
-            companyAliasCacheTime[companyId] = now;
-            return { ...defaultAliases, ...doc.data().vendorAliases };
-        } else {
-            companyAliasCache[companyId] = {};
-            companyAliasCacheTime[companyId] = now;
-            return defaultAliases;
-        }
-    } catch (e) {
-        console.error(`[Dictionary Error] Failed to fetch aliases for ${companyId}: ${e.message}`);
-        return defaultAliases;
-    }
-}
+// Wrap shared getVendorAliases to auto-inject db
+const getVendorAliases = (companyId) => _getVendorAliases(db, companyId);
 
 /**
  * Helper to upload an attachment directly to Firebase Storage and get a secure download URL.
@@ -363,8 +319,10 @@ async function writeToFirestore(dataArray) {
                 companyId: data.companyId || null,
                 fileUrl: data.fileUrl || null,
                 fileBasename: currentFileBasename || null,  // Indexed for O(1) dedup via (companyId, fileBasename)
-                stagingId: data.stagingId || null  // Link to raw_documents entry for source tracing
+                stagingId: data.stagingId || null,  // Link to raw_documents entry for source tracing
+                rawText: (data._rawText || '').slice(0, 50000) || null  // Full text for Repairman re-extraction
             });
+            delete data._rawText;  // Clean up internal field after saving
 
             if (!data.companyId) {
                 console.error(`[Firestore] ⚠️  companyId missing for invoice ${invoiceId} (vendor: ${vendorName}). Saved without company — manual review required.`);
@@ -516,8 +474,7 @@ async function scoutTeacherPipeline(content, mimeType, companyId, customRules) {
         console.warn(`[Teacher] ⚠️  Validation error (proceeding with Scout data): ${teacherErr.message}`);
     }
 
-    // Remove internal field before saving
-    delete tempParsed[0]._rawText;
+    // Keep _rawText for Firestore save, remove after
     return tempParsed;
 }
 

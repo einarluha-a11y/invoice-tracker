@@ -1037,7 +1037,7 @@ async function runTeachMode(filePath, vendorHint) {
     console.log(`${C.grey}📄 File: ${filePath} (${(buffer.length / 1024).toFixed(1)} KB)${C.reset}`);
     console.log(`${C.grey}🤖 Running AI extraction...${C.reset}\n`);
 
-    // Dynamic require to avoid circular dep — document_ai_service requires teacher_agent for few-shot
+    // Deferred require — only needed in --teach mode, not at startup
     const { processInvoiceWithDocAI } = require('./document_ai_service.cjs');
     let extracted;
     try {

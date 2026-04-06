@@ -4,7 +4,7 @@ const pdfParse = require('pdf-parse');
 require('dotenv').config({ path: __dirname + '/.env' });
 
 const { db } = require('./core/firebase.cjs');
-const { cleanNum } = require('./core/utils.cjs');
+const { cleanNum, getVendorAliases: _getVendorAliases } = require('./core/utils.cjs');
 
 const rl = readline.createInterface({
     input: process.stdin,
@@ -50,28 +50,7 @@ async function askQuestion(query) {
 // -----------------------------------------------------
 // 1. RECONCILIATION PRIORITY QUEUE LOGIC
 // -----------------------------------------------------
-async function getVendorAliases(companyId) {
-    let defaultAliases = {
-        'elron': 'eesti liinirongid as',
-        'www.elron.ee': 'eesti liinirongid as',
-        'claude': 'anthropic',
-        'chatgpt': 'openai',
-        'openai': 'openai',
-        'youtube': 'google',
-        'aws': 'amazon',
-        'bolt': 'inredz',
-        'wolt': 'wolt'
-    };
-    try {
-        const doc = await db.collection('companies').doc(companyId).get();
-        if (doc.exists && doc.data().vendorAliases) {
-            return { ...defaultAliases, ...doc.data().vendorAliases };
-        }
-    } catch (e) {
-        // ignore
-    }
-    return defaultAliases;
-}
+const getVendorAliases = (companyId) => _getVendorAliases(db, companyId);
 
 async function reconcileDryRunOrFix(reference, vendorName, paidAmount, paymentDateStr, companyId, isFix) {
     console.log(`\n🔍 Analyzing Target: €${paidAmount} paid to [${vendorName}] on ${paymentDateStr || 'Unknown date'}`);

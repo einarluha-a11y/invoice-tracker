@@ -21,12 +21,12 @@ catch (e) { serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || 
 if (!admin.apps.length) {
     admin.initializeApp({
         credential: admin.credential.cert(serviceAccount),
-        storageBucket: 'invoice-tracker-xyz.firebasestorage.app'
+        storageBucket: process.env.FIREBASE_STORAGE_BUCKET || 'invoice-tracker-xyz.firebasestorage.app'
     });
 }
 
 const db = admin.firestore();
-const bucket = admin.storage().bucket('invoice-tracker-xyz.firebasestorage.app');
+const bucket = admin.storage().bucket();
 
 /** Returns true if the string looks like a filename rather than a company name */
 const looksLikeFilename = (s) => /\.(pdf|jpg|jpeg|png|tiff?)$/i.test(s || '');
