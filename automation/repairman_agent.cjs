@@ -602,6 +602,19 @@ async function repairInvoice(invoiceId, invoiceData) {
         }
     }
 
+    // ── PARTIAL PAYMENT PROTECTION ─────────────────────────────────────────
+    // If invoice has payments[] recorded, NEVER overwrite amount with original
+    // from PDF. The displayed amount = remainingAmount (what's still owed).
+    const existingPayments = invoiceData.payments || [];
+    if (existingPayments.length > 0) {
+        // Preserve payment state — don't let DocAI re-extraction overwrite
+        delete updates.amount;
+        delete updates.originalAmount;
+        delete updates.remainingAmount;
+        delete updates.payments;
+        console.log(`  [Repairman] 🛡️ Partial payment protection: ${existingPayments.length} payment(s) — amount/remaining preserved`);
+    }
+
     await db.collection('invoices').doc(invoiceId).update(updates);
     console.log(`  [Repairman] ✅ Updated ${invoiceId} with ${Object.keys(updates).length - 2} field(s).`);
 
