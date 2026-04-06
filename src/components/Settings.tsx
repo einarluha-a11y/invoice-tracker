@@ -41,6 +41,13 @@ export function Settings({ onBack }: SettingsProps) {
 
     const rulesList = globalRules.split('\n').filter(r => r.trim() !== '');
 
+    const invalidateBackendCache = async () => {
+        try {
+            const apiBase = (import.meta as any).env?.VITE_API_URL || '';
+            await fetch(`${apiBase}/api/invalidate-cache`, { method: 'POST' });
+        } catch { /* бэкенд может быть недоступен — не блокируем UI */ }
+    };
+
     const handleAddRule = async () => {
         const trimmed = newRuleText.trim();
         if (!trimmed || !db) return;
@@ -52,6 +59,7 @@ export function Settings({ onBack }: SettingsProps) {
                 updatedAt: serverTimestamp(),
                 updatedBy: 'manual'
             }, { merge: true });
+            await invalidateBackendCache();
             setNewRuleText('');
         } catch (error) {
             console.error("Failed to add rule", error);
@@ -70,6 +78,7 @@ export function Settings({ onBack }: SettingsProps) {
                 updatedAt: serverTimestamp(),
                 updatedBy: 'manual'
             }, { merge: true });
+            await invalidateBackendCache();
         } catch (error) {
             console.error("Failed to update rules", error);
             alert(t('settingsPage.deleteRuleError'));
@@ -99,6 +108,7 @@ export function Settings({ onBack }: SettingsProps) {
                 updatedAt: serverTimestamp(),
                 updatedBy: 'manual'
             }, { merge: true });
+            await invalidateBackendCache();
             setEditingRuleIdx(null);
             setEditingRuleText('');
         } catch (error) {
@@ -117,6 +127,7 @@ export function Settings({ onBack }: SettingsProps) {
                     updatedAt: serverTimestamp(),
                     updatedBy: 'manual'
                 }, { merge: true });
+                await invalidateBackendCache();
                 setShowRules(false);
             } catch (error) {
                 console.error("Failed to clear rules", error);

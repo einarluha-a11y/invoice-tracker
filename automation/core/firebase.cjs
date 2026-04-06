@@ -20,7 +20,7 @@ if (!admin.apps.length && sa) {
     try {
         admin.initializeApp({
             credential: admin.credential.cert(sa),
-            storageBucket: 'invoice-tracker-xyz.firebasestorage.app'
+            storageBucket: process.env.FIREBASE_STORAGE_BUCKET || 'invoice-tracker-xyz.firebasestorage.app'
         });
         console.log('[Firebase Core] ✅ Initialized successfully.');
     } catch (e) {
@@ -57,4 +57,11 @@ async function getGlobalAiRules() {
     }
 }
 
-module.exports = { admin, db, bucket, serviceAccount: sa, getGlobalAiRules };
+/** Сбрасывает кэш AI-правил немедленно. Вызывается из api_server при изменении Settings. */
+function invalidateRulesCache() {
+    _cachedRules = null;
+    _cachedAt = 0;
+    console.log('[Firebase Core] 🔄 Rules cache invalidated');
+}
+
+module.exports = { admin, db, bucket, serviceAccount: sa, getGlobalAiRules, invalidateRulesCache };

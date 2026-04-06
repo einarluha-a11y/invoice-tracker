@@ -63,6 +63,13 @@ Omit filter fields that don't apply. Resolve relative dates ("last month", "эт
     }
 });
 
+// POST /api/invalidate-cache — сбрасывает кэш AI-правил при изменении Settings
+const { invalidateRulesCache } = require('./core/firebase.cjs');
+app.post('/api/invalidate-cache', (req, res) => {
+    invalidateRulesCache();
+    res.json({ ok: true });
+});
+
 app.get('/', (req, res) => {
     res.send('🤖 Invoice Automation Bot is Active & Running!');
 });
