@@ -116,6 +116,11 @@ def main() -> int:
     round_num = extract_field(solution, "ROUND", "1")
     print(f"Phase: {phase}, Round: {round_num}")
 
+    # Skip review if Claude already marked task as complete
+    if "DEPLOY_STATUS: OK" in solution and phase not in ("WAITING",):
+        print("DEPLOY_STATUS: OK detected — task complete, skipping review. Waiting for next task from Einar.")
+        return 0
+
     charter = read_file(CHARTER_PATH)
     claude_md = read_file(CLAUDE_MD_PATH)
     context = f"{claude_md}\n\n{charter}"
