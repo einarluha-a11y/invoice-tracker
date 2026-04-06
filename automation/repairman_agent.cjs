@@ -169,6 +169,8 @@ async function findBadInvoices() {
 function detectProblems(d) {
     // Manually edited invoices are trusted — don't flag for repair
     if (d.manuallyEdited) return [];
+    // Paid invoices are done — don't re-extract and risk breaking them
+    if (d.status === 'Paid') return [];
 
     const hasMissingFile   = !d.fileUrl || d.fileUrl === 'BODY_TEXT_NO_ATTACHMENT';
     const hasZeroAmount    = !d.amount || Number(d.amount) === 0;
