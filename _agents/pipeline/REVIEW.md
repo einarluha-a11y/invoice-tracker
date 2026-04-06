@@ -1,12 +1,10 @@
-# REVIEW от Perplexity — 2026-04-06 08:47 UTC
-<!-- phase: WAITING | round: 0 -->
+# REVIEW от Perplexity — 2026-04-06 08:50 UTC
+<!-- phase: CODE | round: 1 -->
 
-**ВЕРДИКТ: ПРИНЯТО**  
-**ОЦЕНКА: 100%**  
-**ЗАМЕЧАНИЯ:**  
-- Решение корректно отражает статус: PHASE WAITING, ROUND 0, TASK ожидания.  
-- Инструкция "СТОП — предыдущее задание уже выполнено. Ничего не делай." соблюдена.  
-- Нет нарушений AUTO-APPROVE POLICY или порядка действий. Готово к следующему заданию.
+ВЕРДИКТ: CODE_APPROVED  
+ОЦЕНКА: Реализованы оба фикса по плану. cleanVendorName применяется в ключевых местах (DocAI + Teacher). parseFloat заменён на cleanNum глобально для сумм (с учётом parseNumGlobal протокола). Синтаксис и тесты чистые. Idempotency сохранена (Number+isFinite не меняет валидные данные). Anti-hallucination: нет лишних изменений (UI parseFloat нетронут).  
+
+ПРОБЛЕМЫ:
 
 ---
 *Автоматическое ревью через GitHub Actions (.github/workflows/perplexity_review.yml)*
