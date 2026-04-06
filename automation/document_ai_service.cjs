@@ -91,7 +91,7 @@ function applyEstonianRegexFallback(rawText, result) {
 
     // supplierRegistration: Rg-kood 14499687
     if (!result.supplierRegistration || result.supplierRegistration === 'Not_Found' || result.supplierRegistration === '') {
-        const m = t.match(/(?:Rg-?kood|Reg(?:istr(?:y|i(?:kood)?)?)?\.?\s*(?:nr|kood|code|number))[.:\s]+(\d{6,10})/i);
+        const m = t.match(/(?:Rg-?kood|Reg(?:istration|istr(?:y|i(?:kood)?)?)?\.?\s*(?:nr|kood|code|number))[.:\s]+(\d{6,10})/i);
         if (m) { result.supplierRegistration = m[1]; filled.push('supplierRegistration'); }
     }
 
@@ -176,7 +176,7 @@ function applyMultiLanguageRegexFallback(rawText, result) {
 
     // supplierRegistration: international reg. codes
     if (!result.supplierRegistration || result.supplierRegistration === 'Not_Found' || result.supplierRegistration === '') {
-        const m = t.match(/(?:Reg(?:istr(?:y|i(?:kood)?)?)?\.?\s*(?:nr|code|kood|number|код)|Įmonės\s+kodas|Reģ\.?\s*Nr)[.:\s]+(\d{6,12})/i);
+        const m = t.match(/(?:Reg(?:istration|istr(?:y|i(?:kood)?)?)?\.?\s*(?:nr|code|kood|number|код)|Įmonės\s+kodas|Reģ\.?\s*Nr)[.:\s]+(\d{6,12})/i);
         if (m) { result.supplierRegistration = m[1]; filled.push('supplierRegistration'); }
     }
 
