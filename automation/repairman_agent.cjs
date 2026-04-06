@@ -24,6 +24,14 @@
  *   node repairman_agent.cjs --since 2026-03-23 --until 2026-03-30 --fix
  */
 
+// Health check — ensure system is ready before running repairs
+try {
+    require('./health_check.cjs');
+} catch (e) {
+    console.error('[Repairman] ❌ Health check failed. Fix issues before running repairs.');
+    process.exit(1);
+}
+
 require('dotenv').config({ path: __dirname + '/.env' });
 const https = require('https');
 const http = require('http');
