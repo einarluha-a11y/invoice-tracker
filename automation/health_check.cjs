@@ -213,14 +213,17 @@ try {
 }
 
 // ── Summary ──────────────────────────────────────────────────────────────────
+const isMain = require.main === module;
+
 console.log(`\n${C.bold}══════════════════════════════════════════════════${C.reset}`);
 if (blockers === 0) {
     console.log(`  ${OK}  ${C.green}${C.bold}System healthy${C.reset} (${warnings} warning(s), ${fixed} auto-fixed)`);
     console.log(`${C.bold}══════════════════════════════════════════════════${C.reset}\n`);
-    process.exit(0);
+    if (isMain) process.exit(0);
 } else {
     console.log(`  ${FAIL}  ${C.red}${C.bold}${blockers} blocker(s) found${C.reset} (${warnings} warning(s), ${fixed} auto-fixed)`);
     if (!FIX) console.log(`  ${C.grey}Run with --fix to auto-repair${C.reset}`);
     console.log(`${C.bold}══════════════════════════════════════════════════${C.reset}\n`);
-    process.exit(1);
+    if (isMain) process.exit(1);
+    throw new Error(`Health check failed: ${blockers} blocker(s)`);
 }
