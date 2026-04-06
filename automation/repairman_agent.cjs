@@ -838,6 +838,23 @@ async function runAudit() {
             } // close else if (invoiceAmount > 0)
         }
 
+        // ── Paid invoice: sync amount with bank transaction ──
+        // Foreign currency invoices (USD, PLN) get paid in EUR.
+        // The displayed amount should reflect what was actually paid (EUR from bank statement).
+        const companyTxs = bankTxByCompany[data.companyId] || [];
+        if ((data.status === 'Paid' || updates.status === 'Paid') && companyTxs.length > 0) {
+            const matchedTx = companyTxs.find(tx => tx.matchedInvoiceId === doc.id);
+            if (matchedTx) {
+                const txAmount = cleanNum(matchedTx.amount);
+                const invAmount = cleanNum(data.amount);
+                if (txAmount > 0 && Math.abs(txAmount - invAmount) > 0.01) {
+                    updates.amount = txAmount;
+                    updates.currency = 'EUR';  // bank statement is always EUR
+                    if (!data.originalAmount) updates.originalAmount = invAmount;
+                }
+            }
+        }
+
         // ── Apply updates ──
         if (Object.keys(updates).length === 0) {
             skipped++;
