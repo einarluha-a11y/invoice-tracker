@@ -85,13 +85,13 @@ function applyEstonianRegexFallback(rawText, result) {
 
     // supplierVat: KMKR nr EE102076039
     if (!result.supplierVat || result.supplierVat === 'Not_Found' || result.supplierVat === '') {
-        const m = t.match(/KMKR\s*nr\s+([A-Z]{2}\d{6,12})/i);
+        const m = t.match(/(?:KMKR\s*nr|VAT\s*(?:code|num(?:ber)?|nr))[.:\s]+([A-Z]{2}\d{6,12})/i);
         if (m) { result.supplierVat = m[1]; filled.push('supplierVat'); }
     }
 
     // supplierRegistration: Rg-kood 14499687
     if (!result.supplierRegistration || result.supplierRegistration === 'Not_Found' || result.supplierRegistration === '') {
-        const m = t.match(/Rg-?kood\s+(\d{6,10})/i);
+        const m = t.match(/(?:Rg-?kood|Reg(?:istr(?:y|i(?:kood)?)?)?\.?\s*(?:nr|kood|code|number))[.:\s]+(\d{6,10})/i);
         if (m) { result.supplierRegistration = m[1]; filled.push('supplierRegistration'); }
     }
 
@@ -176,7 +176,7 @@ function applyMultiLanguageRegexFallback(rawText, result) {
 
     // supplierRegistration: international reg. codes
     if (!result.supplierRegistration || result.supplierRegistration === 'Not_Found' || result.supplierRegistration === '') {
-        const m = t.match(/(?:Reg\.?\s*(?:nr|code|kood|код)|Įmonės\s+kodas|Reģ\.?\s*Nr)[.:\s]+(\d{6,12})/i);
+        const m = t.match(/(?:Reg(?:istr(?:y|i(?:kood)?)?)?\.?\s*(?:nr|code|kood|number|код)|Įmonės\s+kodas|Reģ\.?\s*Nr)[.:\s]+(\d{6,12})/i);
         if (m) { result.supplierRegistration = m[1]; filled.push('supplierRegistration'); }
     }
 
