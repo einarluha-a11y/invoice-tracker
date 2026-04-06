@@ -1453,7 +1453,7 @@ if (require.main === module) {
 }
 
 // Overlap-safe IMAP polling daemon
-console.log('Automated Invoice Processor Started. Checking every 5 minutes...');
+console.log('Automated Invoice Processor Started. Checking every 2 minutes...');
 async function pollLoop() {
     while (true) {
         try {
@@ -1461,7 +1461,7 @@ async function pollLoop() {
         } catch (err) {
             console.error('[Poll Loop Error] Critical failure in IMAP daemon:', err.message);
         }
-        await new Promise(resolve => setTimeout(resolve, 5 * 60 * 1000));
+        await new Promise(resolve => setTimeout(resolve, 2 * 60 * 1000));
     }
 }
 
