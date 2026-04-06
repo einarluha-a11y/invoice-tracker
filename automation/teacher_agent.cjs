@@ -766,7 +766,8 @@ async function validateAndTeach(invoiceData, companyId) {
             const claude = await extractFromRawText(rawText);
             if (claude) {
                 // Fix vendor identity
-                if (claude.vendorName && (isEmpty(invoice.vendorName) || vatMismatch)) {
+                const vendorTooShort = (invoice.vendorName || '').replace(/\s/g, '').length < 3;
+                if (claude.vendorName && (isEmpty(invoice.vendorName) || vendorTooShort || vatMismatch)) {
                     corrections.push(`Claude: vendor "${invoice.vendorName}" → "${claude.vendorName}"`);
                     invoice.vendorName = claude.vendorName;
                 }
