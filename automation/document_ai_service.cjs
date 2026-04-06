@@ -25,7 +25,7 @@
 
 require('dotenv').config();
 const { DocumentAnalysisClient, AzureKeyCredential } = require('@azure/ai-form-recognizer');
-const { cleanNum } = require('./core/utils.cjs');
+const { cleanNum, cleanVendorName } = require('./core/utils.cjs');
 
 // --- Azure Document Intelligence Setup ---
 const AZURE_ENDPOINT = process.env.AZURE_DOC_INTEL_ENDPOINT;
@@ -256,7 +256,7 @@ async function processInvoiceWithDocAI(buffer, mimeType = 'application/pdf', sup
         };
 
         // VendorName
-        let vendorName = str('VendorName') || 'Unknown Vendor';
+        let vendorName = cleanVendorName(str('VendorName')) || 'Unknown Vendor';
         confidenceScores.vendor = fields.VendorName?.confidence || 0;
 
         // InvoiceId

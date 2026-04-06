@@ -26,4 +26,19 @@ function cleanNum(str) {
     return isFinite(n) ? n : 0;
 }
 
-module.exports = { cleanNum };
+/**
+ * Strip all quote characters from vendor names.
+ * Handles: "straight", guillemets, arrows, low-high, single quotes
+ */
+function cleanVendorName(name) {
+    if (!name) return name;
+    return name
+        .replace(/[\u0022\u201C\u201D\u201E\u201F]/g, '')   // двойные кавычки всех видов
+        .replace(/[\u0027\u2018\u2019\u201A\u201B]/g, '')   // одиночные кавычки
+        .replace(/[\u00AB\u00BB\u2039\u203A]/g, '')          // угловые guillemets
+        .replace(/[<>]{1,2}/g, '')                           // стрелки << >>
+        .replace(/\s{2,}/g, ' ')                             // двойные пробелы после удаления
+        .trim();
+}
+
+module.exports = { cleanNum, cleanVendorName };

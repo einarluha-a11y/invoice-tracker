@@ -36,7 +36,7 @@ const fs          = require('fs');
 const path        = require('path');
 const readline    = require('readline');
 const { admin, db, bucket } = require('./core/firebase.cjs');
-const { cleanNum } = require('./core/utils.cjs');
+const { cleanNum, cleanVendorName } = require('./core/utils.cjs');
 
 // ── Colours for terminal output ──────────────────────────────────────────────
 const C = {
@@ -105,6 +105,7 @@ ${snippet}`
         if (!match) return null;
 
         const parsed = JSON.parse(match[0]);
+        if (parsed.vendorName) parsed.vendorName = cleanVendorName(parsed.vendorName);
         console.log(`[Teacher] 🤖 Claude: vendor="${parsed.vendorName}", VAT=${parsed.supplierVat}, Reg=${parsed.supplierRegistration}, amount=${parsed.amount} ${parsed.currency}`);
         return parsed;
     } catch (err) {
