@@ -679,10 +679,11 @@ async function validateAndTeach(invoiceData, companyId) {
         const SUFFIXES = ['AS', 'OÜ', 'OU', 'OY', 'AB', 'GmbH', 'AG', 'SIA', 'UAB', 'BV', 'NV', 'Ltd', 'LLC', 'Inc', 'SRL', 'SARL', 'SAS', 'SE', 'KG', 'MB'];
         const hasSuffix = (name) => SUFFIXES.some(s => new RegExp(`(?:^|\\s)${s}(?:\\s|$|,|\\.)`, 'i').test(name));
 
-        if (invoice.vendorName && !hasSuffix(' ' + invoice.vendorName + ' ')) {
+        const cleanVendor = (invoice.vendorName || '').replace(/[\n\r]/g, ' ').trim();
+        if (cleanVendor && cleanVendor.length >= 3 && !hasSuffix(' ' + cleanVendor + ' ')) {
             const rawText = invoice._rawText || invoiceData._rawText || '';
             if (rawText) {
-                const vendorLower = invoice.vendorName.toLowerCase().trim();
+                const vendorLower = cleanVendor.toLowerCase();
                 // Split into lines, find lines that contain vendorName AND a legal suffix
                 const candidates = rawText.split('\n')
                     .map(l => l.trim())
@@ -955,7 +956,7 @@ function applyCharterRules(invoice, rulesText) {
             .trim();
         const invName = stripSuffix(invoice.vendorName);
         const ruleName = stripSuffix(ruleVendor);
-        if (!invName || !ruleName || ruleName.length < 3) return false;
+        if (!invName || !ruleName || ruleName.length < 3 || invName.length < 3) return false;
         return invName.includes(ruleName) || ruleName.includes(invName);
     }
 
