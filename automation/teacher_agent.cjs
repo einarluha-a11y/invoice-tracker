@@ -557,17 +557,15 @@ async function validateAndTeach(invoiceData, companyId) {
                 if (c.regCode) receiverIds.add(c.regCode.replace(/[^0-9]/g, ''));
             });
 
-            for (const ex of examples) {
-                const gt = ex.groundTruth || {};
+            // Remove examples whose VAT/Reg belongs to buyer (receiver company).
+            // These examples were mis-extracted and would overwrite vendorName with wrong company.
+            for (let i = examples.length - 1; i >= 0; i--) {
+                const gt = examples[i].groundTruth || {};
                 const exVat = (gt.supplierVat || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
                 const exReg = (gt.supplierRegistration || '').replace(/[^0-9]/g, '');
-                if (exVat && receiverIds.has(exVat)) {
-                    console.log(`[Teacher] ⚠️ Example "${ex.vendorName}" has buyer VAT ${gt.supplierVat} — ignoring`);
-                    gt.supplierVat = '';
-                }
-                if (exReg && receiverIds.has(exReg)) {
-                    console.log(`[Teacher] ⚠️ Example "${ex.vendorName}" has buyer Reg ${gt.supplierRegistration} — ignoring`);
-                    gt.supplierRegistration = '';
+                if ((exVat && receiverIds.has(exVat)) || (exReg && receiverIds.has(exReg))) {
+                    console.log(`[Teacher] ⚠️ Example "${examples[i].vendorName}" has buyer VAT/Reg — REMOVING from candidates`);
+                    examples.splice(i, 1);
                 }
             }
         } catch { /* non-critical */ }
@@ -586,14 +584,21 @@ async function validateAndTeach(invoiceData, companyId) {
     if (bestExample) {
         const gt = bestExample.groundTruth || {};
 
-        // Vendor name: example ALWAYS wins (DocAI often confuses buyer/supplier)
+        // Vendor name: example wins only if names are related (share tokens) or invoice has no vendor
         if (gt.vendorName && !isEmpty(gt.vendorName) && invoice.vendorName !== gt.vendorName) {
-            if (!isEmpty(invoice.vendorName)) {
-                corrections.push(`Corrected vendorName: ${invoice.vendorName} → ${gt.vendorName} (from example)`);
+            const invTokens = (invoice.vendorName || '').toLowerCase().replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter(t => t.length > 2);
+            const exTokens = gt.vendorName.toLowerCase().replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter(t => t.length > 2);
+            const hasOverlap = isEmpty(invoice.vendorName) || invTokens.some(t => exTokens.some(e => e.includes(t) || t.includes(e)));
+            if (!hasOverlap) {
+                console.log(`[Teacher] ⚠️ Skipping vendorName from example: "${gt.vendorName}" ≠ "${invoice.vendorName}" (no token overlap)`);
             } else {
-                corrections.push(`Filled vendorName from example: ${gt.vendorName}`);
+                if (!isEmpty(invoice.vendorName)) {
+                    corrections.push(`Corrected vendorName: ${invoice.vendorName} → ${gt.vendorName} (from example)`);
+                } else {
+                    corrections.push(`Filled vendorName from example: ${gt.vendorName}`);
+                }
+                invoice.vendorName = gt.vendorName;
             }
-            invoice.vendorName = gt.vendorName;
         }
 
         // Static vendor fields: examples ALWAYS override DocAI (manual correction = trusted)
