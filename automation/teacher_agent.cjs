@@ -87,13 +87,15 @@ Return ONLY valid JSON:
 
 Rules:
 - vendorName: the company providing the service/goods (NOT the buyer)
-- supplierVat: country code + digits (e.g. LT100018378612, EE102076039)
-- supplierRegistration: digits only
+- supplierVat: ONLY if explicitly written in the text (KMKR, VAT no., PVM kodas, etc.). Country code + digits (e.g. LT100018378612, EE102076039)
+- supplierRegistration: ONLY if explicitly written (Reg.nr, Rg-kood, Registration nr., etc.). Digits only.
 - amount: total sum to pay
 - subtotal: net amount before tax. If VAT 0% or no tax, subtotal = amount
 - tax: VAT amount. If 0% or not shown, tax = 0
 - currency: EUR, USD, PLN etc.
 - Use empty string "" for text fields not found, 0 for numbers not found.
+
+CRITICAL: NEVER invent or construct values. If a field is not explicitly printed in the text, return "". Do NOT derive supplierVat from registration number or vice versa. Do NOT guess.
 
 Invoice text:
 ${snippet}`
@@ -106,6 +108,24 @@ ${snippet}`
 
         const parsed = JSON.parse(match[0]);
         if (parsed.vendorName) parsed.vendorName = cleanVendorName(parsed.vendorName);
+
+        // Anti-hallucination: validate VAT format (2 letters + 8-12 digits)
+        if (parsed.supplierVat && !/^[A-Z]{2}\d{8,12}$/.test(parsed.supplierVat)) {
+            console.log(`[Teacher] ⚠️ Rejected hallucinated VAT: ${parsed.supplierVat}`);
+            parsed.supplierVat = '';
+        }
+        // Anti-hallucination: regCode must be digits only, 6-12 chars
+        if (parsed.supplierRegistration && !/^\d{6,12}$/.test(parsed.supplierRegistration)) {
+            console.log(`[Teacher] ⚠️ Rejected hallucinated RegCode: ${parsed.supplierRegistration}`);
+            parsed.supplierRegistration = '';
+        }
+        // Anti-hallucination: if VAT = country prefix + regCode (fabricated), reject VAT
+        if (parsed.supplierVat && parsed.supplierRegistration &&
+            parsed.supplierVat.slice(2) === parsed.supplierRegistration) {
+            console.log(`[Teacher] ⚠️ Rejected fabricated VAT (= prefix + regCode): ${parsed.supplierVat}`);
+            parsed.supplierVat = '';
+        }
+
         console.log(`[Teacher] 🤖 Claude: vendor="${parsed.vendorName}", VAT=${parsed.supplierVat}, Reg=${parsed.supplierRegistration}, amount=${parsed.amount} ${parsed.currency}`);
         return parsed;
     } catch (err) {
