@@ -665,10 +665,21 @@ async function validateAndTeach(invoiceData, companyId) {
     //   "NUNNER LOGISTICS OÜ\nTALLINN\nEE123456" → "NUNNER LOGISTICS OÜ"
     // Keep only the first non-empty line.
     if (invoice.vendorName && invoice.vendorName.includes('\n')) {
-        const firstLine = invoice.vendorName.split('\n').map(s => s.trim()).find(s => s.length > 0);
-        if (firstLine && firstLine !== invoice.vendorName) {
-            corrections.push(`Vendor cleanup: stripped multi-line (kept "${firstLine}")`);
-            invoice.vendorName = firstLine;
+        const lines = invoice.vendorName.split('\n').map(s => s.trim()).filter(s => s.length > 0);
+        const firstLine = lines[0] || '';
+        if (firstLine.length >= 3) {
+            // First line is meaningful (e.g. "FFC LOGISTICS\nKOHTLA-JÄRVE" → "FFC LOGISTICS")
+            if (firstLine !== invoice.vendorName) {
+                corrections.push(`Vendor cleanup: stripped multi-line (kept "${firstLine}")`);
+                invoice.vendorName = firstLine;
+            }
+        } else {
+            // First line is too short (e.g. "E\nM\nT" from logo) → join all lines
+            const joined = lines.join(' ').trim();
+            if (joined !== invoice.vendorName) {
+                corrections.push(`Vendor cleanup: joined multi-line "${invoice.vendorName.replace(/\n/g, '\\n')}" → "${joined}"`);
+                invoice.vendorName = joined;
+            }
         }
     }
 
