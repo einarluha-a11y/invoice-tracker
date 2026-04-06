@@ -1,5 +1,7 @@
 # SOLUTION
 
-PHASE: WAITING
-ROUND: 0
-TASK: (ожидаю следующее задание от Perplexity)
+PHASE: TEST
+ROUND: 1
+TASK: Тест мониторинга
+
+Ответь одним коммитом с сообщением: 'claude: monitor OK'
