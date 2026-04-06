@@ -52,3 +52,5 @@ reconcile.test.cjs — 23 passed, 0 failed
 5. automation/imap_daemon.cjs — 1 замена parseFloat→cleanNum
 6. automation/repairman_agent.cjs — 2 замены parseFloat→cleanNum
 7. automation/teacher_agent.cjs — cleanVendorName + 3 замены parseFloat→cleanNum
+
+DEPLOY_STATUS: OK
