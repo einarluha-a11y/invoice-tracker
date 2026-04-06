@@ -1,57 +1,59 @@
-# ЗАДАНИЕ: Тихий мониторинг SOLUTION.md
+# SOLUTION
 
-## Что нужно сделать
+PHASE: ARCHITECTURE
+ROUND: 1
+TASK: Убрать кавычки из vendorName — системное правило очистки
 
-Настрой recurring задачу которая мониторит `_agents/pipeline/REVIEW.md` каждые 30 секунд.
+## ARCHITECTURE
 
-**Важно:** задача должна работать ТИХО — никаких сообщений в окне если нет изменений.
+### Проблема
+В дашборде отображаются названия компаний с кавычками двух типов:
+- Прямые: UAB "Ursus LT" — должно быть: UAB Ursus LT
+- Угловые/стрелки: «Inovatus MB>> — должно быть: Inovatus MB
 
-## Логика
+Кавычки приходят из PDF инвойсов как есть. Нужно системное правило которое убирает их при извлечении — один раз и везде.
 
-```
-каждые 30 сек:
-  1. git fetch origin --quiet 2>/dev/null
-  2. Прочитать _agents/pipeline/REVIEW.md из origin/main
-  3. Извлечь <!-- phase: X | round: Y --> из первых строк
-  4. Сравнить с последним известным состоянием (хранить в /tmp/.pipeline_state)
-  5. Если state НЕ изменился → ничего не делать, полная тишина
-  6. Если state изменился:
-     а. Прочитать ВЕРДИКТ из REVIEW.md
-     б. Если ВЕРДИКТ: APPROVED → перейти к следующей фазе по протоколу
-     в. Если ВЕРДИКТ: CHANGES_NEEDED или CODE_CHANGES_NEEDED → прочитать ЗАМЕЧАНИЯ, исправить, обновить SOLUTION.md (ROUND+1), запушить
-```
+### Решение
 
-## Файл состояния /tmp/.pipeline_state
+**Шаг 1:** Добавить `cleanVendorName` в `automation/core/utils.cjs`:
 
-Формат (одна строка):
-```
-ARCHITECTURE:1:APPROVED
-```
-Поля: phase:round:verdict
-
-При первом запуске если файла нет — создать с текущим состоянием из REVIEW.md (не реагировать на "старые" ревью).
-
-## Правила тишины
-
-- НЕ писать в окно при каждом цикле
-- НЕ писать "проверяю...", "нет изменений", "жду..."
-- Писать в окно ТОЛЬКО когда:
-  - Найдено новое ревью → "📋 Новый ревью: [phase] round [N] — [ВЕРДИКТ]"  
-  - Начинаю реализацию → "🔨 Реализую: [краткое описание]"
-  - Готово → "✅ Готово: [что сделано]"
-  - Ошибка → "❌ Ошибка: [что случилось]"
-
-## Текущее состояние для инициализации
-
-Записать в /tmp/.pipeline_state:
-```
-ARCHITECTURE:1:APPROVED
+```js
+/**
+ * Strip all quote characters from vendor names.
+ * Handles: "straight", guillemets, arrows, low-high, single quotes
+ */
+function cleanVendorName(name) {
+    if (!name) return name;
+    return name
+        .replace(/[\u0022\u201C\u201D\u201E\u201F]/g, '')   // двойные кавычки всех видов
+        .replace(/[\u0027\u2018\u2019\u201A\u201B]/g, '')   // одиночные кавычки
+        .replace(/[\u00AB\u00BB\u2039\u203A]/g, '')          // угловые guillemets
+        .replace(/[<>]{1,2}/g, '')                           // стрелки << >>
+        .replace(/\s{2,}/g, ' ')                             // двойные пробелы после удаления
+        .trim();
+}
 ```
 
-Это означает что ревью архитектуры round 1 уже прочитан — не реагировать на него повторно.
-Ждать следующего изменения: когда phase станет CODE или round увеличится.
+**Шаг 2:** Применить в двух точках входа:
 
-## После настройки
+1. `automation/document_ai_service.cjs` — после строки ~259 где `vendorName` извлекается из DocAI:
+```js
+vendorName = cleanVendorName(vendorName);
+```
 
-Сразу приступи к реализации одобренной архитектуры (PHASE: CODE, ROUND: 1).
-Протокол — в `_agents/workflows/pipeline_protocol.md`.
+2. `automation/teacher_agent.cjs` — после строки ~108 где `parsed.vendorName` получен от Claude:
+```js
+if (parsed.vendorName) parsed.vendorName = cleanVendorName(parsed.vendorName);
+```
+
+**Шаг 3:** Экспортировать из utils.cjs — добавить `cleanVendorName` в `module.exports`.
+
+### Что НЕ трогаем
+- Уже записанные инвойсы в Firestore (Ремонтник исправит их отдельно если нужно)
+- Логику reconcilePayment — cleanVendorName применяется ДО записи в Firestore, не в reconcile
+
+### Верификация
+- `node --check automation/core/utils.cjs`
+- `node --check automation/document_ai_service.cjs`
+- `node --check automation/teacher_agent.cjs`
+- `node automation/tests/cleannum.test.cjs` — regression
