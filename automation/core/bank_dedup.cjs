@@ -13,6 +13,7 @@
  */
 
 const crypto = require('crypto');
+const { cleanNum } = require('./utils.cjs');
 
 /**
  * Normalize a field for stable hashing.
@@ -25,8 +26,8 @@ function normalizeField(name, value) {
     if (value === null || value === undefined || value === '') return '__empty__';
 
     if (name === 'amount') {
-        const n = parseFloat(value);
-        if (isNaN(n)) return '__empty__';
+        const n = cleanNum(value);
+        if (n === 0 && value !== '0' && value !== 0) return '__empty__';
         return n.toFixed(2);
     }
 

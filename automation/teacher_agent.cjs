@@ -523,8 +523,8 @@ async function validateAndTeach(invoiceData, companyId) {
                 ? Math.round((invoice.taxAmount / invoice.subtotalAmount) * 100)
                 : 0;
             if (actualRate === 0 && rule.value > 0 && invoice.taxAmount === 0) {
-                const expectedTax = parseFloat((invoice.subtotalAmount * rule.value / 100).toFixed(2));
-                const expectedTotal = parseFloat((invoice.subtotalAmount + expectedTax).toFixed(2));
+                const expectedTax = cleanNum((invoice.subtotalAmount * rule.value / 100).toFixed(2));
+                const expectedTotal = cleanNum((invoice.subtotalAmount + expectedTax).toFixed(2));
                 if (Math.abs(expectedTotal - invoice.amount) < 0.10) {
                     invoice.taxAmount = expectedTax;
                     corrections.push(`Global rule: calculated tax ${expectedTax} (${rule.value}% for ${vatPrefix}, ${rule.count} samples)`);
@@ -727,7 +727,7 @@ async function validateAndTeach(invoiceData, companyId) {
         // Check math: subtotal + tax ≈ amount
         let mathWrong = false;
         if (invoice.amount > 0 && invoice.subtotalAmount > 0) {
-            const computed = parseFloat((invoice.subtotalAmount + invoice.taxAmount).toFixed(2));
+            const computed = cleanNum((invoice.subtotalAmount + invoice.taxAmount).toFixed(2));
             const ratio = invoice.subtotalAmount / invoice.amount;
             if (Math.abs(computed - invoice.amount) > 0.05) {
                 if (ratio > 1.5 || ratio < 0.5) {

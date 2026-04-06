@@ -86,7 +86,7 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
                         const remaining = invData.remainingAmount ?? Math.abs(cleanNum(invData.amount));
 
                         if (payAmt > 0 && payAmt < remaining && vendorMatches(invData, docAiPayload)) {
-                            const newRemaining = parseFloat((remaining - payAmt).toFixed(2));
+                            const newRemaining = cleanNum((remaining - payAmt).toFixed(2));
                             console.log(`[Accountant Agent] 💰 PARTIAL PAYMENT: ${payAmt}/${remaining} for ${invData.invoiceId}. Remaining: ${newRemaining}`);
                             await db.runTransaction(async (t) => {
                                 const freshDoc = await t.get(doc.ref);
@@ -435,7 +435,7 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
                     break;
                 } else if (creditAmount < pRemaining) {
                     // Partial credit — reduce remaining
-                    const newRemaining = parseFloat((pRemaining - creditAmount).toFixed(2));
+                    const newRemaining = cleanNum((pRemaining - creditAmount).toFixed(2));
                     console.log(`[Accountant Agent] ⚖️ Partial credit: ${creditAmount} off ${pRemaining}. New remaining: ${newRemaining}`);
                     await pendingDoc.ref.update({
                         remainingAmount: newRemaining,
@@ -582,7 +582,7 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
         }
         // Rule 3: Math check subtotal + tax = total
         if (docAiPayload.subtotalAmount > 0 && docAiPayload.taxAmount > 0) {
-            const computed = parseFloat((docAiPayload.subtotalAmount + docAiPayload.taxAmount).toFixed(2));
+            const computed = cleanNum((docAiPayload.subtotalAmount + docAiPayload.taxAmount).toFixed(2));
             if (Math.abs(computed - docAiPayload.amount) > 0.05) {
                 aiAnalysis.generatedWarnings.push(`INFO: Math check — ${docAiPayload.subtotalAmount} + ${docAiPayload.taxAmount} = ${computed} ≠ ${docAiPayload.amount}`);
             }

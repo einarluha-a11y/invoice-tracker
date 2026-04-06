@@ -795,7 +795,7 @@ async function reconcilePayment(reference, description, paidAmount, totalBankDra
                 await db.runTransaction(async (t) => {
                     const freshDoc = await t.get(docRef);
                     if (freshDoc.exists) {
-                        t.update(docRef, { amount: parseFloat(newAmount.toFixed(2)), status: newStatus });
+                        t.update(docRef, { amount: cleanNum(newAmount.toFixed(2)), status: newStatus });
                     }
                 });
                 console.log(`  -> Partial payment. Remaining: €${newAmount.toFixed(2)}. Status: ${newStatus}`);

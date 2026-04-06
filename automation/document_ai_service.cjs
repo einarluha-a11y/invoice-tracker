@@ -353,7 +353,7 @@ async function processInvoiceWithDocAI(buffer, mimeType = 'application/pdf', sup
 
         // --- Validation warnings ---
         const validationWarnings = [];
-        const computedTotal = parseFloat((partial.subtotalAmount + partial.taxAmount).toFixed(2));
+        const computedTotal = cleanNum((partial.subtotalAmount + partial.taxAmount).toFixed(2));
         if (partial.amount > 0 && partial.subtotalAmount > 0 && Math.abs(computedTotal - partial.amount) > 0.05) {
             validationWarnings.push(`Math mismatch: ${partial.subtotalAmount} + ${partial.taxAmount} != ${partial.amount}`);
         }

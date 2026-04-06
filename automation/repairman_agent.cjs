@@ -526,10 +526,10 @@ async function repairInvoice(invoiceId, invoiceData) {
         // Step 1: Try arithmetic fix (only for math issues, skip for vendor issues)
         if (hasMathOnly) {
             if (qcAmount > 0 && qcTax > 0 && qcTax < qcAmount) {
-                updates.subtotalAmount = parseFloat((qcAmount - qcTax).toFixed(2));
+                updates.subtotalAmount = cleanNum((qcAmount - qcTax).toFixed(2));
                 console.log(`  [Repairman] Fixed sub: ${qcSub} → ${updates.subtotalAmount}`);
             } else if (qcAmount > 0 && qcSub > 0 && qcSub < qcAmount) {
-                updates.taxAmount = parseFloat((qcAmount - qcSub).toFixed(2));
+                updates.taxAmount = cleanNum((qcAmount - qcSub).toFixed(2));
                 console.log(`  [Repairman] Fixed tax: ${qcTax} → ${updates.taxAmount}`);
             }
             // Re-check
