@@ -103,8 +103,8 @@ function applyEstonianRegexFallback(rawText, result) {
 
     // taxAmount: "Käibemaks 24% 7,98" or "Käibemaks 7.98" or "Käibemaks 20%:\n4.95"
     if (!result.taxAmount || result.taxAmount === 0) {
-        const m = t.match(/Käibemaks\s+(?:\d+%[:\s]*)?([\d\s,.]+)/i)
-               || t.match(/Käibemaks\s+\d+%\s*:?\s*\n?\s*([\d,.]+)/i);
+        const m = t.match(/Käibemaks\s+\d+%\s*:?\s*(?:\n\s*)?([\d,.]+)/i)
+               || t.match(/Käibemaks\s*:?\s*([\d,.]+)/i);
         if (m) { const v = cleanNum(m[1]); if (v > 0) { result.taxAmount = v; filled.push('taxAmount'); } }
     }
 
@@ -312,7 +312,7 @@ async function processInvoiceWithDocAI(buffer, mimeType = 'application/pdf', sup
         const docDescription = lineItems.length > 0
             ? lineItems.map(li => {
                 const desc = li.description || '';
-                const amt = li.amount ? ` (${li.amount} ${currency || 'EUR'})` : '';
+                const amt = (li.amount !== undefined && li.amount !== null) ? ` (${li.amount} ${currency || 'EUR'})` : '';
                 return desc + amt;
             }).filter(s => s.trim()).join('; ')
             : '';
