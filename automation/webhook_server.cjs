@@ -19,10 +19,20 @@ async function verifyToken(req, res, next) {
         const decoded = await admin.auth().verifyIdToken(token);
         req.uid = decoded.uid;
         req.email = decoded.email;
+        req.role = decoded.role || 'user';
         next();
     } catch (e) {
         res.status(401).json({ error: 'Invalid token' });
     }
+}
+
+function requireRole(roles) {
+    return (req, res, next) => {
+        if (!req.role || !roles.includes(req.role)) {
+            return res.status(403).json({ error: 'Forbidden: insufficient role' });
+        }
+        next();
+    };
 }
 
 // Protect all /api/* routes except /api/intake (Zapier webhook — no user token)
@@ -157,7 +167,7 @@ app.post('/api/intake', rateLimit(20, 60_000), async (req, res) => {
 // Called by the repair button (🔧) in the dashboard TEGEVUS column.
 // Downloads the original file from Storage, re-runs Claude extraction,
 // and PATCHES the existing Firestore record in-place (never creates a new one).
-app.post('/api/reprocess-invoice', rateLimit(10, 60_000), async (req, res) => {
+app.post('/api/reprocess-invoice', rateLimit(10, 60_000), requireRole(['admin', 'master']), async (req, res) => {
     if (!db || !bucket) return res.status(503).json({ error: 'Database unavailable.' });
 
     const { docId } = req.body;
@@ -355,6 +365,7 @@ app.use(async (err, req, res, next) => {
     res.status(500).json({ error: 'Internal Server Error', details: err.message });
 });
 
-// Export the Express App and rate limiter so they can be used by the primary server
+// Export the Express App, rate limiter, and requireRole so they can be used by the primary server
 module.exports = app;
 module.exports.rateLimit = rateLimit;
+module.exports.requireRole = requireRole;

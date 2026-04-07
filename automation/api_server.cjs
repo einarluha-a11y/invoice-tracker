@@ -6,7 +6,7 @@ require('dotenv').config({ path: __dirname + '/.env' });
 const app = require('./webhook_server.cjs');
 const PORT = process.env.PORT || 3000;
 
-const { rateLimit } = require('./webhook_server.cjs');
+const { rateLimit, requireRole } = require('./webhook_server.cjs');
 
 // /api/chat — natural language filter assistant via Claude Haiku.
 // Takes a user query like "show overdue invoices from Tallinn last month" and
@@ -16,7 +16,7 @@ const anthropic = process.env.ANTHROPIC_API_KEY
     ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
     : null;
 
-app.post('/api/chat', rateLimit(30, 60_000), async (req, res) => {
+app.post('/api/chat', rateLimit(30, 60_000), requireRole(['user', 'admin', 'master']), async (req, res) => {
     if (!anthropic) {
         return res.status(503).json({ error: 'AI chat disabled: ANTHROPIC_API_KEY not set', reply: 'Сервис временно недоступен' });
     }
@@ -63,11 +63,28 @@ Omit filter fields that don't apply. Resolve relative dates ("last month", "эт
     }
 });
 
-// POST /api/invalidate-cache — сбрасывает кэш AI-правил при изменении Settings
+// POST /api/invalidate-cache — сбрасывает кэш AI-правил при изменении Settings (admin/master only)
 const { invalidateRulesCache } = require('./core/firebase.cjs');
-app.post('/api/invalidate-cache', (req, res) => {
+app.post('/api/invalidate-cache', requireRole(['admin', 'master']), (req, res) => {
     invalidateRulesCache();
     res.json({ ok: true });
+});
+
+// POST /api/users/roles — назначить роль пользователю (только master)
+const { admin: adminFb } = require('./core/firebase.cjs');
+app.post('/api/users/roles', requireRole(['master']), async (req, res) => {
+    const { uid, role } = req.body;
+    const allowed = ['user', 'admin', 'master'];
+    if (!uid || !role || !allowed.includes(role)) {
+        return res.status(400).json({ error: 'uid and role (user|admin|master) required' });
+    }
+    try {
+        await adminFb.auth().setCustomUserClaims(uid, { role });
+        res.json({ ok: true, uid, role });
+    } catch (err) {
+        console.error('[api/users/roles]', err.message);
+        res.status(500).json({ error: err.message });
+    }
 });
 
 app.get('/', (req, res) => {

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useCompanies } from '../hooks/useCompanies';
 import { doc, setDoc, onSnapshot, serverTimestamp } from 'firebase/firestore';
-import { db } from '../firebase';
+import { db, auth } from '../firebase';
 import { authHeaders } from '../data/api';
 
 interface SettingsProps {
@@ -22,6 +22,45 @@ export function Settings({ onBack }: SettingsProps) {
         imapPassword: '',
         imapPort: 993 as number | ''
     });
+
+    // ── Roles ────────────────────────────────────────────────────────────────
+    const [currentRole, setCurrentRole] = useState<string>('user');
+    const [users, setUsers] = useState<{ uid: string; email: string; role: string }[]>([]);
+    const [usersLoading, setUsersLoading] = useState(false);
+    const [roleMsg, setRoleMsg] = useState<string>('');
+
+    useEffect(() => {
+        auth?.currentUser?.getIdTokenResult(true).then(result => {
+            setCurrentRole((result.claims.role as string) || 'user');
+        });
+    }, []);
+
+    const loadUsers = async () => {
+        setUsersLoading(true);
+        try {
+            const apiBase = (import.meta as any).env?.VITE_API_URL || '';
+            const r = await fetch(`${apiBase}/api/users/list`, { headers: await authHeaders() });
+            if (r.ok) setUsers(await r.json());
+        } catch { /* ignore */ } finally { setUsersLoading(false); }
+    };
+
+    const handleSetRole = async (uid: string, role: string) => {
+        try {
+            const apiBase = (import.meta as any).env?.VITE_API_URL || '';
+            const r = await fetch(`${apiBase}/api/users/roles`, {
+                method: 'POST',
+                headers: { ...(await authHeaders()), 'Content-Type': 'application/json' },
+                body: JSON.stringify({ uid, role })
+            });
+            const data = await r.json();
+            if (data.ok) {
+                setRoleMsg(`Role updated for ${uid}`);
+                setUsers(prev => prev.map(u => u.uid === uid ? { ...u, role } : u));
+            } else {
+                setRoleMsg(data.error || 'Error');
+            }
+        } catch (e: any) { setRoleMsg(e.message); }
+    };
 
     // ── Global AI Rules ─────────────────────────────────────────────────────
     const [globalRules, setGlobalRules] = useState<string>('');
@@ -196,6 +235,64 @@ export function Settings({ onBack }: SettingsProps) {
                     }}>{t('settingsPage.back')}</button>
                     <h2>{t('settingsPage.title')}</h2>
                 </div>
+            </div>
+
+            {/* ── ROLES SECTION ────────────────────────────────────────────── */}
+            <div className="table-container" style={{ padding: '2rem', marginBottom: '2rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                        <h3>Роли пользователей</h3>
+                        <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', margin: '0.3rem 0 0 0' }}>
+                            Ваша роль: <strong>{currentRole}</strong>
+                        </p>
+                    </div>
+                    {currentRole === 'master' && (
+                        <button onClick={loadUsers} style={{
+                            background: 'transparent', border: '1px solid var(--border-color)',
+                            color: 'var(--primary-color)', padding: '0.4rem 0.8rem',
+                            borderRadius: '4px', cursor: 'pointer'
+                        }}>
+                            {usersLoading ? 'Загрузка...' : 'Управление ролями'}
+                        </button>
+                    )}
+                </div>
+                {currentRole === 'master' && users.length > 0 && (
+                    <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--border-color)' }}>
+                        {roleMsg && <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '0.5rem' }}>{roleMsg}</p>}
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
+                            <thead>
+                                <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
+                                    <th style={{ textAlign: 'left', padding: '0.5rem', color: 'var(--text-secondary)' }}>Email</th>
+                                    <th style={{ textAlign: 'left', padding: '0.5rem', color: 'var(--text-secondary)' }}>Роль</th>
+                                    <th style={{ padding: '0.5rem' }}></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {users.map(u => (
+                                    <tr key={u.uid} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                                        <td style={{ padding: '0.5rem' }}>{u.email}</td>
+                                        <td style={{ padding: '0.5rem' }}>
+                                            <select
+                                                value={u.role}
+                                                onChange={e => setUsers(prev => prev.map(x => x.uid === u.uid ? { ...x, role: e.target.value } : x))}
+                                                style={{ background: 'var(--surface-color)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '0.2rem 0.4rem' }}>
+                                                <option value="user">user</option>
+                                                <option value="admin">admin</option>
+                                                <option value="master">master</option>
+                                            </select>
+                                        </td>
+                                        <td style={{ padding: '0.5rem' }}>
+                                            <button onClick={() => handleSetRole(u.uid, u.role)} style={{
+                                                background: 'var(--header-accent)', color: 'white', border: 'none',
+                                                padding: '0.3rem 0.7rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.85rem'
+                                            }}>Set role</button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
             </div>
 
             {/* ── GLOBAL AI RULES SECTION ──────────────────────────────────── */}
