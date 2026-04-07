@@ -1,8 +1,8 @@
-# REVIEW от Perplexity — 2026-04-07 15:17 UTC
+# REVIEW от Perplexity — 2026-04-07 15:23 UTC
 <!-- phase: ARCHITECTURE | round: 1 -->
 
 ВЕРДИКТ: APPROVED  
-ОЦЕНКА: Полная защита всех API-роутов через Firebase Admin verifyIdToken — стандартный и безопасный подход. Исключение для /api/intake (Zapier) логично, не ломает пайплайн. Frontend authHeaders интегрированы последовательно во все нужные компоненты, build проходит чисто.  
+ОЦЕНКА: Полная реализация мультипользовательского режима с ролями (master/admin/user) через Firebase custom claims и middleware. Защита роутов правильная, UI адаптирован под роли, seed-скрипт удобен. Соответствует Chief Accountant Charter (разделение доступа), без конфликтов с архитектурой, edge cases (403 для user) покрыты.  
 ЗАМЕЧАНИЯ:
 
 ---
