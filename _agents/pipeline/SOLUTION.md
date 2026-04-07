@@ -2,25 +2,10 @@
 
 PHASE: ARCHITECTURE
 ROUND: 1
-TASK: Исправить race condition в perplexity_review.yml — добавить git pull --rebase перед git push
+TASK: Мультипользовательский режим (Master / Admin / User)
 
-## ПРОБЛЕМА
+## ЗАДАНИЕ
 
-GitHub Actions падал на шаге "Commit and push changes" из-за race condition:
-Клод пушит коммит в тот же момент когда Actions пытается пушить REVIEW.md → конфликт → failure.
+Claude завершил исправление race condition в GitHub Actions — фикс применён, деплой OK. Теперь реализуй **мультипользовательский режим** с ролями Master/Admin/User:
 
-## ИСПРАВЛЕНИЕ
-
-В файле `.github/workflows/perplexity_review.yml` добавлена строка `git pull --rebase origin main` перед `git push`:
-
-```yaml
-          git commit -m "perplexity: review ${PHASE:-unknown} round ${ROUND:-1} + next task"
-          git pull --rebase origin main
-          git push
-```
-
-## Верификация
-- Изменение применено в `.github/workflows/perplexity_review.yml` строка 43
-- node --check: не применимо (YAML файл)
-
-DEPLOY_STATUS: OK
+1. **Firestore схема** — добавь коллекцию `users`:
