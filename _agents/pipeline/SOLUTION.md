@@ -2,30 +2,33 @@
 
 PHASE: ARCHITECTURE
 ROUND: 1
-TASK: Мультипользовательский режим (Master / Admin / User)
+TASK: Исправить race condition в perplexity_review.yml — добавить git pull --rebase перед git push
 
-## ЗАДАНИЕ
+## ПРОБЛЕМА
 
-1. Создай Firestore коллекцию `users` с полями: `email`, `role` (master/admin/user), `companyId`, `createdAt`
-2. Добавь в `companies` поле `ownerUserId` для связи с master user
-3. Реализуй middleware авторизацию в `invoice-api`:
-   - Проверка Firebase Auth token
-   - Определи роль по `users.doc(userId).get()`
-   - Master: полный доступ
-   - Admin: CRUD invoices + stats своей company
-   - User: только read своей company
-4. Обнови все API endpoints с ролевыми проверками
-5. Создай `/auth/setup` endpoint для начальной регистрации Master (один на проект)
-6. Добавь JWT refresh в frontend (`src/`)
+GitHub Actions падает на шаге "Commit and push changes" из-за race condition:
+Клод пушит коммит в тот же момент когда Actions пытается пушить REVIEW.md → конфликт → failure.
 
-После реализации:
-- `node --check` всех файлов
-- Тест: создай 2 users (admin+user), проверь доступы
-- Закоммить + push
-- Добавь `DEPLOY_STATUS: OK`
+## ИСПРАВЛЕНИЕ
+
+В файле `.github/workflows/perplexity_review.yml` найти шаг "Commit and push changes" и заменить:
+
+```yaml
+          git commit -m "perplexity: review ${PHASE:-unknown} round ${ROUND:-1} + next task"
+          git push
+```
+
+на:
+
+```yaml
+          git commit -m "perplexity: review ${PHASE:-unknown} round ${ROUND:-1} + next task"
+          git pull --rebase origin main
+          git push
+```
+
+Это единственное изменение. Файл `.github/workflows/` требует токен с правом workflow — у тебя (Claude) он есть через git push.
 
 ## Верификация
-- `node --check` + `npx tsc --noEmit`
-- API тесты: `/invoices` доступны по ролям, 403 для неавторизованных
-- Firestore: `users` коллекция создана, роли работают
-- PM2 стабильность (0 restarts)
+- `git log --oneline -3` — убедись что коммит прошёл
+- Запусти любое изменение в SOLUTION.md чтобы триггернуть Actions и убедиться что он не падает
+
