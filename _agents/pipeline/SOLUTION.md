@@ -1,20 +1,31 @@
 # SOLUTION
 
-PHASE: BUGFIX
+PHASE: ARCHITECTURE
 ROUND: 1
-TASK: PM2 автоматический баг-репорт — критические ошибки
-
-## ОШИБКИ В PM2 ЛОГАХ
-
-- **invoice-imap**: [31m10|invoice | [39m[Dead-Man Switch] Firestore write crashed. Escalating to external webhook... 3 INVALID_ARGUMENT: Transaction too big. Decrease transaction size.
-- **invoice-api**: Crash loop: 274 restarts
-- **invoice-imap**: Crash loop: 265 restarts
+TASK: Мультипользовательский режим (Master / Admin / User)
 
 ## ЗАДАНИЕ
 
-Проанализируй ошибки выше. Найди причину в коде, исправь, проверь syntax (node --check), закоммить и запуши.
-После исправления добавь DEPLOY_STATUS: OK в конец этого файла.
+1. Создай Firestore коллекцию `users` с полями: `email`, `role` (master/admin/user), `companyId`, `createdAt`
+2. Добавь в `companies` поле `ownerUserId` для связи с master user
+3. Реализуй middleware авторизацию в `invoice-api`:
+   - Проверка Firebase Auth token
+   - Определи роль по `users.doc(userId).get()`
+   - Master: полный доступ
+   - Admin: CRUD invoices + stats своей company
+   - User: только read своей company
+4. Обнови все API endpoints с ролевыми проверками
+5. Создай `/auth/setup` endpoint для начальной регистрации Master (один на проект)
+6. Добавь JWT refresh в frontend (`src/`)
+
+После реализации:
+- `node --check` всех файлов
+- Тест: создай 2 users (admin+user), проверь доступы
+- Закоммить + push
+- Добавь `DEPLOY_STATUS: OK`
 
 ## Верификация
-- `node --check` всех изменённых файлов
-- PM2 процессы стабильны (0 рестартов за 1 минуту)
+- `node --check` + `npx tsc --noEmit`
+- API тесты: `/invoices` доступны по ролям, 403 для неавторизованных
+- Firestore: `users` коллекция создана, роли работают
+- PM2 стабильность (0 restarts)
