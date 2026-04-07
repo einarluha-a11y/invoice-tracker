@@ -78,7 +78,8 @@ async function pollOnce() {
     // ── 1. SOLUTION.md (новые задания) ──
     const solution = gitShow('_agents/pipeline/SOLUTION.md');
     const sol = parsePhaseRound(solution, 'solution');
-    const solState = `SOLUTION:${sol.phase}:${sol.round}`;
+    const task = (solution.match(/^TASK:\s*(.+)/m) || [])[1] || '';
+    const solState = `SOLUTION:${sol.phase}:${sol.round}:${task.slice(0, 50)}`;
     const savedSol = readState(STATE_SOL);
 
     if (solState !== savedSol && sol.phase && sol.phase !== 'WAITING' && !solution.includes('DEPLOY_STATUS: OK')) {
