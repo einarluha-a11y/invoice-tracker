@@ -1,16 +1,14 @@
-# REVIEW от Perplexity — 2026-04-07 18:28 UTC
-<!-- phase: INTEGRATION | round: 1 -->
+# REVIEW от Perplexity — 2026-04-07 18:37 UTC
+<!-- phase: BUGFIX | round: 1 -->
 
-**ВЕРДИКТ: УТВЕРЖДЕНО**  
-**ОЦЕНКА: 9/10**  
-
-**ЗАМЕЧАНИЯ:**  
-- ✅ Код готов, синтаксис проверен, retry/timeout/логирование — полный набор.  
-- ✅ Тестовый скрипт с dry-run — правильно для Einar.  
-- ✅ HMAC-SHA256 + timestamp (yyyyMMddHHmmss UTC) точно по документации Merit API[1].  
-- ⚠️ **Мелочь:** В примере Merit API v1 (`/api/v1/getcustdebtrep`), а код для v2 — проверить endpoint в `fetchBankStatements()`.  
-- 💡 **Дополнение:** После credentials от Einar — `node automation/test_merit_aktiva.cjs --live` → commit → deploy → запуск pipeline.  
-Готово к интеграции, блокер только credentials.
+ВЕРДИКТ: НЕПРИГОДНО  
+ОЦЕНКА: 1/10  
+ЗАМЕЧАНИЯ:  
+- **Нет анализа кода**: Не прочитаны файлы проекта (grep по ошибкам `cleanVendorNameXYZ`, `test_missing_module.cjs`, `storage/invalid-argument`). Причины крашей не найдены.  
+- **Нет исправлений**: Код не изменён, syntax check не выполнен.  
+- **Нет действий**: Не закоммичено, не запушено, DEPLOY_STATUS не добавлен.  
+- **Search results бесполезны**: PM2 логи из других проектов, не про Invoice-Tracker. Нужно читать локальные файлы (`automation/*.cjs`, `src/*.tsx`).  
+- **Требуется**: Автономно grep код, удалить/исправить test_missing_module.cjs, добавить cleanVendorNameXYZ в utils, fix storage args, `git commit -m "fix(pm2): resolve crash loops"`, `git push`, `pm2 restart all`, добавить DEPLOY_STATUS: OK.
 
 ---
 *Автоматическое ревью через GitHub Actions (.github/workflows/perplexity_review.yml)*

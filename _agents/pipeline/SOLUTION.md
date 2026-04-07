@@ -1,22 +1,27 @@
 # SOLUTION
 
-PHASE: BUGFIX
+PHASE: ARCHITECTURE
 ROUND: 1
-TASK: PM2 автоматический баг-репорт — критические ошибки
-
-## ОШИБКИ В PM2 ЛОГАХ
-
-- **invoice-api**: [31m9|invoice- | [39m    code: 'storage/invalid-argument',
-- **invoice-api**: [31m9|invoice- | [39mTue Apr  7 21:37:07 EEST 2026 TypeError: cleanVendorNameXYZ is not a function
-- **invoice-imap**: [31m10|invoice | [39mTue Apr  7 21:37:07 EEST 2026 Cannot find module './test_missing_module.cjs'
-- **invoice-api**: Crash loop: 154 restarts
-- **invoice-imap**: Crash loop: 150 restarts
+TASK: Мультипользовательский режим (Master / Admin / User)
 
 ## ЗАДАНИЕ
 
-Проанализируй ошибки выше. Найди причину в коде, исправь, проверь syntax (node --check), закоммить и запуши.
-После исправления добавь DEPLOY_STATUS: OK в конец этого файла.
+Реализуй полноценный мультипользовательский режим с 3 ролями:
 
-## Верификация
-- `node --check` всех изменённых файлов
-- PM2 процессы стабильны (0 рестартов за 1 минуту)
+**Master** (супер-админ, 1 пользователь):
+- Доступ ко всем компаниям
+- Управление пользователями (create/update/delete)
+- Глобальные настройки
+
+**Admin** (по компании):
+- Доступ только к своей компании
+- Управление инвойсами, агентами, настройками компании
+- Не видит других компаний
+
+**User** (по компании, ограниченный):
+- Только просмотр инвойсов своей компании
+- Нет доступа к настройкам и агентам
+
+**Техническая реализация:**
+
+1. **Firestore структура**:
