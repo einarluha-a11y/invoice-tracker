@@ -2,27 +2,35 @@
 
 PHASE: ARCHITECTURE
 ROUND: 1
-TASK: PDF экспорт списка инвойсов для бухгалтера
+TASK: Мягкое удаление инвойсов (архив вместо delete)
 
 ## ЗАДАНИЕ
 
-1. **`src/lib/pdfExport.ts`** — отдельная библиотека для генерации PDF:
-   - Функция `generateInvoicesPDF(invoices: Invoice[], options: PdfExportOptions)`
-   - Шапка: название компании, период (from–to), всего инвойсов + суммы по валютам
-   - Таблица: №, Invoice No, Date, Due Date, Amount, Currency, Status, Vendor
-   - Локализация через `locale` параметр
+1. **Бэкенд изменения** (`src/lib/invoice.ts` и endpoints):
+   - Добавить поле `isArchived: boolean` в тип `Invoice` (по умолчанию `false`)
+   - Функция `archiveInvoice(invoiceId: string)`: `updateDoc(invoicesRef.doc(invoiceId), { isArchived: true, archivedAt: serverTimestamp() })`
+   - Функция `unarchiveInvoice(invoiceId: string)`: `updateDoc(invoicesRef.doc(invoiceId), { isArchived: false, archivedAt: null })`
+   - Endpoint `POST /api/invoices/:id/archive` → вызывает `archiveInvoice(id)`
+   - Endpoint `POST /api/invoices/:id/unarchive` → вызывает `unarchiveInvoice(id)`
+   - Все `DELETE /api/invoices/:id` заменить на `archiveInvoice(id)` (return 200 с сообщением "Инвойс архивирован")
 
-2. **`src/components/InvoiceTable.tsx`** — рефакторинг `handleExportPDF`:
-   - Удалены inlined jsPDF/autoTable импорты из компонента
-   - Вызов `generateInvoicesPDF(filteredAndSortedInvoices, { companyName, startDate, endDate, statusFilter, locale })`
+2. **Frontend** (`src/components/InvoiceTable.tsx` и `useInvoices.ts`):
+   - Фильтр `showArchived: boolean` в состоянии таблицы (чекбокс "Показать архивированные")
+   - В `filteredInvoices`: `invoices.filter(i => !i.isArchived || showArchived)`
+   - Кнопка "Архивировать" вместо "Удалить" в строке инвойса
+   - `handleArchive(id)` → `fetch('/api/invoices/${id}/archive', {method: 'POST'})` → refetch invoices
+   - Иконка архива (📦) для архивированных инвойсов в колонке Status
 
-## ВЫПОЛНЕНО
+3. **UI/UX улучшения**:
+   - Архивированные инвойсы: полупрозрачные (opacity: 0.6), Status = "📦 Архив"
+   - В шапке таблицы: счетчик "Активных: X | Архивированных: Y"
+   - PDF экспорт: **только активные** инвойсы (исключить `isArchived: true`)
 
-- `src/lib/pdfExport.ts` создан с `generateInvoicesPDF` + `PdfExportOptions`
-- Шапка PDF: название компании, период дат, итоговое количество + суммы по каждой валюте
-- Таблица: 8 колонок (добавлен №, Invoice No, Currency как отдельный столбец)
-- `InvoiceTable.tsx`: убраны jsPDF/autoTable импорты, `handleExportPDF` стал 12-строчным
-- Build: ✓ чистый (`npm run build` без ошибок)
-- node --check: OK
-
-DEPLOY_STATUS: OK
+## Верификация
+- Firestore: поле `isArchived` в типе `Invoice`, `archivedAt` timestamp
+- API: `POST /invoices/ABC/archive` → инвойс `isArchived: true`
+- Frontend: чекбокс "Показать архивированные" фильтрует таблицу
+- Кнопка "Архивировать" → инвойс становится полупрозрачным 📦 Архив
+- PDF экспорт: архивированные **НЕ** попадают в PDF
+- Build: ✓ `npm run build`
+- Deploy: Railway auto-deploy → DEPLOY_STATUS: OK
