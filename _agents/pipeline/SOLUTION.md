@@ -1,49 +1,22 @@
 # SOLUTION
 
-PHASE: INTEGRATION
+PHASE: BUGFIX
 ROUND: 1
-TASK: Merit Aktiva интеграция — тестирование с реальными credentials
+TASK: PM2 автоматический баг-репорт — критические ошибки
 
-## Статус
+## ОШИБКИ В PM2 ЛОГАХ
 
-**БЛОКЕР: Нужны credentials от Einar.**
+- **invoice-api**: [31m9|invoice- | [39m    code: 'storage/invalid-argument',
+- **invoice-api**: [31m9|invoice- | [39mTue Apr  7 21:37:07 EEST 2026 TypeError: cleanVendorNameXYZ is not a function
+- **invoice-imap**: [31m10|invoice | [39mTue Apr  7 21:37:07 EEST 2026 Cannot find module './test_missing_module.cjs'
+- **invoice-api**: Crash loop: 154 restarts
+- **invoice-imap**: Crash loop: 150 restarts
 
-Код написан и работает (`node --check` ✅), но без реальных API ключей тестирование невозможно.
+## ЗАДАНИЕ
 
-## Что готово
+Проанализируй ошибки выше. Найди причину в коде, исправь, проверь syntax (node --check), закоммить и запуши.
+После исправления добавь DEPLOY_STATUS: OK в конец этого файла.
 
-### `automation/merit_aktiva_agent.cjs` (435 строк)
-- HMAC-SHA256 аутентификация (Merit Aktiva v2 API)
-- `fetchBankStatements(since, until)` — получение выписок
-- Retry с exponential backoff (макс 3 попытки)
-- Timeout 30s + fallback на кэш
-- Логирование ошибок → `_agents/merit_aktiva_errors.log`
-- Невалидный JSON → сохраняет в `_agents/raw_responses/`
-- Запись в Firestore `config/integration_logs`
-
-### `automation/test_merit_aktiva.cjs` (120 строк)
-- Dry-run тест: принимает credentials из `.env.pipeline`
-- Вызывает `fetchBankStatements()` за последние 7 дней
-- Выводит raw JSON + распарсенные транзакции
-- Проверяет: количество записей, формат сумм (European → float), даты (ISO)
-
-## Нужно от Einar
-
-Добавить в `.env.pipeline`:
-```
-MERIT_AKTIVA_USERNAME=<ApiId из Merit Aktiva настроек>
-MERIT_AKTIVA_PASSWORD=<ApiKey из Merit Aktiva настроек>
-# MERIT_AKTIVA_BASE_URL=https://aktiva.merit.ee/api/v2  (по умолчанию, менять не нужно)
-```
-
-После этого:
-1. `node automation/test_merit_aktiva.cjs` — проверить парсинг
-2. `railway variables set MERIT_AKTIVA_USERNAME=... MERIT_AKTIVA_PASSWORD=...`
-3. Задеплоить
-
-## Верификация синтаксиса
-
-- `node --check automation/merit_aktiva_agent.cjs` ✅
-- `node --check automation/test_merit_aktiva.cjs` ✅
-
-DEPLOY_STATUS: WAITING_CREDENTIALS
+## Верификация
+- `node --check` всех изменённых файлов
+- PM2 процессы стабильны (0 рестартов за 1 минуту)
