@@ -4,125 +4,48 @@ PHASE: ARCHITECTURE
 ROUND: 1
 TASK: Мультипользовательский режим — Фаза 1: Фундамент (без downtime)
 
-## ЗАДАНИЕ
+## РЕЗУЛЬТАТ
 
-Реализуй Фазу 1 мультипользовательской архитектуры. Никакого downtime — все изменения backward-compatible.
+### Выполнено
 
-### Шаг 1 — Создать master_users в Firestore
+**Шаг 1 — master_users/{uid}**
+- Создан документ `master_users/MI9J2VBriwQ45jEMJ5tmbagfHm93` с полями email + createdAt
+- UID получен через `firebase-tools auth:export` (Admin SDK Auth API недоступен с текущим сервис-аккаунтом)
+- Примечание: путь использован `master_users/{uid}` (2 сегмента = валидный документ), а не `system/master_users/{uid}` (3 сегмента = невалиден для Firestore документа)
 
-Через Firebase Admin SDK создай документ:
-```
-system/master_users/{einar_uid}
-  email: "einar.luha@gmail.com"
-  createdAt: timestamp
-```
+**Шаг 2 — accounts структура**
+- `accounts/global-technics` → name, createdAt
+- `accounts/global-technics/users/MI9J2VBriwQ45jEMJ5tmbagfHm93` → email, role: admin
+- `accounts/global-technics/companies/bP6dc0PMdFtnmS5QTX4N` → копия Global Technics OÜ
+- `accounts/ideacom` → name, createdAt
+- `accounts/ideacom/users/MI9J2VBriwQ45jEMJ5tmbagfHm93` → email, role: admin
+- `accounts/ideacom/companies/vlhvA6i8d3Hry8rtrA3Z` → копия Ideacom OÜ
 
-Einar uid — получи из Firebase Auth через:
-```js
-const user = await admin.auth().getUserByEmail('einar.luha@gmail.com')
-console.log(user.uid)
-```
+**Шаг 3 — migrate_to_accounts.cjs**
+- Создан файл `automation/migrate_to_accounts.cjs`
+- dry-run: 161 инвойс + 456 bank_transactions = 617 документов
+- `--save` выполнен: все 617 документов получили поле `accountId`
+- Идемпотентный: повторный запуск пропускает уже обновлённые документы
 
-### Шаг 2 — Создать accounts структуру
-
-Создай два аккаунта в Firestore:
-
-```
-accounts/global-technics/
-  name: "Global Technics"
-  createdAt: timestamp
-  users/{einar_uid}/
-    email: "einar.luha@gmail.com"
-    role: "admin"
-    addedAt: timestamp
-
-accounts/ideacom/
-  name: "Ideacom"
-  createdAt: timestamp
-  users/{einar_uid}/
-    email: "einar.luha@gmail.com"
-    role: "admin"
-    addedAt: timestamp
-```
-
-Для каждого аккаунта также создай subcollection companies/ скопировав данные из существующих companies/{GT_ID} и companies/{IDEACOM_ID}:
-```
-accounts/global-technics/companies/{GT_ID}/ → копия из companies/{GT_ID}
-accounts/ideacom/companies/{IDEACOM_ID}/ → копия из companies/{IDEACOM_ID}
-```
-
-### Шаг 3 — Написать migrate_to_accounts.cjs
-
-Создай файл `automation/migrate_to_accounts.cjs`:
-
-```js
-/**
- * Миграция данных для мультипользовательского режима.
- * Добавляет поле accountId в invoices и bank_transactions.
- * 
- * Запуск:
- *   node migrate_to_accounts.cjs --dry-run   (только показывает что будет)
- *   node migrate_to_accounts.cjs --save       (реально меняет)
- */
-```
-
-Скрипт должен:
-1. Загрузить все компании из `companies/`
-2. Определить accountId для каждой компании по её полю (GT_ID → 'global-technics', IDEACOM_ID → 'ideacom')
-3. Найти все инвойсы этой компании в `invoices/`
-4. Добавить поле `accountId` если его нет
-5. То же для `bank_transactions/`
-6. Логировать каждую операцию
-7. Быть идемпотентным (пропускать уже обновлённые документы)
-
-Сначала запусти с `--dry-run`, покажи результат, потом с `--save`.
-
-### Шаг 4 — Обновить Firestore Security Rules
-
-Добавить новые правила НЕ удаляя старые (в `firestore.rules`):
-
-```javascript
-function isMaster() {
-  return exists(/databases/$(database)/documents/system/master_users/$(request.auth.uid));
-}
-
-function isAccountMember(accountId) {
-  return exists(/databases/$(database)/documents/accounts/$(accountId)/users/$(request.auth.uid));
-}
-
-function isAccountAdmin(accountId) {
-  return get(/databases/$(database)/documents/accounts/$(accountId)/users/$(request.auth.uid)).data.role == 'admin';
-}
-
-// Добавить к существующим правилам:
-match /accounts/{accountId} {
-  allow read: if request.auth != null && (isMaster() || isAccountMember(accountId));
-  allow write: if request.auth != null && (isMaster() || isAccountAdmin(accountId));
-}
-
-match /accounts/{accountId}/users/{userId} {
-  allow read: if request.auth != null && (isMaster() || isAccountMember(accountId));
-  allow write: if request.auth != null && (isMaster() || isAccountAdmin(accountId));
-}
-
-match /accounts/{accountId}/companies/{companyId} {
-  allow read: if request.auth != null && (isMaster() || isAccountMember(accountId));
-  allow write: if request.auth != null && (isMaster() || isAccountAdmin(accountId));
-}
-
-match /system/master_users/{userId} {
-  allow read: if request.auth != null;
-  allow write: if false; // только через Admin SDK
-}
-```
-
-Задеплой правила: `firebase deploy --only firestore:rules`
+**Шаг 4 — Firestore Security Rules**
+- Добавлены функции `isMaster()`, `isAccountMember()`, `isAccountAdmin()`
+- Добавлены правила для `master_users/{userId}`, `accounts/{accountId}`, subcollections users/ и companies/
+- Старые правила (`isAdmin()`, `/{document=**}`) сохранены — backward-compatible
+- `firebase deploy --only firestore:rules` — ✅ без ошибок
 
 ### Верификация
+- `master_users/MI9J2VBriwQ45jEMJ5tmbagfHm93` → ✅ существует
+- `accounts/global-technics` → ✅ Global Technics
+- `accounts/ideacom` → ✅ Ideacom
+- 5 случайных инвойсов → все имеют `accountId` (global-technics или ideacom)
+- `firebase deploy --only firestore:rules` → ✅ compiled successfully
 
-- Проверь что master_users/{uid} создан
-- Проверь что accounts/global-technics и accounts/ideacom существуют
-- Запусти migrate_to_accounts.cjs --dry-run — покажи результат
-- Запусти migrate_to_accounts.cjs --save
-- Проверь что 5 случайных инвойсов имеют поле accountId
-- `firebase deploy --only firestore:rules` прошёл без ошибок
+### Адаптации от плана
+1. Путь master_users: `master_users/{uid}` вместо `system/master_users/{uid}` — 3-сегментный путь невалиден для Firestore документа, правила адаптированы соответственно
+2. setup_multitenancy.cjs — вспомогательный скрипт для создания структуры (не входил в план, но нужен для воспроизводимости)
+
+### Готово к Фазе 2
+- Фундамент готов: master_users, accounts, accountId в данных, правила
+- Следующий шаг: Frontend — Login.tsx + AuthContext.tsx + useCompanies.ts
+
+DEPLOY_STATUS: OK
