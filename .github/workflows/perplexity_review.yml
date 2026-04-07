@@ -31,13 +31,13 @@ jobs:
           PERPLEXITY_API_KEY: ${{ secrets.PERPLEXITY_API_KEY }}
         run: python3 .github/scripts/perplexity_review.py
 
-      - name: Commit and push REVIEW.md
+      - name: Commit and push changes
         run: |
           git config user.name "perplexity-bot"
           git config user.email "perplexity-bot@users.noreply.github.com"
-          git add _agents/pipeline/REVIEW.md
+          git add _agents/pipeline/REVIEW.md _agents/pipeline/SOLUTION.md
           git diff --staged --quiet && echo "No changes" && exit 0
           PHASE=$(grep -oE '^PHASE:[[:space:]]*[A-Za-z]+' _agents/pipeline/SOLUTION.md | head -1 | awk '{print $2}')
           ROUND=$(grep -oE '^ROUND:[[:space:]]*[0-9]+' _agents/pipeline/SOLUTION.md | head -1 | awk '{print $2}')
-          git commit -m "perplexity: review ${PHASE:-unknown} round ${ROUND:-1}"
+          git commit -m "perplexity: review ${PHASE:-unknown} round ${ROUND:-1} + next task"
           git push
