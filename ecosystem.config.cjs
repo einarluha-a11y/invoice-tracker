@@ -26,5 +26,15 @@ module.exports = {
     }
     // NOTE: invoice-dlq-cron removed — imap_daemon.cjs now calls processDLQ() after every
     // poll cycle (every 5 min), making a separate PM2 cron process redundant.
+    {
+      name: 'pipeline-monitor',
+      script: './automation/pipeline_monitor.cjs',
+      watch: false,  // no file watch — polls git every 30s
+      restart_delay: 10000,
+      max_restarts: 50,
+      max_memory_restart: '200M',
+      error_file: './automation/logs/pipeline-monitor-error.log',
+      out_file: './automation/logs/pipeline-monitor-out.log',
+    }
   ]
 };
