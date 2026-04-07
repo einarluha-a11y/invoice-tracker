@@ -193,7 +193,9 @@ async function pollOnce() {
     const solState = `SOLUTION:${sol.phase}:${sol.round}:${task.slice(0, 50)}`;
     const savedSol = readState(STATE_SOL);
 
-    if (solState !== savedSol && sol.phase && sol.phase !== 'WAITING' && !solution.includes('DEPLOY_STATUS: OK')) {
+    // Check DEPLOY_STATUS: OK on its own line (not inside instructions text)
+    const isDeployed = /^DEPLOY_STATUS:\s*OK\s*$/m.test(solution);
+    if (solState !== savedSol && sol.phase && sol.phase !== 'WAITING' && !isDeployed) {
         log(`📋 Новое задание: ${sol.phase} round ${sol.round}`);
         const ok = runClaude(
             `Ты — автономный агент Invoice Tracker. Рабочая директория: ${PROJECT}. ` +
