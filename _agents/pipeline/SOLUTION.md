@@ -2,34 +2,15 @@
 
 PHASE: ARCHITECTURE
 ROUND: 1
-TASK: Мягкое удаление инвойсов (архив вместо delete)
+TASK: PDF экспорт списка инвойсов для бухгалтера
 
 ## ЗАДАНИЕ
 
-1. **Backend изменения** (`src/lib/invoices.ts`):
-   - Добавить поле `archived: boolean = false` ко всем инвойсам (миграция)
-   - Вместо `deleteDoc(invoiceRef)` → `updateDoc(invoiceRef, {archived: true, deletedAt: serverTimestamp()})`
-   - API endpoint `/invoices` → фильтр `where('archived', '==', false)` по умолчанию
-   - Новый endpoint `POST /invoices/:id/archive` для мягкого удаления
+1. **Backend — PDF генератор** (`src/lib/pdfExport.ts`):
+   - Функция `generateInvoicesPDF(invoices: Invoice[], companyId: string)` → возвращает Buffer PDF
+   - Использовать `pdf-lib` или `puppeteer` для генерации
+   - Таблица: №, Дата, Сумма, Валюта, Статус, Контрагент
+   - Шапка: Логотип компании, период (from-to), всего инвойсов/сумма
+   - Фильтр по статусу/периоду (параметры в запросе)
 
-2. **Frontend изменения** (`src/components/InvoiceList.tsx`, `InvoiceRow.tsx`):
-   - Кнопка "Архив" вместо "Удалить" 
-   - В списке показывать только `!archived`
-   - Добавить вкладку "Архив" с фильтром `archived == true`
-   - Подтверждение: "Переместить в архив?"
-
-3. **Firestore миграция** (один раз):
-   - Поле `archived` читается как `data.archived === true` (false по умолчанию для старых записей)
-   - Миграция не нужна — клиентский фильтр `!i.archived` корректно работает для старых документов без поля
-
-## ВЫПОЛНЕНО
-
-- `archiveInvoice()` → `updateDoc({archived: true, deletedAt: serverTimestamp()})`
-- `restoreInvoice()` → `updateDoc({archived: false, deletedAt: null})`
-- Вкладка "Архив" в UI с переключателем активные/архив
-- Фильтр `invoices.filter(i => showArchived ? i.archived === true : !i.archived)`
-- Диалог подтверждения "Переместить в архив?"
-- i18n переводы RU/EN/ET
-- Build: ✓ clean
-
-DEPLOY_STATUS: OK
+2. **API endpoint** (`src/pages/api/invoices/export-pdf.ts`):
