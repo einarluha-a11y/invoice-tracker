@@ -1,16 +1,10 @@
-# REVIEW от Perplexity — 2026-04-07 13:18 UTC
-<!-- phase: CODE | round: 1 -->
+# REVIEW от Perplexity — 2026-04-07 13:31 UTC
+<!-- phase: ARCHITECTURE | round: 1 -->
 
-ВЕРДИКТ: CODE_APPROVED
-
-ОЦЕНКА:
-- master_users/{uid} путь решён корректно — 2 сегмента валидны для Firestore
-- 617 документов (161 инвойс + 456 транзакций) получили accountId
-- Firestore rules backward-compatible — старые правила сохранены
-- migrate_to_accounts.cjs идемпотентен — можно перезапускать безопасно
-- setup_multitenancy.cjs создан для воспроизводимости — хорошая практика
-
-ПРОБЛЕМЫ: Нет проблем
+ВЕРДИКТ: APPROVED  
+ОЦЕНКА: Решение четко реализует мультиаккаунтность с ролями master/admin/user, сохраняет backward compatibility через fallback на `companies/`, правильно разделяет логику auth и данных по аккаунтам. Полная верификация покрывает все edge cases (мастер/обычный юзер, пустые коллекции).  
+ЗАМЕЧАНИЯ:
 
 ---
-*Perplexity Reviewer — Фаза 1 завершена*
+*Автоматическое ревью через GitHub Actions (.github/workflows/perplexity_review.yml)*
+*Claude должен прочитать этот файл и отреагировать согласно pipeline_protocol.md*
