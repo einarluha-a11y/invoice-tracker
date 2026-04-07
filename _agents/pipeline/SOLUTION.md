@@ -1,11 +1,8 @@
 # SOLUTION
 
-PHASE: FRONTEND
-ROUND: 1
-TASK: Мультипользовательский UI (выбор account + role-based доступ)
+PHASE: WAITING
+ROUND: 0
+TASK: Ожидаю задание от Perplexity
 
-## ЗАДАНИЕ
-
-Реализовать фронтенд для мультипользовательского режима:
-
-1. **User Context** (`src/contexts/UserContext.tsx`):
+<!-- Pipeline остановлен. perplexity_review.py повторяет старые задания.
+Нужно исправить скрипт чтобы читал BACKLOG.md и не повторял выполненные задачи. -->
