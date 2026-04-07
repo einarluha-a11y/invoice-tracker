@@ -4,7 +4,7 @@ import { InvoiceTable, SortField, SortDirection } from './components/InvoiceTabl
 import { Login } from './components/Login';
 import { useAuth } from './context/AuthContext';
 import type { InvoiceStatus, Invoice } from './data/types';
-import { subscribeToInvoices, deleteInvoice, updateInvoice } from './data/api';
+import { subscribeToInvoices, archiveInvoice, restoreInvoice, updateInvoice } from './data/api';
 import { db } from './firebase';
 import { Settings } from './components/Settings';
 import { useCompanies, Company } from './hooks/useCompanies';
@@ -77,6 +77,7 @@ function App() {
     const [endDate, setEndDate] = useState('');
     const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
     const [deletingInvoiceId, setDeletingInvoiceId] = useState<string | null>(null);
+    const [showArchived, setShowArchived] = useState(false);
     const [sortField, setSortField] = useState<SortField>('dateCreated');
     const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
     const [dateFilterType, setDateFilterType] = useState<'created' | 'due'>('due');
@@ -148,11 +149,19 @@ function App() {
     const confirmDelete = async () => {
         if (!deletingInvoiceId) return;
         try {
-            await deleteInvoice(deletingInvoiceId);
+            await archiveInvoice(deletingInvoiceId);
             setDeletingInvoiceId(null);
         } catch (err) {
-            console.error("Failed to delete", err);
+            console.error("Failed to archive", err);
             alert(t('errors.deleteInvoice'));
+        }
+    };
+
+    const handleRestore = async (id: string) => {
+        try {
+            await restoreInvoice(id);
+        } catch (err) {
+            console.error("Failed to restore", err);
         }
     };
 
@@ -394,8 +403,34 @@ function App() {
                 </div>
             ) : (
                 <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+                        <button
+                            onClick={() => setShowArchived(false)}
+                            style={{
+                                padding: '0.4rem 1rem', borderRadius: 'var(--radius-md)', cursor: 'pointer',
+                                background: !showArchived ? 'var(--accent)' : 'transparent',
+                                color: !showArchived ? '#fff' : 'var(--text-secondary)',
+                                border: '1px solid var(--border-color)', fontWeight: !showArchived ? 600 : 400,
+                                fontSize: '0.9rem'
+                            }}
+                        >
+                            {t('filters.all')}
+                        </button>
+                        <button
+                            onClick={() => setShowArchived(true)}
+                            style={{
+                                padding: '0.4rem 1rem', borderRadius: 'var(--radius-md)', cursor: 'pointer',
+                                background: showArchived ? 'var(--accent)' : 'transparent',
+                                color: showArchived ? '#fff' : 'var(--text-secondary)',
+                                border: '1px solid var(--border-color)', fontWeight: showArchived ? 600 : 400,
+                                fontSize: '0.9rem'
+                            }}
+                        >
+                            📦 {t('table.archiveTab', 'Archive')}
+                        </button>
+                    </div>
                     <InvoiceTable
-                        invoices={invoices}
+                        invoices={invoices.filter(i => showArchived ? i.archived === true : !i.archived)}
                         searchTerm={searchTerm}
                         statusFilter={statusFilter}
                         startDate={startDate}
@@ -413,10 +448,12 @@ function App() {
                         }}
                         onEdit={handleEdit}
                         onDelete={handleDeleteClick}
+                        onRestore={handleRestore}
+                        showArchived={showArchived}
                         companyName={activeCompany?.name}
                         canEdit={userRole !== 'user'}
                     />
-                    
+
                 </div>
             )}
 
@@ -431,11 +468,11 @@ function App() {
             {deletingInvoiceId && (
                 <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
                     <div className="modal-content" style={{ maxWidth: '400px', width: '90%', background: 'var(--bg-secondary)', padding: '2rem', borderRadius: 'var(--radius-lg)', textAlign: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }}>
-                        <h3 style={{ marginBottom: '1rem', color: 'var(--text-primary)', fontSize: '1.25rem', fontWeight: 600 }}>{t('modal.deleteTitle')}</h3>
-                        <p style={{ marginBottom: '2rem', color: 'var(--text-secondary)', lineHeight: '1.5' }}>{t('modal.deleteDesc')}</p>
+                        <h3 style={{ marginBottom: '1rem', color: 'var(--text-primary)', fontSize: '1.25rem', fontWeight: 600 }}>{t('modal.archiveTitle', 'Архивировать инвойс')}</h3>
+                        <p style={{ marginBottom: '2rem', color: 'var(--text-secondary)', lineHeight: '1.5' }}>{t('modal.archiveDesc', 'Переместить инвойс в архив? Его можно будет восстановить позже.')}</p>
                         <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem' }}>
                             <button onClick={() => setDeletingInvoiceId(null)} className="btn-secondary" style={{ borderRadius: '50px', padding: '0.75rem 1.5rem', fontWeight: 500 }}>{t('modal.cancelBtn')}</button>
-                            <button onClick={confirmDelete} className="btn-primary" style={{ background: 'var(--status-overdue-text)', border: '2px solid #000', borderRadius: '50px', color: '#fff', padding: '0.75rem 1.5rem', fontWeight: 600, boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}>{t('modal.deleteConfirm')}</button>
+                            <button onClick={confirmDelete} className="btn-primary" style={{ borderRadius: '50px', color: '#fff', padding: '0.75rem 1.5rem', fontWeight: 600, boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}>{t('modal.archiveConfirm', 'В архив')}</button>
                         </div>
                     </div>
                 </div>

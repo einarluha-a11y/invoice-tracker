@@ -19,6 +19,8 @@ interface InvoiceTableProps {
     onSort: (field: SortField) => void;
     onEdit: (invoice: Invoice) => void;
     onDelete: (id: string) => void;
+    onRestore?: (id: string) => void;
+    showArchived?: boolean;
     companyName?: string;
     canEdit?: boolean;
 }
@@ -26,7 +28,7 @@ interface InvoiceTableProps {
 export type SortField = keyof Invoice;
 export type SortDirection = 'asc' | 'desc';
 
-export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, endDate, dateFilterType = 'created', sortField, sortDirection, onSort, onEdit, onDelete, companyName, canEdit = true }: InvoiceTableProps) {
+export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, endDate, dateFilterType = 'created', sortField, sortDirection, onSort, onEdit, onDelete, onRestore, showArchived = false, companyName, canEdit = true }: InvoiceTableProps) {
     const { t, i18n } = useTranslation();
     const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
     const [visibleLimit, setVisibleLimit] = useState(100);
@@ -282,8 +284,8 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
     if (filteredAndSortedInvoices.length === 0) {
         return (
             <div className="table-container empty-state">
-                <h3>{t('table.emptyTitle')}</h3>
-                <p>{t('table.emptyDesc')}</p>
+                <h3>{showArchived ? t('table.emptyArchiveTitle', 'Archive is empty') : t('table.emptyTitle')}</h3>
+                <p>{showArchived ? t('table.emptyArchiveDesc', 'No archived invoices.') : t('table.emptyDesc')}</p>
             </div>
         );
     }
@@ -422,11 +424,20 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                                             style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', padding: '4px', fontSize: '1.2rem', opacity: 0.9, display: 'flex' }}
                                             title="Edit"
                                         >✎</button>}
-                                        {canEdit && <button
-                                            onClick={() => onDelete(invoice.id)}
-                                            style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '4px', fontSize: '1.2rem', opacity: 0.8, display: 'flex' }}
-                                            title="Delete"
-                                        >🗑</button>}
+                                        {canEdit && !showArchived && (
+                                            <button
+                                                onClick={() => onDelete(invoice.id)}
+                                                style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '4px', fontSize: '1.2rem', opacity: 0.8, display: 'flex' }}
+                                                title={t('table.archiveBtn', 'Archive')}
+                                            >📦</button>
+                                        )}
+                                        {canEdit && showArchived && onRestore && (
+                                            <button
+                                                onClick={() => onRestore(invoice.id)}
+                                                style={{ background: 'transparent', border: 'none', color: '#4caf50', cursor: 'pointer', padding: '4px', fontSize: '1.2rem', opacity: 0.9, display: 'flex' }}
+                                                title={t('table.restoreBtn', 'Restore')}
+                                            >↩</button>
+                                        )}
                                         {invoice.fileUrl && (
                                             <button
                                                 onClick={() => setViewingPdfUrl(invoice.fileUrl!)}

@@ -1,4 +1,4 @@
-import { collection, onSnapshot, doc, getDoc, getDocs, deleteDoc, updateDoc, setDoc, query, orderBy, where, limit, serverTimestamp } from 'firebase/firestore';
+import { collection, onSnapshot, doc, getDoc, getDocs, updateDoc, setDoc, query, orderBy, where, limit, serverTimestamp } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { db } from '../firebase';
 
@@ -130,6 +130,8 @@ export const subscribeToInvoices = (
                 enrichmentSource: data.enrichmentSource || data.recoverySource || undefined,
                 originalForeignCurrency: data.originalForeignCurrency || undefined,
                 originalForeignAmount: data.originalForeignAmount || undefined,
+                archived: data.archived === true,
+                deletedAt: data.deletedAt || undefined,
             });
         });
 
@@ -142,9 +144,14 @@ export const subscribeToInvoices = (
     return unsubscribe;
 };
 
-export const deleteInvoice = async (invoiceId: string): Promise<void> => {
+export const archiveInvoice = async (invoiceId: string): Promise<void> => {
     if (!db) throw new Error("Database not initialized");
-    await deleteDoc(doc(db, 'invoices', invoiceId));
+    await updateDoc(doc(db, 'invoices', invoiceId), { archived: true, deletedAt: serverTimestamp() });
+};
+
+export const restoreInvoice = async (invoiceId: string): Promise<void> => {
+    if (!db) throw new Error("Database not initialized");
+    await updateDoc(doc(db, 'invoices', invoiceId), { archived: false, deletedAt: null });
 };
 
 /**

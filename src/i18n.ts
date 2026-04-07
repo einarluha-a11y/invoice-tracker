@@ -81,10 +81,15 @@ const resources = {
                 actions: "Действия",
                 emptyTitle: "Инвойсы не найдены",
                 emptyDesc: "Попробуйте изменить параметры фильтрации.",
+                emptyArchiveTitle: "Архив пуст",
+                emptyArchiveDesc: "Нет архивированных инвойсов.",
                 exportCsv: "Скачать CSV",
                 exportPdf: "Скачать PDF",
                 pdfExportError: "Ошибка экспорта PDF. Попробуйте еще раз.",
                 approveBtn: "Утвердить — снять карантин",
+                archiveBtn: "В архив",
+                archiveTab: "Архив",
+                restoreBtn: "Восстановить",
             },
 
             modal: {
@@ -106,6 +111,9 @@ const resources = {
                 saveBtn: "Сохранить изменения",
                 savingBtn: "Сохранение...",
                 saveError: "Ошибка при сохранении",
+                archiveTitle: "Архивировать инвойс",
+                archiveDesc: "Переместить инвойс в архив? Его можно будет восстановить позже.",
+                archiveConfirm: "В архив",
                 deleteTitle: "Удаление инвойса",
                 deleteDesc: "Вы уверены, что хотите навсегда удалить этот инвойс? Это действие нельзя отменить.",
                 deleteConfirm: "Да, удалить"
@@ -213,10 +221,15 @@ const resources = {
                 actions: "Actions",
                 emptyTitle: "No invoices found",
                 emptyDesc: "Try adjusting your filter settings.",
+                emptyArchiveTitle: "Archive is empty",
+                emptyArchiveDesc: "No archived invoices.",
                 exportCsv: "Export CSV",
                 exportPdf: "Export PDF",
                 pdfExportError: "PDF export failed. Please try again.",
                 approveBtn: "Approve — remove from quarantine",
+                archiveBtn: "Archive",
+                archiveTab: "Archive",
+                restoreBtn: "Restore",
             },
 
             modal: {
@@ -238,6 +251,9 @@ const resources = {
                 saveBtn: "Save Changes",
                 savingBtn: "Saving...",
                 saveError: "Error saving invoice",
+                archiveTitle: "Archive Invoice",
+                archiveDesc: "Move this invoice to archive? You can restore it later.",
+                archiveConfirm: "Archive",
                 deleteTitle: "Delete Invoice",
                 deleteDesc: "Are you sure you want to permanently delete this invoice? This action cannot be undone.",
                 deleteConfirm: "Yes, delete"
@@ -345,10 +361,15 @@ const resources = {
                 actions: "Tegevus",
                 emptyTitle: "Arveid ei leitud",
                 emptyDesc: "Proovige muuta filtri seadeid.",
+                emptyArchiveTitle: "Arhiiv on tühi",
+                emptyArchiveDesc: "Arhiveeritud arveid ei ole.",
                 exportCsv: "Laadi alla CSV",
                 exportPdf: "Laadi alla PDF",
                 pdfExportError: "PDF eksport ebaõnnestus. Proovige uuesti.",
                 approveBtn: "Kinnita — eemalda karantiinist",
+                archiveBtn: "Arhiivi",
+                archiveTab: "Arhiiv",
+                restoreBtn: "Taasta",
             },
 
             modal: {
@@ -370,6 +391,9 @@ const resources = {
                 saveBtn: "Salvesta Muudatused",
                 savingBtn: "Salvestan...",
                 saveError: "Viga salvestamisel",
+                archiveTitle: "Arhiveeri Arve",
+                archiveDesc: "Liiguta arve arhiivi? Saate selle hiljem taastada.",
+                archiveConfirm: "Arhiivi",
                 deleteTitle: "Kustuta Arve",
                 deleteDesc: "Kas olete kindel, et soovite selle arve jäädavalt kustutada? Seda tegevust ei saa tagasi võtta.",
                 deleteConfirm: "Jah, kustuta"

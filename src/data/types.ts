@@ -32,4 +32,7 @@ export interface Invoice {
     meritInvoiceId?: string;
     meritSyncError?: string;
     meritPaymentSyncedAt?: any;
+    // Soft delete (archive)
+    archived?: boolean;
+    deletedAt?: any;
 }
