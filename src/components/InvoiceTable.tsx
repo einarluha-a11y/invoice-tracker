@@ -1,8 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import type { Invoice, InvoiceStatus } from '../data/types';
+import { generateInvoicesPDF } from '../lib/pdfExport';
 import { InvoicePdfViewer } from './InvoicePdfViewer';
 import { authHeaders } from '../data/api';
 import './InvoiceTable.css';
@@ -206,75 +205,17 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
     const handleExportPDF = async () => {
         if (filteredAndSortedInvoices.length === 0 || isExportingPDF) return;
         setIsExportingPDF(true);
-
+        const langCode = i18n.language === 'en' ? 'en-US' : i18n.language === 'et' ? 'et-EE' : 'ru-RU';
         try {
-            const fontUrl = 'https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/fonts/Roboto/Roboto-Regular.ttf';
-            const response = await fetch(fontUrl);
-            const blob = await response.blob();
-
-            const base64data = await new Promise<string>((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onloadend = () => {
-                    resolve((reader.result as string).split(',')[1]);
-                };
-                reader.onerror = reject;
-                reader.readAsDataURL(blob);
+            await generateInvoicesPDF(filteredAndSortedInvoices, {
+                companyName,
+                startDate,
+                endDate,
+                statusFilter,
+                locale: langCode,
             });
-
-            const doc = new jsPDF();
-
-            doc.addFileToVFS('Roboto-Regular.ttf', base64data);
-            doc.addFont('Roboto-Regular.ttf', 'Roboto', 'normal');
-            doc.addFont('Roboto-Regular.ttf', 'Roboto', 'bold'); // Prevents bold fallback to Helvetica
-            doc.setFont('Roboto', 'normal');
-
-            // Add Title
-            doc.setFontSize(18);
-            doc.text(t('appName'), 14, 22);
-
-            let currentY = 30;
-            if (companyName) {
-                doc.setFontSize(14);
-                doc.text(companyName, 14, currentY);
-                currentY += 8;
-            }
-
-            doc.setFontSize(11);
-            doc.text(`${t('table.created')}: ${new Date().toLocaleDateString()}`, 14, currentY);
-            currentY += 10;
-
-            const tableColumn = [
-                t('table.vendor'),
-                t('table.created'),
-                t('table.dueDate'),
-                t('table.amount'),
-                t('table.status')
-            ];
-
-            const tableRows: any[] = [];
-
-            filteredAndSortedInvoices.forEach(inv => {
-                const rowData = [
-                    inv.vendor,
-                    inv.dateCreated,
-                    inv.dueDate,
-                    `${inv.amount} ${inv.currency}`,
-                    inv.status === 'Paid' ? t('filters.paid') : inv.status === 'Pending' ? t('filters.pending') : t('filters.overdue')
-                ];
-                tableRows.push(rowData);
-            });
-
-            autoTable(doc, {
-                head: [tableColumn],
-                body: tableRows,
-                startY: currentY,
-                styles: { font: 'Roboto', fontStyle: 'normal', fontSize: 8 },
-                headStyles: { font: 'Roboto', fontStyle: 'normal', fillColor: [66, 133, 244] }
-            });
-
-            doc.save(`invoices_export_${new Date().toISOString().split('T')[0]}.pdf`);
         } catch (error) {
-            console.error("PDF Export failed:", error);
+            console.error('PDF Export failed:', error);
             alert(t('table.pdfExportError', 'PDF export failed. Please try again.'));
         } finally {
             setIsExportingPDF(false);
