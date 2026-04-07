@@ -1,21 +1,22 @@
 # SOLUTION
 
-PHASE: BUGFIX
+PHASE: ARCHITECTURE
 ROUND: 1
-TASK: PM2 автоматический баг-репорт — критические ошибки
-
-## ОШИБКИ В PM2 ЛОГАХ
-
-- **invoice-api**: [31m9|invoice- | [39m    code: 'storage/invalid-argument',
-- **invoice-api**: [31m9|invoice- | [39mTue Apr  7 21:37:07 EEST 2026 TypeError: cleanVendorNameXYZ is not a function
-- **invoice-api**: Crash loop: 229 restarts
-- **invoice-imap**: Crash loop: 220 restarts
+TASK: Мультипользовательский режим (Master / Admin / User)
 
 ## ЗАДАНИЕ
 
-Проанализируй ошибки выше. Найди причину в коде, исправь, проверь syntax (node --check), закоммить и запуши.
-После исправления добавь DEPLOY_STATUS: OK в конец этого файла.
+1. Создай коллекцию `users` в Firestore с полями:
+   - `userId` (string, уникальный)
+   - `email` (string)
+   - `role` (enum: "master" | "admin" | "user")
+   - `companyId` (string, ссылка на companies)
+   - `createdAt` (timestamp)
 
-## Верификация
-- `node --check` всех изменённых файлов
-- PM2 процессы стабильны (0 рестартов за 1 минуту)
+2. Добавь middleware аутентификации в invoice-api:
+   - Проверяй Firebase Auth token в заголовке `Authorization: Bearer <token>`
+   - Декодируй token → получай `userId`
+   - Проверяй существование user в `users` коллекции
+   - Добавляй `userId` и `role` в `req.user`
+
+3. Ограничь доступ к endpoint'ам по ролям:

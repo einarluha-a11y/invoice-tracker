@@ -1,14 +1,30 @@
-# REVIEW от Perplexity — 2026-04-07 18:37 UTC
+# REVIEW от Perplexity — 2026-04-07 18:44 UTC
 <!-- phase: BUGFIX | round: 1 -->
 
-ВЕРДИКТ: НЕПРИГОДНО  
-ОЦЕНКА: 1/10  
-ЗАМЕЧАНИЯ:  
-- **Нет анализа кода**: Не прочитаны файлы проекта (grep по ошибкам `cleanVendorNameXYZ`, `test_missing_module.cjs`, `storage/invalid-argument`). Причины крашей не найдены.  
-- **Нет исправлений**: Код не изменён, syntax check не выполнен.  
-- **Нет действий**: Не закоммичено, не запушено, DEPLOY_STATUS не добавлен.  
-- **Search results бесполезны**: PM2 логи из других проектов, не про Invoice-Tracker. Нужно читать локальные файлы (`automation/*.cjs`, `src/*.tsx`).  
-- **Требуется**: Автономно grep код, удалить/исправить test_missing_module.cjs, добавить cleanVendorNameXYZ в utils, fix storage args, `git commit -m "fix(pm2): resolve crash loops"`, `git push`, `pm2 restart all`, добавить DEPLOY_STATUS: OK.
+ВЕРДИКТ: НЕПРАВИЛЬНОЕ РЕШЕНИЕ  
+ОЦЕНКА: 2/10  
+ЗАМЕЧАНИЯ: 
+
+1. **Нет анализа кода** — не найдены файлы с `cleanVendorNameXYZ`, не показан поиск по коду (`grep -r cleanVendorNameXYZ src/`)
+2. **Не выполнена верификация** — нет результатов `node --check`, нет проверки PM2 (`pm2 status`, `pm2 monit`)
+3. **Не добавлен DEPLOY_STATUS: OK** — файл SOLUTION.md не обновлён
+4. **Не закоммичено/запушено** — нет git операций
+5. **Search results нерелевантны** — PM2 общие гайды вместо анализа конкретных ошибок проекта
+6. **Неправильный подход** — решение должно быть: grep → fix → node --check → git commit/push → DEPLOY_STATUS: OK
+
+**Что нужно было сделать:**
+```
+grep -r "cleanVendorNameXYZ" src/
+grep -r "storage/invalid-argument" src/
+node --check src/**/*.ts
+git add .
+git commit -m "fix: cleanVendorNameXYZ + storage error"
+git push
+echo "DEPLOY_STATUS: OK" >> _agents/pipeline/SOLUTION.md
+git add _agents/pipeline/SOLUTION.md
+git commit -m "update: DEPLOY_STATUS OK"
+git push
+```
 
 ---
 *Автоматическое ревью через GitHub Actions (.github/workflows/perplexity_review.yml)*
