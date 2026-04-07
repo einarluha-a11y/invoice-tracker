@@ -20,7 +20,7 @@ if (!admin.apps.length && sa) {
     try {
         admin.initializeApp({
             credential: admin.credential.cert(sa),
-            storageBucket: process.env.FIREBASE_STORAGE_BUCKET || 'invoice-tracker-xyz.firebasestorage.app'
+            storageBucket: process.env.FIREBASE_STORAGE_BUCKET
         });
         console.log('[Firebase Core] ✅ Initialized successfully.');
     } catch (e) {
