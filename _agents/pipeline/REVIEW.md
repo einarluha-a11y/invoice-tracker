@@ -1,8 +1,8 @@
-# REVIEW от Perplexity — 2026-04-07 13:31 UTC
+# REVIEW от Perplexity — 2026-04-07 14:52 UTC
 <!-- phase: ARCHITECTURE | round: 1 -->
 
 ВЕРДИКТ: APPROVED  
-ОЦЕНКА: Решение четко реализует мультиаккаунтность с ролями master/admin/user, сохраняет backward compatibility через fallback на `companies/`, правильно разделяет логику auth и данных по аккаунтам. Полная верификация покрывает все edge cases (мастер/обычный юзер, пустые коллекции).  
+ОЦЕНКА: Полная реализация мультиаккаунтного режима с правильной иерархией master/users/accounts/companies. Корректная авторизация через Google с fallback'ами и проверками доступа. Чистая архитектура с onSnapshot и scoped queries без утечек данных между аккаунтами.  
 ЗАМЕЧАНИЯ:
 
 ---

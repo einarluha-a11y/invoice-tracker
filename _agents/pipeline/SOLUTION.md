@@ -1,38 +1,39 @@
 # SOLUTION
 
-PHASE: ARCHITECTURE
-ROUND: 1
-TASK: TASK-02 — Фаза 2 Frontend мультипользовательский режим
+PHASE: INTEGRATION
+ROUND: 2
+TASK: Merit Aktiva API — тестирование с реальными credentials и обработка ошибок
 
-## ВЫПОЛНЕНО
+## ЗАДАНИЕ
 
-### 1. Login.tsx
-- Добавлен input "Название аккаунта" с HTML5 datalist autocomplete (данные из `accounts/`)
-- Кнопка "Sign in with Google" активна только при выбранном аккаунте
-- Кнопка "Войти как мастер" — вход без выбора аккаунта, AuthContext сам определяет master role
-- Выбранный accountId передаётся в `signInWithGoogle(accountId)`
+Claude должен:
 
-### 2. AuthContext.tsx
-- `signInWithGoogle(accountId?)` принимает опциональный accountId (через ref, не state)
-- `onAuthStateChanged`: сначала проверяет `master_users/{uid}` → если есть, грузит все `accounts/`
-- Обычный пользователь: проверяет `accounts/{accountId}/users/{uid}` → role из документа
-- Нет доступа → signOut + authError
-- Persistence: accountId в localStorage (currentAccountId / masterSelectedAccount)
-- Новые поля контекста: currentAccountId, userRole, isMaster, availableAccounts, selectAccount
+1. **Подготовить тестовый скрипт** (`automation/test_merit_aktiva.cjs`):
+   - Принимает credentials из `.env.pipeline` (MERIT_AKTIVA_USERNAME, MERIT_AKTIVA_PASSWORD)
+   - Вызывает `fetchBankStatements()` с тестовым периодом (последние 7 дней)
+   - Выводит raw JSON ответ + распарсенные транзакции
+   - Проверяет: количество записей, формат сумм, даты, валюту
 
-### 3. useCompanies.ts
-- Зависит от `currentAccountId` и `isMaster` из AuthContext
-- `getDocs(accounts/{accountId}/companies)` → если пусто, fallback на `companies/`
-- onSnapshot на выбранный путь, activePathRef для CRUD операций
-- addCompany/deleteCompany: бросают ошибку если `!canWrite` (canWrite = isMaster || role=admin)
+2. **Добавить обработку ошибок** в `automation/merit_aktiva_agent.cjs`:
+   - 401 Unauthorized → логировать в `_agents/merit_aktiva_errors.log`
+   - 429 Rate limit → retry с exponential backoff (макс 3 попытки)
+   - Timeout (>30s) → fallback на кэш последней успешной выписки
+   - Невалидный JSON → сохранить raw response в `_agents/raw_responses/`
 
-### 4. App.tsx
-- Добавлен компонент `AccountSelector` — список кнопок из `availableAccounts`
-- Если `isMaster && !currentAccountId` → рендерит AccountSelector вместо дашборда
-- В хедере для мастера добавлен select для переключения аккаунтов
-- `selectAccount(id)` → сбрасывает selectedCompanyId, меняет currentAccountId
+3. **Запустить тестирование**:
+   - `node automation/test_merit_aktiva.cjs` (dry-run, без сохранения)
+   - Проверить логи: успешно ли парсятся суммы, даты, описания
+   - Если ошибки — зафиксировать в `CLAUDE.md` (раздел "Merit Aktiva Issues")
 
-### Верификация
-- `npm run build` — ✅ без ошибок TypeScript
+4. **Обновить `automation/merit_aktiva_agent.cjs`**:
+   - Добавить retry-логику
+   - Добавить timeout обработку
+   - Добавить логирование в Firestore (`config/integration_logs`)
 
-DEPLOY_STATUS: OK
+## Верификация
+
+- `node automation/test_merit_aktiva.cjs` выводит 5+ транзакций без ошибок
+- Суммы распарсены корректно (European format: 1.234,56 → 1234.56)
+- Даты в ISO формате (YYYY-MM-DD)
+- Логи ошибок (если есть) записаны в `_agents/merit_aktiva_errors.log`
+- `npm run build` — без ошибок TypeScript
