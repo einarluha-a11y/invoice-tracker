@@ -1,31 +1,34 @@
 # SOLUTION
 
-**Оценка выполненной работы:** Claude исправил критическую ошибку "Transaction too big" в invoice-imap, разбив большие транзакции Firestore на батчи. Синтаксис проверен (node --check OK), PM2 стабильны без рестартов. DEPLOY_STATUS: OK добавлен.
-
 PHASE: ARCHITECTURE
 ROUND: 1
-TASK: Мягкое удаление инвойсов (архив вместо delete)
+TASK: СРОЧНО TASK-09 — Исправить race condition в perplexity_review.yml
 
-## ЗАДАНИЕ
+## ПРОБЛЕМА
+GitHub Actions падает каждые несколько запусков на "Commit and push changes".
+Ошибка: push rejected из-за конфликта когда Claude пушит одновременно.
+Это блокирует автоматический pipeline.
 
-1. **Backend изменения:**
-   - В коллекции `invoices` добавить поле `deletedAt: timestamp | null` (по умолчанию null)
-   - Создать endpoint `DELETE /companies/:companyId/invoices/:invoiceId` → устанавливает `deletedAt: now()` вместо удаления
-   - Создать endpoint `POST /companies/:companyId/invoices/:invoiceId/restore` → очищает `deletedAt`
-   - Все SELECT-запросы (list, search, dashboard) фильтровать `where('deletedAt', '==', null)`
-   - Добавить query-параметр `?includeDeleted=true` для админов (показывать удалённые)
+## ИСПРАВЛЕНИЕ — одна строка
 
-2. **Frontend изменения:**
-   - В InvoiceList: кнопка "Архив" вместо "Delete" 
-   - В InvoiceDetail: кнопка "Восстановить" если `deletedAt` существует
-   - useInvoices() хук: по умолчанию `includeDeleted: false`, опция для админов
+В `.github/workflows/perplexity_review.yml` найти шаг "Commit and push changes":
 
-3. **Миграция данных:** Написать скрипт `automation/soft_delete_migration.cjs` для конвертации `isDeleted: true` → `deletedAt: now()`
+ЗАМЕНИТЬ:
+```
+          git commit -m "perplexity: review ${PHASE:-unknown} round ${ROUND:-1} + next task"
+          git push
+```
 
-4. **Тестирование:**
-   - Создать инвойс → "Архив" → исчез из списка
-   - `?includeDeleted=true` → виден в архиве
-   - "Восстановить" → вернулся в основной список
-   - Deploy на Railway
+НА:
+```
+          git commit -m "perplexity: review ${PHASE:-unknown} round ${ROUND:-1} + next task"
+          git pull --rebase origin main || true
+          git push origin main
+```
 
-После выполнения добавить в конец этого файла:
+## Верификация
+- `grep "pull --rebase" .github/workflows/perplexity_review.yml` → должна найти строку
+- Commit и push
+
+DEPLOY_STATUS после выполнения: OK
+
