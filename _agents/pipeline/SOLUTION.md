@@ -34,3 +34,20 @@ TASK: Мягкое удаление инвойсов (архив вместо de
 - PDF экспорт: архивированные **НЕ** попадают в PDF
 - Build: ✓ `npm run build`
 - Deploy: Railway auto-deploy → DEPLOY_STATUS: OK
+
+## ВЫПОЛНЕНО
+
+Реализация уже существовала частично. Добавлено:
+- `opacity: 0.6` для архивных строк в `InvoiceTable.tsx`
+- `📦 Архив` статус-бейдж для архивных инвойсов
+- PDF экспорт фильтрует `.filter(i => !i.archived)` — архивные не попадают
+- Счётчик "Активных: X · Архивированных: Y" над таблицей в `App.tsx`
+
+Существовало до задания:
+- `archived` / `deletedAt` поля в `src/data/types.ts`
+- `archiveInvoice()` / `restoreInvoice()` в `src/data/api.ts` (Firebase SDK напрямую — REST API для инвойсов не используется в архитектуре)
+- Фильтр по вкладкам (Все / 📦 Archive) в `App.tsx`
+- Кнопка 📦 архивирования и ↩ восстановления в `InvoiceTable.tsx`
+- Модальное подтверждение архивирования
+
+DEPLOY_STATUS: OK

@@ -207,7 +207,7 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
         setIsExportingPDF(true);
         const langCode = i18n.language === 'en' ? 'en-US' : i18n.language === 'et' ? 'et-EE' : 'ru-RU';
         try {
-            await generateInvoicesPDF(filteredAndSortedInvoices, {
+            await generateInvoicesPDF(filteredAndSortedInvoices.filter(i => !i.archived), {
                 companyName,
                 startDate,
                 endDate,
@@ -287,7 +287,7 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                     <tbody>
                         {filteredAndSortedInvoices.slice(0, visibleLimit).map((invoice) => (
                             <React.Fragment key={invoice.id}>
-                                <tr className={expandedRows.has(invoice.id) ? 'expanded-parent-row' : ''}>
+                                <tr className={expandedRows.has(invoice.id) ? 'expanded-parent-row' : ''} style={invoice.archived ? { opacity: 0.6 } : undefined}>
                                     <td data-label={t('table.vendor')} className="vendor-name" style={{ fontWeight: 600, maxWidth: '200px', whiteSpace: 'normal', wordBreak: 'break-word' }}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                             <button 
@@ -345,9 +345,13 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                                     </div>
                                 </td>
                                 <td data-label={t('table.status')} style={{ minWidth: '100px' }}>
-                                    <span style={{ whiteSpace: 'nowrap' }} className={`status-badge ${getStatusClass(invoice.status)}`}>
-                                        {invoice.status === 'Paid' ? t('filters.paid') : invoice.status === 'Pending' ? t('filters.pending') : t('filters.overdue')}
-                                    </span>
+                                    {invoice.archived ? (
+                                        <span style={{ whiteSpace: 'nowrap' }} className="status-badge">📦 {t('table.archiveTab', 'Archive')}</span>
+                                    ) : (
+                                        <span style={{ whiteSpace: 'nowrap' }} className={`status-badge ${getStatusClass(invoice.status)}`}>
+                                            {invoice.status === 'Paid' ? t('filters.paid') : invoice.status === 'Pending' ? t('filters.pending') : t('filters.overdue')}
+                                        </span>
+                                    )}
                                 </td>
                                 <td data-label="Merit" style={{ textAlign: 'center', fontSize: '0.8rem' }}>
                                     {invoice.meritSyncedAt ? (

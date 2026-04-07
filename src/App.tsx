@@ -429,6 +429,11 @@ function App() {
                             📦 {t('table.archiveTab', 'Archive')}
                         </button>
                     </div>
+                    <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                        {t('table.activeCount', 'Active')}: <strong>{invoices.filter(i => !i.archived).length}</strong>
+                        {' · '}
+                        {t('table.archivedCount', 'Archived')}: <strong>{invoices.filter(i => i.archived).length}</strong>
+                    </div>
                     <InvoiceTable
                         invoices={invoices.filter(i => showArchived ? i.archived === true : !i.archived)}
                         searchTerm={searchTerm}
