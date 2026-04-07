@@ -66,7 +66,7 @@ function AccountSelector() {
 
 function App() {
     const { t, i18n } = useTranslation();
-    const { user, loading: authLoading, logout, isFirebaseConfigured, isMaster, currentAccountId, availableAccounts, selectAccount } = useAuth();
+    const { user, loading: authLoading, logout, isFirebaseConfigured, isMaster, currentAccountId, availableAccounts, selectAccount, userRole } = useAuth();
     const { companies, companiesLoading, companiesError } = useCompanies();
 
     const [selectedCompanyId, setSelectedCompanyId] = useState<string>('');
@@ -279,7 +279,7 @@ function App() {
 
                     {user && (
                         <>
-                            <button
+                            {userRole !== 'user' && <button
                                 onClick={() => setView('settings')}
                                 style={{
                                     background: 'transparent',
@@ -292,7 +292,7 @@ function App() {
                                 }}
                             >
                                 {t('settings')}
-                            </button>
+                            </button>}
                             <button
                                 onClick={logout}
                                 style={{
@@ -414,6 +414,7 @@ function App() {
                         onEdit={handleEdit}
                         onDelete={handleDeleteClick}
                         companyName={activeCompany?.name}
+                        canEdit={userRole !== 'user'}
                     />
                     
                 </div>

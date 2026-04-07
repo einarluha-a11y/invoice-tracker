@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useCompanies } from '../hooks/useCompanies';
-import { doc, setDoc, onSnapshot, serverTimestamp } from 'firebase/firestore';
-import { db, auth } from '../firebase';
+import { doc, setDoc, onSnapshot, serverTimestamp, collection, getDocs, updateDoc } from 'firebase/firestore';
+import { db } from '../firebase';
 import { authHeaders } from '../data/api';
+import { useAuth } from '../context/AuthContext';
 
 interface SettingsProps {
     onBack: () => void;
@@ -11,6 +12,7 @@ interface SettingsProps {
 
 export function Settings({ onBack }: SettingsProps) {
     const { t } = useTranslation();
+    const { userRole, currentAccountId } = useAuth();
     const { companies, companiesLoading, companiesError, addCompany, updateCompany, deleteCompany } = useCompanies();
 
     const [editingId, setEditingId] = useState<string | null>(null);
@@ -24,40 +26,50 @@ export function Settings({ onBack }: SettingsProps) {
     });
 
     // ── Roles ────────────────────────────────────────────────────────────────
-    const [currentRole, setCurrentRole] = useState<string>('user');
+    const currentRole = userRole || 'user';
     const [users, setUsers] = useState<{ uid: string; email: string; role: string }[]>([]);
     const [usersLoading, setUsersLoading] = useState(false);
     const [roleMsg, setRoleMsg] = useState<string>('');
 
-    useEffect(() => {
-        auth?.currentUser?.getIdTokenResult(true).then(result => {
-            setCurrentRole((result.claims.role as string) || 'user');
-        });
-    }, []);
-
+    // Master: load via API; Admin: load from Firestore accounts/{accountId}/users
     const loadUsers = async () => {
         setUsersLoading(true);
         try {
-            const apiBase = (import.meta as any).env?.VITE_API_URL || '';
-            const r = await fetch(`${apiBase}/api/users/list`, { headers: await authHeaders() });
-            if (r.ok) setUsers(await r.json());
+            if (currentRole === 'master') {
+                const apiBase = (import.meta as any).env?.VITE_API_URL || '';
+                const r = await fetch(`${apiBase}/api/users/list`, { headers: await authHeaders() });
+                if (r.ok) setUsers(await r.json());
+            } else if (currentRole === 'admin' && currentAccountId && db) {
+                const snap = await getDocs(collection(db, 'accounts', currentAccountId, 'users'));
+                setUsers(snap.docs.map(d => ({
+                    uid: d.id,
+                    email: (d.data().email as string) || d.id,
+                    role: (d.data().role as string) || 'user',
+                })));
+            }
         } catch { /* ignore */ } finally { setUsersLoading(false); }
     };
 
     const handleSetRole = async (uid: string, role: string) => {
         try {
-            const apiBase = (import.meta as any).env?.VITE_API_URL || '';
-            const r = await fetch(`${apiBase}/api/users/roles`, {
-                method: 'POST',
-                headers: { ...(await authHeaders()), 'Content-Type': 'application/json' },
-                body: JSON.stringify({ uid, role })
-            });
-            const data = await r.json();
-            if (data.ok) {
-                setRoleMsg(`Role updated for ${uid}`);
+            if (currentRole === 'master') {
+                const apiBase = (import.meta as any).env?.VITE_API_URL || '';
+                const r = await fetch(`${apiBase}/api/users/roles`, {
+                    method: 'POST',
+                    headers: { ...(await authHeaders()), 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ uid, role })
+                });
+                const data = await r.json();
+                if (data.ok) {
+                    setRoleMsg(`Роль обновлена: ${uid}`);
+                    setUsers(prev => prev.map(u => u.uid === uid ? { ...u, role } : u));
+                } else {
+                    setRoleMsg(data.error || 'Ошибка');
+                }
+            } else if (currentRole === 'admin' && currentAccountId && db) {
+                await updateDoc(doc(db, 'accounts', currentAccountId, 'users', uid), { role });
+                setRoleMsg(`Роль обновлена: ${uid}`);
                 setUsers(prev => prev.map(u => u.uid === uid ? { ...u, role } : u));
-            } else {
-                setRoleMsg(data.error || 'Error');
             }
         } catch (e: any) { setRoleMsg(e.message); }
     };
@@ -246,17 +258,17 @@ export function Settings({ onBack }: SettingsProps) {
                             Ваша роль: <strong>{currentRole}</strong>
                         </p>
                     </div>
-                    {currentRole === 'master' && (
+                    {(currentRole === 'master' || currentRole === 'admin') && (
                         <button onClick={loadUsers} style={{
                             background: 'transparent', border: '1px solid var(--border-color)',
                             color: 'var(--primary-color)', padding: '0.4rem 0.8rem',
                             borderRadius: '4px', cursor: 'pointer'
                         }}>
-                            {usersLoading ? 'Загрузка...' : 'Управление ролями'}
+                            {usersLoading ? 'Загрузка...' : 'Управление пользователями'}
                         </button>
                     )}
                 </div>
-                {currentRole === 'master' && users.length > 0 && (
+                {(currentRole === 'master' || currentRole === 'admin') && users.length > 0 && (
                     <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--border-color)' }}>
                         {roleMsg && <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '0.5rem' }}>{roleMsg}</p>}
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem' }}>
@@ -278,14 +290,14 @@ export function Settings({ onBack }: SettingsProps) {
                                                 style={{ background: 'var(--surface-color)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '0.2rem 0.4rem' }}>
                                                 <option value="user">user</option>
                                                 <option value="admin">admin</option>
-                                                <option value="master">master</option>
+                                                {currentRole === 'master' && <option value="master">master</option>}
                                             </select>
                                         </td>
                                         <td style={{ padding: '0.5rem' }}>
                                             <button onClick={() => handleSetRole(u.uid, u.role)} style={{
                                                 background: 'var(--header-accent)', color: 'white', border: 'none',
                                                 padding: '0.3rem 0.7rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.85rem'
-                                            }}>Set role</button>
+                                            }}>Сохранить</button>
                                         </td>
                                     </tr>
                                 ))}

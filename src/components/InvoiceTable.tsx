@@ -20,12 +20,13 @@ interface InvoiceTableProps {
     onEdit: (invoice: Invoice) => void;
     onDelete: (id: string) => void;
     companyName?: string;
+    canEdit?: boolean;
 }
 
 export type SortField = keyof Invoice;
 export type SortDirection = 'asc' | 'desc';
 
-export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, endDate, dateFilterType = 'created', sortField, sortDirection, onSort, onEdit, onDelete, companyName }: InvoiceTableProps) {
+export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, endDate, dateFilterType = 'created', sortField, sortDirection, onSort, onEdit, onDelete, companyName, canEdit = true }: InvoiceTableProps) {
     const { t, i18n } = useTranslation();
     const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
     const [visibleLimit, setVisibleLimit] = useState(100);
@@ -416,16 +417,16 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                                 </td>
                                 <td data-label={t('table.actions')}>
                                     <div className="action-buttons">
-                                        <button
+                                        {canEdit && <button
                                             onClick={() => onEdit(invoice)}
                                             style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', padding: '4px', fontSize: '1.2rem', opacity: 0.9, display: 'flex' }}
                                             title="Edit"
-                                        >✎</button>
-                                        <button
+                                        >✎</button>}
+                                        {canEdit && <button
                                             onClick={() => onDelete(invoice.id)}
                                             style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '4px', fontSize: '1.2rem', opacity: 0.8, display: 'flex' }}
                                             title="Delete"
-                                        >🗑</button>
+                                        >🗑</button>}
                                         {invoice.fileUrl && (
                                             <button
                                                 onClick={() => setViewingPdfUrl(invoice.fileUrl!)}
