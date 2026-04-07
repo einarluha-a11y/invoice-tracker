@@ -62,7 +62,7 @@ function runClaude(prompt) {
     try {
         const result = execSync(
             `claude --dangerously-skip-permissions -p "${prompt.replace(/"/g, '\\"')}" --max-turns 50`,
-            { cwd: PROJECT, encoding: 'utf-8', timeout: 1200000, stdio: 'pipe' }
+            { cwd: PROJECT, encoding: 'utf-8', timeout: 3600000, stdio: 'pipe' }
         );
         log('✅ Claude завершил');
         return result;
