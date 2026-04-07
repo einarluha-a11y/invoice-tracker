@@ -1,32 +1,42 @@
 # SOLUTION
 
 PHASE: ARCHITECTURE
-ROUND: 1
-TASK: TASK-09 — Исправить race condition в perplexity_review.yml
+ROUND: 2
+TASK: TASK-10 — Dropbox прямая интеграция (ждём credentials)
 
 ## ЗАДАНИЕ
 
-В файле `.github/workflows/perplexity_review.yml` добавить `git pull --rebase origin main` перед `git push` в шаге "Commit and push changes".
+Заменить Zapier на прямой Dropbox API для автоматической загрузки счетов.
 
-## CODE
+**Что нужно сделать:**
 
-### Реализованные изменения
+1. Создать файл `automation/dropbox_service.cjs` с функциями:
+   - `uploadInvoiceToPDF(invoiceId, pdfBuffer)` — загрузить PDF в папку `/Invoice-Tracker/{company}/{year}/{month}/`
+   - `createCompanyFolder(companyName)` — автоматически создать структуру папок
+   - `listInvoicesInFolder(companyName, year, month)` — список загруженных счетов
 
-**`.github/workflows/perplexity_review.yml` — добавлена строка `git pull --rebase origin main`**
+2. Интегрировать в `imap_daemon.cjs`:
+   - После успешного парсинга счета вызвать `uploadInvoiceToPDF()` вместо отправки в Zapier
+   - Убрать все ссылки на Zapier webhook
 
-Шаг "Commit and push changes" теперь выглядит так:
-```yaml
-          git commit -m "perplexity: review ${PHASE:-unknown} round ${ROUND:-1} + next task"
-          git pull --rebase origin main
-          git push
-```
+3. Добавить в `.env.pipeline`:
+   ```
+   DROPBOX_ACCESS_TOKEN=xxx
+   DROPBOX_APP_KEY=xxx
+   DROPBOX_APP_SECRET=xxx
+   ```
 
-Это устраняет race condition: если между checkout и push в main появился новый коммит (например от Claude), `git push` падал с ошибкой `rejected (non-fast-forward)`. Теперь бот перед пушем подтягивает последние изменения через rebase.
+4. Добавить в Railway variables через `railway variables set`
 
-### Верификация
+**Зависимость:** Нужны реальные Dropbox credentials от Einar (Access Token или App Key/Secret для OAuth2)
 
-```
-git diff HEAD~1 .github/workflows/perplexity_review.yml → строка git pull --rebase origin main присутствует
-```
+## Верификация
 
-DEPLOY_STATUS: OK
+- `node automation/dropbox_service.cjs --test` успешно подключается к Dropbox
+- В `imap_daemon.cjs` нет упоминаний Zapier
+- Новый счет загружается в Dropbox в правильную папку
+- Папки создаются автоматически если их нет
+
+---
+
+**Статус:** ⏳ BLOCKED — ждём Dropbox credentials от Einar
