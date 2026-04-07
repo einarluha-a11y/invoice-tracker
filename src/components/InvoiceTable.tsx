@@ -439,6 +439,11 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                                                 <span><strong>Tax (VAT):</strong> {formatCurrency(invoice.taxAmount || 0, invoice.originalForeignCurrency || invoice.currency)}</span>
                                                 <span className="total-highlight"><strong>Total:</strong> {formatCurrency(invoice.amount, invoice.currency)}</span>
                                             </div>
+                                            {invoice.description && (
+                                                <div style={{ padding: '8px 12px', marginBottom: '10px', color: 'var(--text-secondary)', fontSize: '0.9em', lineHeight: '1.4' }}>
+                                                    {invoice.description}
+                                                </div>
+                                            )}
                                             {invoice.lineItems && invoice.lineItems.length > 0 ? (
                                                 <table className="line-items-table">
                                                     <thead>
