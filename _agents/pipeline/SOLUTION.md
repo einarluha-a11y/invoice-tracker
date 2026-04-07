@@ -33,4 +33,24 @@ TASK: TASK-04 — Мультипользовательский режим (Maste
 - UI показывает роль, master видит "Set role" кнопки
 - `node automation/seed_roles.cjs` выполняется без ошибок
 
-DEPLOY_STATUS: ожидается OK после PR merge
+## ВЫПОЛНЕНО
+
+- `verifyToken` → `req.role = decoded.role || 'user'`
+- `requireRole(roles)` middleware добавлен и экспортирован из webhook_server.cjs
+- `/api/reprocess-invoice` → requireRole(['admin', 'master'])
+- `/api/chat` → requireRole(['user', 'admin', 'master'])
+- `/api/invalidate-cache` → requireRole(['admin', 'master'])
+- `/api/users/roles` POST → requireRole(['master']), устанавливает custom claims
+- Settings.tsx: показывает currentRole; master видит таблицу пользователей с dropdown + кнопка Set role
+- `automation/seed_roles.cjs` создан; запуск: `MASTER_EMAIL=<email> node automation/seed_roles.cjs`
+- `node --check` ✓ все файлы, `npm run build` ✓
+- Коммит e6075c1 запушен в main
+
+## Инструкция для Einar (Firebase Console)
+Чтобы назначить роль 'master' владельцу:
+1. Добавить `MASTER_EMAIL=einar@example.com` в `.env`
+2. `node automation/seed_roles.cjs`
+
+Для тестового admin аккаунта — в Firebase Console → Authentication → Users → выбрать пользователя → Edit → Custom claims: `{"role":"admin"}`
+
+DEPLOY_STATUS: OK
