@@ -2,25 +2,28 @@
 
 PHASE: ARCHITECTURE
 ROUND: 1
-TASK: TASK-05 — Кэш правил + хардкод storage bucket
+TASK: TASK-06 — Рефакторинг updateInvoice() — разбить 359 строк на функции
 
 ## ЗАДАНИЕ
 
-1. `core/firebase.cjs` — экспортировать `invalidateRulesCache()`
-2. `api_server.cjs` — добавить `POST /api/invalidate-cache`
-3. Frontend Settings — вызывать invalidate-cache после сохранения
-4. `core/firebase.cjs:23` — заменить хардкод bucket на `process.env.FIREBASE_STORAGE_BUCKET`
-5. Добавить `FIREBASE_STORAGE_BUCKET` в `.env` и `.env.production`
+src/data/api.ts строки 156-514 — функция updateInvoice() делает 6 разных вещей. Разбить на отдельные функции.
 
-## ВЫПОЛНЕНО
+### Новые функции (в том же файле api.ts):
 
-- `invalidateRulesCache()` — уже экспортирован из `core/firebase.cjs` ✓
-- `POST /api/invalidate-cache` — уже есть в `api_server.cjs` (requireRole admin/master) ✓
-- Settings.tsx — уже вызывает `invalidateBackendCache()` после каждого сохранения ✓
-- `core/firebase.cjs:23` — убран хардкод `'invoice-tracker-xyz.firebasestorage.app'`, теперь только `process.env.FIREBASE_STORAGE_BUCKET` ✓
-- `.env` — добавлена строка `FIREBASE_STORAGE_BUCKET="invoice-tracker-xyz.firebasestorage.app"` ✓
-- `.env.production` — добавлена строка `FIREBASE_STORAGE_BUCKET="invoice-tracker-xyz.firebasestorage.app"` ✓
-- `node --check` ✓ все файлы
-- `npm run build` ✓
+1. `saveInvoiceToDb(invoice, companyId)` — только запись в Firestore
+2. `saveTeacherExample(invoice, companyId)` — запись примера для Teacher
+3. `updateVendorProfile(invoice, companyId)` — обновление профиля вендора
+4. `generateGlobalRules(invoice, companyId)` — генерация правил
+5. `reconcileWithBankStatement(invoice, companyId)` — сверка с банком
 
-DEPLOY_STATUS: OK
+`updateInvoice()` остаётся как оркестратор который вызывает все пять последовательно.
+
+### Правила рефакторинга:
+- Не менять внешний интерфейс updateInvoice() — только внутренняя декомпозиция
+- Каждая функция — одна ответственность, 30-80 строк максимум
+- Сохранить всю существующую логику без изменений
+- Добавить JSDoc комментарий к каждой новой функции
+
+### Верификация:
+- `npm run build` без ошибок TypeScript
+- Поведение updateInvoice() идентично до и после
