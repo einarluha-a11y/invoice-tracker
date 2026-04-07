@@ -19,3 +19,17 @@ TASK: Мягкое удаление инвойсов (архив вместо de
    - Подтверждение: "Переместить в архив?"
 
 3. **Firestore миграция** (один раз):
+   - Поле `archived` читается как `data.archived === true` (false по умолчанию для старых записей)
+   - Миграция не нужна — клиентский фильтр `!i.archived` корректно работает для старых документов без поля
+
+## ВЫПОЛНЕНО
+
+- `archiveInvoice()` → `updateDoc({archived: true, deletedAt: serverTimestamp()})`
+- `restoreInvoice()` → `updateDoc({archived: false, deletedAt: null})`
+- Вкладка "Архив" в UI с переключателем активные/архив
+- Фильтр `invoices.filter(i => showArchived ? i.archived === true : !i.archived)`
+- Диалог подтверждения "Переместить в архив?"
+- i18n переводы RU/EN/ET
+- Build: ✓ clean
+
+DEPLOY_STATUS: OK
