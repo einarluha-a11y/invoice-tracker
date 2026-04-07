@@ -66,11 +66,15 @@ async function reportError(errorCode, context, err) {
             // Prune oldest entries when collection exceeds the cap
             const totalSnap = await logsRef.count().get();
             if (totalSnap.data().count > MAX_SYSTEM_LOG_ENTRIES) {
-                const excess = totalSnap.data().count - MAX_SYSTEM_LOG_ENTRIES;
+                const excess = Math.min(totalSnap.data().count - MAX_SYSTEM_LOG_ENTRIES, 450);
                 const oldSnap = await logsRef.orderBy('createdAt', 'asc').limit(excess).get();
-                const batch = db.batch();
-                oldSnap.docs.forEach(doc => batch.delete(doc.ref));
-                await batch.commit();
+                // Firestore batch limit is 500 ops — split into chunks to avoid INVALID_ARGUMENT
+                const CHUNK = 450;
+                for (let i = 0; i < oldSnap.docs.length; i += CHUNK) {
+                    const batch = db.batch();
+                    oldSnap.docs.slice(i, i + CHUNK).forEach(doc => batch.delete(doc.ref));
+                    await batch.commit();
+                }
             }
         } else {
              console.error('[Dead-Man Switch] Firestore connection is totally offline. UI logging bypassed.');

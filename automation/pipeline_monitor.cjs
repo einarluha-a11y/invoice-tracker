@@ -129,17 +129,20 @@ function checkPm2Errors() {
         } catch { /* pm2 logs failed — skip */ }
     }
 
-    // Also check restart count — too many restarts = crash loop
+    // Check for real crash loops: process is in 'errored' state OR uptime < 10s (rapid crash-restart)
+    // Ignore restart_time counter — watch:true triggers restarts on file changes, not crashes
     try {
         const list = execSync('pm2 jlist', { cwd: PROJECT, encoding: 'utf-8', timeout: 5000 });
         const procs = JSON.parse(list);
+        const now = Date.now();
         for (const p of procs) {
-            if (processes.includes(p.name) && p.pm2_env.restart_time > 20) {
-                errors.push({
-                    process: p.name,
-                    error: `Crash loop: ${p.pm2_env.restart_time} restarts`,
-                    pattern: 'restart_count'
-                });
+            if (!processes.includes(p.name)) continue;
+            const status = p.pm2_env.status;
+            const uptime = now - (p.pm2_env.pm_uptime || 0);
+            if (status === 'errored') {
+                errors.push({ process: p.name, error: `Process in errored state (exceeded max_restarts)`, pattern: 'restart_count' });
+            } else if (status === 'online' && uptime < 10000 && p.pm2_env.unstable_restarts > 5) {
+                errors.push({ process: p.name, error: `Crash loop: ${p.pm2_env.unstable_restarts} unstable restarts, uptime ${Math.round(uptime/1000)}s`, pattern: 'restart_count' });
             }
         }
     } catch { /* ignore */ }

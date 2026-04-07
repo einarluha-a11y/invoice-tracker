@@ -460,14 +460,14 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
 async function pollAllCompanyInboxes() {
     console.log('[System] Polling all company inboxes...');
     try {
-        // 1. Check default backend .env inbox first (unless it's disabled or empty)
-        if (process.env.IMAP_USER && process.env.IMAP_PASSWORD && process.env.IMAP_HOST) {
+        // 1. Check default backend .env inbox first (requires IMAP_COMPANY_ID to route invoices)
+        if (process.env.IMAP_USER && process.env.IMAP_PASSWORD && process.env.IMAP_HOST && process.env.IMAP_COMPANY_ID) {
             await checkEmailForInvoices({
                 user: process.env.IMAP_USER,
                 password: process.env.IMAP_PASSWORD,
                 host: process.env.IMAP_HOST,
                 port: process.env.IMAP_PORT
-            }, "Global Backend Default");
+            }, "Global Backend Default", process.env.IMAP_COMPANY_ID);
         }
 
         // 2. Load global AI rules once (shared across all companies)
