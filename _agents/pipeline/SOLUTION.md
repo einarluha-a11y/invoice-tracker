@@ -2,44 +2,81 @@
 
 PHASE: ARCHITECTURE
 ROUND: 1
-TASK: Два фикса: кэш правил + хардкод storage bucket
+TASK: Анализ и архитектурное решение для мультипользовательского режима
 
-## ЗАДАНИЕ 1 — Инвалидация кэша при изменении Settings
+## ЗАДАНИЕ
 
-**Проблема:** бэкенд кэширует AI-правила на 60 сек в `core/firebase.cjs`. Когда пользователь меняет правила в Settings — система до 60 сек работает по-старому.
+Изучи текущую кодовую базу и предложи детальное архитектурное решение для перехода на мультипользовательский режим. Не пиши код — только анализ и план.
 
-**Решение:** добавить endpoint `POST /api/invalidate-cache` в `api_server.cjs` который сбрасывает кэш немедленно. Фронтенд вызывает его после сохранения Settings.
+## Модель доступа (утверждена)
 
-Шаги:
-1. В `core/firebase.cjs` — экспортировать функцию `invalidateRulesCache()` которая обнуляет кэш
-2. В `api_server.cjs` — добавить endpoint:
-   ```js
-   app.post('/api/invalidate-cache', (req, res) => {
-     invalidateRulesCache();
-     res.json({ ok: true });
-   });
-   ```
-3. В фронтенде (Settings компонент) — после успешного сохранения вызвать:
-   ```js
-   await fetch(`${API_URL}/api/invalidate-cache`, { method: 'POST' });
-   ```
+### Три уровня пользователей:
 
-## ЗАДАНИЕ 2 — Убрать хардкод storage bucket
+**MASTER** (один, захардкожен по uid):
+- Доступ ко всем аккаунтам
+- Запуск Ремонтника и агентов
+- Может войти в любую зарегистрированную компанию
+- Видит список всех аккаунтов при входе
 
-**Проблема:** `automation/core/firebase.cjs:23` — имя бакета вшито в код.
+**ACCOUNT ADMIN** (владелец аккаунта):
+- Управляет своими компаниями внутри аккаунта
+- Добавляет/удаляет пользователей своего аккаунта
+- Редактирует инвойсы через карандаш
 
-**Решение:** заменить на переменную окружения:
-```js
-// Было:
-const bucket = admin.storage().bucket('invoice-tracker-xxx.appspot.com');
+**ACCOUNT USER** (сотрудник):
+- Доступ только к компаниям своего аккаунта
+- Только редактирование инвойсов через карандаш
 
-// Стало:
-const bucket = admin.storage().bucket(process.env.FIREBASE_STORAGE_BUCKET);
+### Поток входа:
+
+**Обычный пользователь:**
+1. Вводит название аккаунта (компании-получателя)
+2. Входит через Google (gmail)
+3. Система проверяет наличие uid в `accounts/{accountId}/users/`
+4. Если есть → дашборд этого аккаунта
+5. Если нет → "Нет доступа"
+
+**Мастер:**
+1. Входит через Google (свой gmail)
+2. Система определяет master по uid
+3. Показывает список всех аккаунтов
+4. Выбирает любой → полный доступ
+
+### Предлагаемая структура Firestore:
+
+```
+system/
+  master_users/{uid}
+
+accounts/{accountId}/
+  name: string
+  users/{uid}/
+    email: string
+    role: 'admin' | 'user'
+  companies/{companyId}/
+    invoices/{invoiceId}
+    bank_transactions/{txId}
+    processed_email_uids/{uid}
+  settings/
+    ai_rules
+    global_rules
 ```
 
-Добавить `FIREBASE_STORAGE_BUCKET` в `.env` и `.env.production`.
+## Что нужно проанализировать
 
-## Верификация
-- `node --check automation/core/firebase.cjs`
-- `node --check automation/api_server.cjs`
-- `pm2 restart all`
+1. **Текущий AuthContext.tsx** — как минимально изменить для поддержки трёх ролей
+2. **useCompanies.ts** — как адаптировать под структуру `accounts/{accountId}/companies/`
+3. **api.ts (subscribeToInvoices)** — новый путь к инвойсам
+4. **imap_daemon.cjs** — как убрать хардкод IDEACOM_ID и загружать компании всех аккаунтов динамически
+5. **api_server.cjs** — auth middleware с проверкой роли (master / admin / user)
+6. **Firestore Security Rules** — правила для трёх уровней доступа
+7. **Миграция данных** — как перенести существующие данные Global Technics и Ideacom в новую структуру без потерь
+8. **Login.tsx** — поле ввода названия аккаунта перед Google входом
+
+## Формат ответа
+
+Запиши в SOLUTION.md (PHASE: CODE, ROUND: 1) детальный анализ:
+- Какие файлы затрагиваются и как именно
+- Какие риски видишь
+- Предлагаемый порядок реализации по фазам
+- Что можно сделать без downtime, что требует миграции
