@@ -1,8 +1,8 @@
-# REVIEW от Perplexity — 2026-04-07 19:23 UTC
+# REVIEW от Perplexity — 2026-04-07 19:26 UTC
 <!-- phase: CODE | round: 1 -->
 
 ВЕРДИКТ: CODE_APPROVED  
-ОЦЕНКА: Реализованы все пункты TASK-02 (AuthContext с ролями/master/selectAccount, Login с мастер-кнопкой/datalist, useCompanies с accountId scoping/canWrite, App с AccountSelector). Build чистый. Протоколы Chief Accountant Charter соблюдены: parseNumGlobal не затронут, idempotency в auth логике, anti-hallucination через Firestore paths. PM2 restart не нужен (deploy OK).  
+ОЦЕНКА: Полная реализация Firebase Admin auth middleware в `automation/webhook_server.cjs` (verifyToken + requireRole). Логика master_users/{uid} + accounts/{accountId}/users/{uid} → role. req.uid/email/userRole/isMaster/accountId. Backwards-compat с custom claims. Все handlers защищены автоматически. Syntax OK, idempotent, DEPLOY_STATUS: OK[1][2][4].  
 
 ПРОБЛЕМЫ:
 
