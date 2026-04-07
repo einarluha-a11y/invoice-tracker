@@ -18,17 +18,19 @@ export function Login() {
     const [accountName, setAccountName] = useState('');
     const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
     const [accountOptions, setAccountOptions] = useState<AccountOption[]>([]);
+    const [accountsLoading, setAccountsLoading] = useState(true);
 
     const error = authError || localError;
 
     // Fetch account names for autocomplete
     useEffect(() => {
-        if (!db) return;
+        if (!db) { setAccountsLoading(false); return; }
         getDocs(collection(db, 'accounts'))
             .then(snap => {
                 setAccountOptions(snap.docs.map(d => ({ id: d.id, name: (d.data().name as string) || d.id })));
             })
-            .catch(() => { /* Firestore rules may deny unauthenticated reads — ignore */ });
+            .catch(() => { /* Firestore rules may deny unauthenticated reads — ignore */ })
+            .finally(() => setAccountsLoading(false));
     }, []);
 
     const handleAccountNameChange = (value: string) => {
@@ -102,7 +104,8 @@ export function Login() {
                             <input
                                 type="text"
                                 list="accounts-list"
-                                placeholder="Название аккаунта"
+                                placeholder={accountsLoading ? 'Загрузка аккаунтов...' : 'Название аккаунта'}
+                                disabled={accountsLoading}
                                 value={accountName}
                                 onChange={e => handleAccountNameChange(e.target.value)}
                                 style={{

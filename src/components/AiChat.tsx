@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { authHeaders } from '../data/api';
 
 interface AiChatProps {
     onApplyFilters: (filters: {
@@ -74,7 +75,7 @@ export function AiChat({ onApplyFilters }: AiChatProps) {
             const apiUrl = env.VITE_API_URL || (env.PROD ? '' : 'http://localhost:3000');
             const res = await fetch(`${apiUrl}/api/chat`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...await authHeaders() },
                 body: JSON.stringify({ message: trimmedMsg })
             });
 

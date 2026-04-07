@@ -143,6 +143,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const logout = async () => {
         if (!auth) return;
+        pendingAccountIdRef.current = null;
         try {
             await signOut(auth);
             setUser(null);

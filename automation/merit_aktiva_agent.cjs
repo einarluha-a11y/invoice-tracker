@@ -267,7 +267,10 @@ async function logToFirestore(event) {
  */
 async function saveToFirestore(transactions, companyId, dryRun = false) {
     const { db } = require('./core/firebase.cjs');
-    const col = db.collection('bank_transactions');
+    const accountId = process.env.ACCOUNT_ID;
+    const col = accountId
+        ? db.collection('accounts').doc(accountId).collection('bank_transactions')
+        : db.collection('bank_transactions');
     let saved = 0;
     let skipped = 0;
 
@@ -312,7 +315,11 @@ async function saveToFirestore(transactions, companyId, dryRun = false) {
  */
 async function autoMatch(transactions, companyId) {
     const { db } = require('./core/firebase.cjs');
-    const invoiceSnap = await db.collection('invoices')
+    const accountId = process.env.ACCOUNT_ID;
+    const invoicesCol = accountId
+        ? db.collection('accounts').doc(accountId).collection('invoices')
+        : db.collection('invoices');
+    const invoiceSnap = await invoicesCol
         .where('companyId', '==', companyId)
         .where('status', '!=', 'Paid')
         .get();
@@ -401,12 +408,19 @@ async function runDailyImport({ since, until, dryRun = false } = {}) {
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
+// Multiuser: pass --account <accountId> or set ACCOUNT_ID env var to scope
+// bank_transactions and invoices queries to accounts/{id}/... subcollections.
+// Without it, operates on legacy global collections.
 
 if (require.main === module) {
     const args = process.argv.slice(2);
     const dryRun  = args.includes('--dry-run');
     const sinceIdx = args.indexOf('--since');
     const untilIdx = args.indexOf('--until');
+    const accIdx   = args.indexOf('--account');
+
+    if (accIdx >= 0) process.env.ACCOUNT_ID = args[accIdx + 1];
+    if (process.env.ACCOUNT_ID) logImport(`Scoped to account: ${process.env.ACCOUNT_ID}`);
 
     runDailyImport({
         since:  sinceIdx >= 0 ? args[sinceIdx + 1] : undefined,

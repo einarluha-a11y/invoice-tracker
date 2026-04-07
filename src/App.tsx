@@ -13,31 +13,52 @@ import { AiChat } from './components/AiChat';
 import './App.css';
 
 function AccountSelector() {
-    const { availableAccounts, selectAccount } = useAuth();
+    const { availableAccounts, selectAccount, logout } = useAuth();
     return (
         <div className="login-container">
             <div className="login-card">
                 <h1 className="login-title" style={{ fontSize: '1.4rem' }}>Выберите аккаунт</h1>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '1rem' }}>
-                    {availableAccounts.map(acc => (
+                {availableAccounts.length === 0 ? (
+                    <div style={{ marginTop: '1rem', color: 'var(--text-secondary)', textAlign: 'center', fontSize: '0.95rem' }}>
+                        <p>Нет доступных аккаунтов. Обратитесь к администратору.</p>
                         <button
-                            key={acc.id}
-                            onClick={() => selectAccount(acc.id)}
+                            onClick={logout}
                             style={{
-                                padding: '0.75rem 1rem',
+                                marginTop: '1rem',
+                                padding: '0.6rem 1.2rem',
                                 borderRadius: 'var(--radius-md)',
                                 border: '1px solid var(--border-color)',
-                                background: 'var(--bg-secondary)',
-                                color: 'var(--text-primary)',
-                                fontSize: '0.95rem',
+                                background: 'transparent',
+                                color: 'var(--text-secondary)',
                                 cursor: 'pointer',
-                                textAlign: 'left',
+                                fontSize: '0.9rem',
                             }}
                         >
-                            {acc.name}
+                            Выйти
                         </button>
-                    ))}
-                </div>
+                    </div>
+                ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '1rem' }}>
+                        {availableAccounts.map(acc => (
+                            <button
+                                key={acc.id}
+                                onClick={() => selectAccount(acc.id)}
+                                style={{
+                                    padding: '0.75rem 1rem',
+                                    borderRadius: 'var(--radius-md)',
+                                    border: '1px solid var(--border-color)',
+                                    background: 'var(--bg-secondary)',
+                                    color: 'var(--text-primary)',
+                                    fontSize: '0.95rem',
+                                    cursor: 'pointer',
+                                    textAlign: 'left',
+                                }}
+                            >
+                                {acc.name}
+                            </button>
+                        ))}
+                    </div>
+                )}
             </div>
         </div>
     );

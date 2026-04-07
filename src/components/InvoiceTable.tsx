@@ -4,6 +4,7 @@ import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import type { Invoice, InvoiceStatus } from '../data/types';
 import { InvoicePdfViewer } from './InvoicePdfViewer';
+import { authHeaders } from '../data/api';
 import './InvoiceTable.css';
 
 interface InvoiceTableProps {
@@ -40,7 +41,7 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
             const apiBase = (import.meta as any).env?.VITE_API_URL || '';
             const res = await fetch(`${apiBase}/api/reprocess-invoice`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'application/json', ...await authHeaders() },
                 body: JSON.stringify({ docId: invoice.id }),
             });
             if (!res.ok) {

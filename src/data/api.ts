@@ -1,5 +1,12 @@
 import { collection, onSnapshot, doc, getDoc, getDocs, deleteDoc, updateDoc, setDoc, query, orderBy, where, limit, serverTimestamp } from 'firebase/firestore';
+import { getAuth } from 'firebase/auth';
 import { db } from '../firebase';
+
+export async function authHeaders(): Promise<HeadersInit> {
+    const auth = getAuth();
+    const token = await auth.currentUser?.getIdToken();
+    return token ? { Authorization: `Bearer ${token}` } : {};
+}
 import type { Invoice, InvoiceStatus } from './types';
 
 export const parseStatus = (rawStatus: string, parsedDueDate?: string): InvoiceStatus => {

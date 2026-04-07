@@ -62,6 +62,34 @@ service cloud.firestore {
       allow write: if request.auth != null && (isMaster() || isAccountAdmin(accountId));
     }
 
+    // Legacy global collections — accessible by master and admins.
+    // Regular account users cannot read these; data migration will move them
+    // to accounts/{id}/companies/ etc over time.
+    match /invoices/{invoiceId} {
+      allow read, write: if request.auth != null && (isMaster() || isAdmin());
+    }
+
+    match /bank_transactions/{txId} {
+      allow read, write: if request.auth != null && (isMaster() || isAdmin());
+    }
+
+    match /companies/{companyId} {
+      allow read, write: if request.auth != null && (isMaster() || isAdmin());
+    }
+
+    match /raw_documents/{docId} {
+      allow read, write: if request.auth != null && (isMaster() || isAdmin());
+    }
+
+    match /invoice_examples/{exId} {
+      allow read, write: if request.auth != null && (isMaster() || isAdmin());
+    }
+
+    match /teacher_global_rules/{ruleId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && (isMaster() || isAdmin());
+    }
+
     match /{document=**} {
       allow read, write: if isAdmin();
     }

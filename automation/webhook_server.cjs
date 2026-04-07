@@ -11,6 +11,26 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
+// --- AUTH MIDDLEWARE ---
+async function verifyToken(req, res, next) {
+    const token = req.headers.authorization?.split(' ')[1];
+    if (!token) return res.status(401).json({ error: 'Unauthorized' });
+    try {
+        const decoded = await admin.auth().verifyIdToken(token);
+        req.uid = decoded.uid;
+        req.email = decoded.email;
+        next();
+    } catch (e) {
+        res.status(401).json({ error: 'Invalid token' });
+    }
+}
+
+// Protect all /api/* routes except /api/intake (Zapier webhook — no user token)
+app.use('/api', (req, res, next) => {
+    if (req.path === '/intake') return next();
+    return verifyToken(req, res, next);
+});
+
 // --- SIMPLE IN-MEMORY RATE LIMITER ---
 // Protects /api/intake and /api/chat from abuse without extra dependencies.
 const rateLimitMap = new Map(); // ip -> { count, resetAt }

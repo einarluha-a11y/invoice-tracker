@@ -203,6 +203,18 @@ description: The absolute manifesto and source of truth for the AI Accountant Ag
 - **IMAP Horizon Mandate**: Deep IMAP recovery sequences MUST strictly throttle their `SINCE` date constraint to the narrowest possible temporal window (e.g., `SINCE 24-Mar-2026`). Fetching hundreds of full email bodies concurrently guarantees a Node.js `ECONNRESET` socket collapse due to TLS saturation, silently terminating the daemon.
 
 
+## 40. THE MULTIUSER ACCOUNT PROTOCOL (МУЛЬТИПОЛЬЗОВАТЕЛЬСКИЙ РЕЖИМ)
+
+- **Context**: Invoice Tracker supports multiple independent accounting firms ("accounts") managed by a single master user. Each account has its own `admin` and `user` roles. This is an extension of the single-accountant baseline — the core pipeline logic remains unchanged.
+- **Data structure**:
+  - Legacy global collections (`invoices/`, `companies/`, `bank_transactions/`) → used by existing data
+  - New account-scoped subcollections → `accounts/{accountId}/companies/`, `accounts/{accountId}/invoices/`
+  - Migration script: `automation/migrate_companies.cjs --account <id> --save`
+- **Agent scoping**: All automation agents (repairman, merit_aktiva) support `--account <accountId>` flag or `ACCOUNT_ID` env var. When set, they operate on account subcollections. Without it, they fall back to global collections (safe during migration period).
+- **Auth roles**: `master` — sees all accounts, switches via header dropdown; `admin` — manages one account; `user` — read-only within one account. A user belongs to exactly one account (stored in `accounts/{id}/users/{uid}`).
+- **Firestore Rules**: Global legacy collections are restricted to master + admin only. Account subcollections use `isAccountMember()` / `isAccountAdmin()` checks.
+- **Mandate**: Never process invoices across account boundaries. Always verify `accountId` context before writing to Firestore when operating in account-scoped mode.
+
 ## 36. FULL REFACTOR MANIFEST — March 2026
 
 The following systemic fixes were applied across all pipeline modules during the March 2026 refactor. Any agent regenerating or modifying these files MUST preserve these fixes:

@@ -59,6 +59,25 @@ const invoiceFilter = getArg('--invoice'); // repair specific invoice by Firesto
 
 if (dateArg) { sinceArg = dateArg; untilArg = dateArg; }
 
+// ─── Multiuser / Account scoping ─────────────────────────────────────────────
+// Pass --account <accountId> or set ACCOUNT_ID env var to scope to a specific
+// account's subcollections (accounts/{id}/invoices/, accounts/{id}/companies/).
+// Without it, the agent operates on legacy global collections — safe for now
+// since the data hasn't been migrated to account subcollections yet.
+const accountId = getArg('--account') || process.env.ACCOUNT_ID || null;
+if (accountId) console.log(`[Repairman] Scoped to account: ${accountId}`);
+
+function colInvoices() {
+    return accountId
+        ? db.collection('accounts').doc(accountId).collection('invoices')
+        : colInvoices();
+}
+function colBankTx() {
+    return accountId
+        ? db.collection('accounts').doc(accountId).collection('bank_transactions')
+        : colBankTx();
+}
+
 const PROBLEM_STATUSES = [
     'NEEDS_REVIEW', 'Needs Action', 'needs action',
     'OOTEL', 'KARANTIIN', 'Karantine', 'Karantiin', 'Карантин',
@@ -83,12 +102,12 @@ async function findBadInvoices() {
 
     // --invoice ID: force repair specific invoice regardless of problems
     if (invoiceFilter) {
-        const doc = await db.collection('invoices').doc(invoiceFilter).get();
+        const doc = await colInvoices().doc(invoiceFilter).get();
         if (!doc.exists) { console.log(`Invoice ${invoiceFilter} not found.`); return []; }
         return [{ id: doc.id, data: doc.data(), reason: 'Forced repair (--invoice)' }];
     }
 
-    let q = db.collection('invoices').orderBy('createdAt', 'desc').limit(5000);
+    let q = colInvoices().orderBy('createdAt', 'desc').limit(5000);
     if (companyFilter) q = q.where('companyId', '==', companyFilter);
     if (sinceArg) q = q.where('createdAt', '>=', admin.firestore.Timestamp.fromDate(new Date(sinceArg)));
     if (untilArg) q = q.where('createdAt', '<=', admin.firestore.Timestamp.fromDate(new Date(untilArg + 'T23:59:59.999Z')));
@@ -217,7 +236,7 @@ async function findBadStatuses() {
     const allDocs = [];
     for (let i = 0; i < PROBLEM_STATUSES.length; i += chunkSize) {
         const chunk = PROBLEM_STATUSES.slice(i, i + chunkSize);
-        let q = db.collection('invoices').where('status', 'in', chunk);
+        let q = colInvoices().where('status', 'in', chunk);
         if (companyFilter) q = q.where('companyId', '==', companyFilter);
         const snap = await q.get();
         snap.forEach(doc => allDocs.push(doc));
@@ -296,7 +315,7 @@ async function checkBankTransactions(invoiceId, oldData, newData) {
     const companyId = oldData.companyId;
     if (!companyId) return null;
 
-    const snap = await db.collection('bank_transactions')
+    const snap = await colBankTx()
         .where('companyId', '==', companyId)
         .get();
 
@@ -337,14 +356,14 @@ async function checkAllPaidInvoices({ fix = false } = {}) {
     console.log(`Audit Paid invoices ${fix ? '(LIVE)' : '(DRY RUN)'}`);
     console.log(`${'═'.repeat(60)}\n`);
 
-    const paidSnap = await db.collection('invoices').where('status', '==', 'Paid').get();
+    const paidSnap = await colInvoices().where('status', '==', 'Paid').get();
     let checked = 0, reverted = 0, suspicious = 0, ok = 0;
 
     for (const invDoc of paidSnap.docs) {
         const d = invDoc.data();
         checked++;
 
-        const txSnap = await db.collection('bank_transactions')
+        const txSnap = await colBankTx()
             .where('matchedInvoiceId', '==', invDoc.id)
             .get();
 
@@ -400,7 +419,7 @@ async function repairInvoice(invoiceId, invoiceData) {
     const file = await getOriginalFile(invoiceData);
     if (!file) {
         console.warn(`  [Repairman] No original file found for ${invoiceId}. Marking UNREPAIRABLE.`);
-        await db.collection('invoices').doc(invoiceId).update({ status: 'UNREPAIRABLE' });
+        await colInvoices().doc(invoiceId).update({ status: 'UNREPAIRABLE' });
         return false;
     }
 
@@ -602,7 +621,7 @@ async function repairInvoice(invoiceId, invoiceData) {
         // Still broken → reject
         if (qcIssues.length > 0) {
             console.warn(`  [Teacher QC] ❌ REJECTED: ${qcIssues.map(i => i.msg).join(' | ')}`);
-            await db.collection('invoices').doc(invoiceId).update({
+            await colInvoices().doc(invoiceId).update({
                 status: 'Needs Action',
                 repairQualityWarnings: qcIssues.map(i => i.msg),
                 claudeFixAttempted: true,
@@ -625,7 +644,7 @@ async function repairInvoice(invoiceId, invoiceData) {
         console.log(`  [Repairman] 🛡️ Partial payment protection: ${existingPayments.length} payment(s) — amount/remaining preserved`);
     }
 
-    await db.collection('invoices').doc(invoiceId).update(updates);
+    await colInvoices().doc(invoiceId).update(updates);
     console.log(`  [Repairman] ✅ Updated ${invoiceId} with ${Object.keys(updates).length - 2} field(s).`);
 
     // Update staging
@@ -745,7 +764,7 @@ async function runAudit() {
     console.log('══════════════════════════════════════════════════\n');
 
     // Load all invoices
-    let q = db.collection('invoices');
+    let q = colInvoices();
     if (companyFilter) q = q.where('companyId', '==', companyFilter);
     const snap = await q.get();
     console.log(`Loaded ${snap.size} invoices.\n`);
@@ -754,7 +773,7 @@ async function runAudit() {
 
     // Load bank transactions for payment verification (second line after Scout)
     const bankTxByCompany = {};
-    const bankSnap = await db.collection('bank_transactions').get();
+    const bankSnap = await colBankTx().get();
     for (const doc of bankSnap.docs) {
         const tx = doc.data();
         if (!bankTxByCompany[tx.companyId]) bankTxByCompany[tx.companyId] = [];
@@ -876,7 +895,7 @@ async function runAudit() {
         changes.push({ id: doc.id, vendor: newVendor || oldVendor, change: changeDesc.join(' | ') });
 
         if (!dryRun) {
-            await db.collection('invoices').doc(doc.id).update(updates);
+            await colInvoices().doc(doc.id).update(updates);
         }
 
         if (updates.status) statusFixed++;
@@ -946,7 +965,7 @@ async function main() {
         printReport(unrepairable, 'UNREPAIRABLE (max attempts reached — needs manual review)');
         if (!dryRun) {
             for (const inv of unrepairable) {
-                try { await db.collection('invoices').doc(inv.id).update({ status: 'UNREPAIRABLE' }); } catch { /* ignore */ }
+                try { await colInvoices().doc(inv.id).update({ status: 'UNREPAIRABLE' }); } catch { /* ignore */ }
             }
             console.log(`  Marked ${unrepairable.length} record(s) as UNREPAIRABLE.`);
         }
@@ -968,7 +987,7 @@ async function main() {
                 const batch = db.batch();
                 const chunk = repairable.slice(i, i + BATCH_SIZE);
                 for (const { id, data } of chunk) {
-                    batch.update(db.collection('invoices').doc(id), {
+                    batch.update(colInvoices().doc(id), {
                         status: 'Pending',
                         previousStatus: data.status,
                         statusFixedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -994,7 +1013,7 @@ async function main() {
         if (!dryRun) {
             for (const inv of duplicates) {
                 try {
-                    await db.collection('invoices').doc(inv.id).delete();
+                    await colInvoices().doc(inv.id).delete();
                     console.log(`  [Repairman] 🗑️  Deleted duplicate ${inv.id} (${inv.reason})`);
                 } catch (err) {
                     console.error(`  [Repairman] Error deleting duplicate ${inv.id}: ${err.message}`);

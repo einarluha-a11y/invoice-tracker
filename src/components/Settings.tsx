@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useCompanies } from '../hooks/useCompanies';
 import { doc, setDoc, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase';
+import { authHeaders } from '../data/api';
 
 interface SettingsProps {
     onBack: () => void;
@@ -44,7 +45,7 @@ export function Settings({ onBack }: SettingsProps) {
     const invalidateBackendCache = async () => {
         try {
             const apiBase = (import.meta as any).env?.VITE_API_URL || '';
-            await fetch(`${apiBase}/api/invalidate-cache`, { method: 'POST' });
+            await fetch(`${apiBase}/api/invalidate-cache`, { method: 'POST', headers: await authHeaders() });
         } catch { /* бэкенд может быть недоступен — не блокируем UI */ }
     };
 
