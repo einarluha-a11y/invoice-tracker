@@ -401,6 +401,12 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                                         <span style={{ whiteSpace: 'nowrap' }} className={`status-badge ${getStatusClass(invoice.status)}`}>
                                             {invoice.status === 'Paid' ? t('filters.paid') : invoice.status === 'Pending' ? t('filters.pending') : t('filters.overdue')}
                                         </span>
+                                        {invoice.meritSyncedAt && (
+                                            <span title="Merit ✓" style={{ color: '#4caf50', fontSize: '0.75em', fontWeight: 600 }}>M✓</span>
+                                        )}
+                                        {invoice.meritSyncError && !invoice.meritSyncedAt && (
+                                            <span title={invoice.meritSyncError} style={{ color: '#ff5252', fontSize: '0.75em', fontWeight: 600 }}>M⚠</span>
+                                        )}
                                     </div>
                                 </td>
                                 <td data-label={t('table.actions')}>

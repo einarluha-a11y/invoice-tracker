@@ -127,6 +127,13 @@ if (fileExists(envPath)) {
     }
 }
 
+// Merit Aktiva credentials (optional — warn if missing)
+if (fileExists(envPath)) {
+    const envContent2 = fs.readFileSync(envPath, 'utf-8');
+    warn('MERIT_API_ID set', envContent2.includes('MERIT_API_ID=') && !envContent2.includes('MERIT_API_ID=\n'));
+    warn('MERIT_API_KEY set', envContent2.includes('MERIT_API_KEY=') && !envContent2.includes('MERIT_API_KEY=\n'));
+}
+
 // Firebase credentials
 const credFile = path.join(AUTOMATION_DIR, 'google-credentials.json');
 check('Firebase credentials',

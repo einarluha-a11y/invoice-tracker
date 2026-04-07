@@ -20,6 +20,8 @@ const { saveBankTransaction } = require('./core/bank_dedup.cjs');
 const { canReconcile: strictCanReconcile, matchReference, vendorOverlap } = require('./core/reconcile_rules.cjs');
 // Number parsing — single source of truth for European/US decimal formats
 const { cleanNum, getVendorAliases: _getVendorAliases } = require('./core/utils.cjs');
+// Merit Aktiva sync — sends invoices/payments automatically
+const { syncInvoiceToMerit, syncPaymentToMerit } = require('./merit_sync.cjs');
 
 // Wrap shared getVendorAliases to auto-inject db
 const getVendorAliases = (companyId) => _getVendorAliases(db, companyId);
@@ -324,6 +326,13 @@ async function writeToFirestore(dataArray) {
             });
             delete data._rawText;  // Clean up internal field after saving
 
+            // Merit Aktiva sync — non-blocking (don't fail invoice save if Merit is down)
+            try {
+                await syncInvoiceToMerit(data, docRef.id);
+            } catch (meritErr) {
+                console.warn(`[Merit] Sync failed (non-blocking): ${meritErr.message}`);
+            }
+
             if (!data.companyId) {
                 console.error(`[Firestore] ⚠️  companyId missing for invoice ${invoiceId} (vendor: ${vendorName}). Saved without company — manual review required.`);
             }
@@ -611,6 +620,8 @@ async function reconcilePayment(reference, description, paidAmount, totalBankDra
                         if (!freshDoc.exists || freshDoc.data().status === 'Paid') return;
                         t.update(matchedDoc.ref, payoutData);
                     });
+                    // Merit payment sync
+                    try { await syncPaymentToMerit(matchedDoc.data(), { amount: paidAmount, reference: reference }, matchedDoc.id); } catch(e) { console.warn('[Merit] Payment sync (FX):', e.message); }
                     fxOverwriteTriggered = true;
                 } else {
                     let payoutData = { status: 'Paid' };
@@ -624,6 +635,8 @@ async function reconcilePayment(reference, description, paidAmount, totalBankDra
                         if (!freshDoc.exists || freshDoc.data().status === 'Paid') return;
                         t.update(matchedDoc.ref, payoutData);
                     });
+                    // Merit payment sync
+                    try { await syncPaymentToMerit(matchedDoc.data(), { amount: paidAmount, reference: reference }, matchedDoc.id); } catch(e) { console.warn('[Merit] Payment sync:', e.message); }
                 }
             }
         }

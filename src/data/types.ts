@@ -27,4 +27,9 @@ export interface Invoice {
     enrichmentSource?: string;
     originalForeignCurrency?: string;
     originalForeignAmount?: number;
+    // Merit Aktiva sync
+    meritSyncedAt?: any;
+    meritInvoiceId?: string;
+    meritSyncError?: string;
+    meritPaymentSyncedAt?: any;
 }
