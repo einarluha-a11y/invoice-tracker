@@ -2,45 +2,22 @@
 
 PHASE: CODE
 ROUND: 1
-TASK: Фаза 2 — Frontend мультипользовательский режим (Login / AuthContext / useCompanies)
+TASK: Backend auth middleware (защита API под accounts/{accountId})
 
-## CODE
+## ЗАДАНИЕ
 
-### Реализованные изменения
+Реализовать Firebase Admin Auth middleware для всех API endpoints:
 
-**1. `src/context/AuthContext.tsx`**
-- Добавлены роли: `userRole: 'master' | 'admin' | 'user' | null`
-- `currentAccountId` — хранит выбранный аккаунт
-- `isMaster` — флаг мастер-доступа
-- `pendingAccountIdRef` — сохраняет accountId до завершения Google OAuth
-- `selectAccount(accountId)` — переключение аккаунта для мастера
-- `availableAccounts` — список всех аккаунтов (только для мастера)
-- Логика: master_users/{uid} → master, иначе accounts/{accountId}/users/{uid} → role
-- signOut + ошибка если нет доступа
+1. **Middleware `authMiddleware`** (`src/middleware/auth.ts`):
+   - Верифицирует `Authorization: Bearer <idToken>`
+   - Извлекает `uid` из decodedToken
+   - Проверяет роль:
+     - `master_users/{uid}` exists → `isMaster=true`, `userRole='master'`
+     - Иначе для каждого `accounts/{accountId}`: `accounts/{accountId}/users/{uid}` → role
+   - `req.accountId` = первый accountId где есть доступ (или null для master)
+   - `req.userRole` = 'master'|'admin'|'user'
+   - `req.isMaster` = true/false
+   - 401 если token invalid/expired
+   - 403 если нет доступа к accountId (для scoped endpoints)
 
-**2. `src/components/Login.tsx`**
-- Datalist autocomplete по `accounts/` (только поле name)
-- Кнопка "Войти как мастер" для uid MI9J2VBriwQ45jEMJ5tmbagfHm93
-- accountId сохраняется в state до Google входа
-
-**3. `src/hooks/useCompanies.ts`**
-- Путь: `accounts/{currentAccountId}/companies/` вместо `companies/`
-- Fallback на `companies/` если новый путь пуст
-- `canWrite` — только master и admin
-
-**4. `src/App.tsx`**
-- AccountSelector для мастера если `isMaster && !currentAccountId`
-- Dropdown аккаунтов в header для мастера
-- Settings скрыт для role='user'
-
-### Верификация
-
-```
-npm run build → ✅ built in 2.31s, 0 TypeScript errors
-```
-
-DEPLOY_STATUS: OK
-
----
-
-*TASK-02 DONE. Следующий: TASK-03 — Backend auth middleware*
+2. **Обновить все API handlers**:
