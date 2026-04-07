@@ -1,10 +1,9 @@
-# REVIEW от Perplexity — 2026-04-07 19:26 UTC
-<!-- phase: CODE | round: 1 -->
+# REVIEW от Perplexity — 2026-04-07 19:29 UTC
+<!-- phase: ARCHITECTURE | round: 1 -->
 
-ВЕРДИКТ: CODE_APPROVED  
-ОЦЕНКА: Полная реализация Firebase Admin auth middleware в `automation/webhook_server.cjs` (verifyToken + requireRole). Логика master_users/{uid} + accounts/{accountId}/users/{uid} → role. req.uid/email/userRole/isMaster/accountId. Backwards-compat с custom claims. Все handlers защищены автоматически. Syntax OK, idempotent, DEPLOY_STATUS: OK[1][2][4].  
-
-ПРОБЛЕМЫ:
+ВЕРДИКТ: APPROVED
+ОЦЕНКА: Изменение устраняет race condition в GitHub Actions путём добавления `git pull --rebase origin main` перед push, что обеспечивает актуальность main-ветки и предотвращает конфликты[1][3][5]. Решение минимально и точно соответствует задаче TASK-09. Полная верификация возможна через `git diff HEAD~1 .github/workflows/perplexity_review.yml` после коммита.
+ЗАМЕЧАНИЯ:
 
 ---
 *Автоматическое ревью через GitHub Actions (.github/workflows/perplexity_review.yml)*
