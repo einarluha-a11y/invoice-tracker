@@ -227,7 +227,7 @@ async function writeToFirestore(dataArray) {
                 if (data.fileUrl && existingDocId) {
                     // Prevent AI hallucinations (mistaking 39 for 41) from maliciously overwriting the real 41's PDF.
                     // Only patch the fileUrl if the existing record in the DB is completely empty (no file attached).
-                    const currDoc = await t.get(invoicesRef.doc(existingDocId));
+                    const currDoc = await invoicesRef.doc(existingDocId).get();
                     if (!currDoc.data().fileUrl) {
                         console.log(`[Firestore] Patching duplicate invoice with missing fileUrl: ${vendorName} - ${invoiceId}`);
                         t.update(invoicesRef.doc(existingDocId), {
@@ -254,7 +254,9 @@ async function writeToFirestore(dataArray) {
                 const pendingQuery = data.companyId
                     ? invoicesRef.where('companyId', '==', data.companyId).where('status', '!=', 'Paid').limit(200)
                     : invoicesRef.where('status', '!=', 'Paid').limit(200);
-                const pendingSnapshot = await t.get(pendingQuery);
+                // Read pending invoices OUTSIDE transaction scope to avoid "Transaction too big":
+                // each invoice can hold up to 50KB rawText, so 200 docs = ~10MB in transaction payload.
+                const pendingSnapshot = await pendingQuery.get();
 
                 for (const potentialOffset of pendingSnapshot.docs) {
                     const passData = potentialOffset.data();
