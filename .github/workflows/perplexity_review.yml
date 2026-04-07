@@ -40,4 +40,5 @@ jobs:
           PHASE=$(grep -oE '^PHASE:[[:space:]]*[A-Za-z]+' _agents/pipeline/SOLUTION.md | head -1 | awk '{print $2}')
           ROUND=$(grep -oE '^ROUND:[[:space:]]*[0-9]+' _agents/pipeline/SOLUTION.md | head -1 | awk '{print $2}')
           git commit -m "perplexity: review ${PHASE:-unknown} round ${ROUND:-1} + next task"
+          git pull --rebase origin main
           git push
