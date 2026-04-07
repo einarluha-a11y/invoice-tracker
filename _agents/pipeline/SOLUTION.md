@@ -27,3 +27,16 @@ src/data/api.ts строки 156-514 — функция updateInvoice() дела
 ### Верификация:
 - `npm run build` без ошибок TypeScript
 - Поведение updateInvoice() идентично до и после
+
+## ВЫПОЛНЕНО
+
+- `saveInvoiceToDb(invoiceId, data)` — маппинг полей, запись в Firestore, AI Self-Healing Loop ✓
+- `saveTeacherExample(invoiceId, vendorName, d)` — сохранение ground-truth в `invoice_examples` ✓
+- `updateVendorProfile(vendorName, d)` — профиль вендора + auto-generate Charter rules ✓
+- `generateGlobalRules(d)` — паттерны VAT→currency, payment terms, tax rates в `teacher_global_rules` ✓
+- `reconcileWithBankStatement(invoiceRef, d)` — сверка с `bank_transactions`, strict rules ✓
+- `updateInvoice()` — оркестратор, вызывает все 5 функций последовательно, внешний интерфейс не изменён ✓
+- JSDoc комментарии к каждой новой функции ✓
+- `npm run build` ✓ без ошибок TypeScript
+
+DEPLOY_STATUS: OK
