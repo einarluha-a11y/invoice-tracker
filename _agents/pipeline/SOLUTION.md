@@ -1,44 +1,37 @@
 # SOLUTION
 
 PHASE: ARCHITECTURE
-ROUND: 2
-TASK: Frontend мультипользовательский режим (TASK-02)
+ROUND: 1
+TASK: Мягкое удаление инвойсов (архив вместо delete)
 
 ## ЗАДАНИЕ
 
-1. **Login.tsx** — поле выбора аккаунта перед входом
-2. **AuthContext.tsx** — логика трёх ролей (master/admin/user)
-3. **useCompanies.ts** — фильтрация по аккаунту, fallback на старый путь
+Реализовать **мягкое удаление** инвойсов вместо жесткого DELETE:
 
-## ВЫПОЛНЕНО
+1. **Backend API** (`src/lib/invoices.ts`):
+   - `archiveInvoice(id)` — добавить поле `archived: true, archivedAt: serverTimestamp()`
+   - `unarchiveInvoice(id)` — убрать поле `archived`
+   - `deleteInvoice(id)` — теперь = `archiveInvoice(id)` (прозрачно)
+   - Все `getInvoices()` по умолчанию `where('archived', '==', false)`
+   - Новый query param `?includeArchived=true` для показа архива
 
-### Login.tsx
-- Input с `<datalist>` для autocomplete по коллекции `accounts/` (только поле `name`)
-- Загружает список аккаунтов при монтировании (`getDocs(collection(db, 'accounts'))`)
-- Кнопка "Войти как мастер" — входит без выбора аккаунта (`signInWithGoogle()` без аргументов)
-- Кнопка "Sign in with Google" — активна только при выбранном аккаунте (`disabled={!selectedAccountId}`)
+2. **Frontend** (`InvoicesPage.tsx`, `InvoiceRow.tsx`):
+   - Кнопка "Архив" вместо "Удалить" 
+   - Badge **📦 Архив** для archived инвойсов (opacity: 0.5)
+   - Чекбокс "Показать архив" — добавляет `includeArchived=true` в URL
+   - Счетчик "Все: 25 (+3 архив)" в заголовке
+   - Контекстное меню: "Восстановить из архива"
 
-### AuthContext.tsx
-- После `signInWithGoogle` проверяет uid в `master_users/{uid}` → `role='master'`
-- Если не мастер: проверяет `accounts/{selectedAccountId}/users/{uid}` → роль из документа
-- Если нет доступа: `signOut` + сообщение "Нет доступа к аккаунту"
-- Контекст содержит: `currentAccountId`, `userRole: 'master'|'admin'|'user'`, `isMaster`, `availableAccounts`, `selectAccount()`
-- Мастер видит `AccountSelector` в App.tsx (список всех accounts/)
-
-### useCompanies.ts
-- Путь: `accounts/${currentAccountId}/companies` вместо `companies/`
-- Fallback: если коллекция пустая — читает из `companies/` (старый путь)
-- CRUD: `addCompany/updateCompany/deleteCompany` только при `isMaster || userRole === 'admin'`
-- `activePathRef` отслеживает активный путь для CRUD операций
-
-### App.tsx
-- `AccountSelector` компонент: показывается мастеру, у которого ещё не выбран аккаунт
-- Dropdown для смены аккаунта в шапке (только для мастера)
+3. **UI/UX**:
+   - Архивные инвойсы: `opacity: 0.5`, курсив даты
+   - Фильтр PDF экспорта: "Только активные" / "Включая архив"
+   - Search работает только по активным (добавить toggle)
 
 ## Верификация
-- `npm run build` — ✓ без TypeScript ошибок
-- Backward compatibility: старая `companies/` коллекция не тронута, fallback работает
-- Мастер (uid = MI9J2VBriwQ45jEMJ5tmbagfHm93) входит без выбора аккаунта
-- Обычный пользователь обязан выбрать аккаунт из списка
+- Создать инвойс → "Архив" → исчез из списка, появился в "Архив"
+- `?includeArchived=true` → показывает все
+- `npm run build` — без TS ошибок
+- PDF экспорт: отдельно активные/все
+- Backward compatibility: старые инвойсы без `archived` = активные
 
 DEPLOY_STATUS: OK
