@@ -12,6 +12,10 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
 // --- AUTH MIDDLEWARE ---
+// Verifies Firebase ID token and resolves role from Firestore:
+//   master_users/{uid} exists  → isMaster=true, userRole='master', accountId=null
+//   accounts/{id}/users/{uid}  → userRole from doc.role field, accountId=id
+// Falls back to custom claims role if no Firestore record found (legacy support).
 async function verifyToken(req, res, next) {
     const token = req.headers.authorization?.split(' ')[1];
     if (!token) return res.status(401).json({ error: 'Unauthorized' });
@@ -19,7 +23,38 @@ async function verifyToken(req, res, next) {
         const decoded = await admin.auth().verifyIdToken(token);
         req.uid = decoded.uid;
         req.email = decoded.email;
-        req.role = decoded.role || 'user';
+
+        if (db) {
+            // 1. Check master_users
+            const masterSnap = await db.collection('master_users').doc(decoded.uid).get();
+            if (masterSnap.exists) {
+                req.isMaster = true;
+                req.userRole = 'master';
+                req.accountId = null;
+                return next();
+            }
+
+            // 2. Check accounts/{accountId}/users/{uid}
+            const accountsSnap = await db.collection('accounts').get();
+            for (const accountDoc of accountsSnap.docs) {
+                const userSnap = await db
+                    .collection('accounts').doc(accountDoc.id)
+                    .collection('users').doc(decoded.uid).get();
+                if (userSnap.exists) {
+                    req.isMaster = false;
+                    req.userRole = userSnap.data().role || 'user';
+                    req.accountId = accountDoc.id;
+                    return next();
+                }
+            }
+        }
+
+        // 3. Fallback: use custom claims (legacy or no DB)
+        req.isMaster = false;
+        req.userRole = decoded.role || 'user';
+        req.accountId = null;
+        // Keep req.role for backwards compat
+        req.role = req.userRole;
         next();
     } catch (e) {
         res.status(401).json({ error: 'Invalid token' });
@@ -28,7 +63,8 @@ async function verifyToken(req, res, next) {
 
 function requireRole(roles) {
     return (req, res, next) => {
-        if (!req.role || !roles.includes(req.role)) {
+        const role = req.userRole || req.role;
+        if (!role || !roles.includes(role)) {
             return res.status(403).json({ error: 'Forbidden: insufficient role' });
         }
         next();
