@@ -108,15 +108,31 @@ def build_review_prompt(phase: str, context: str) -> str:
         )
     return f"{role}\n\nКонтекст проекта:\n{context_trimmed}"
 
+def get_recent_commits() -> str:
+    """Get recent commit history to avoid repeating completed tasks."""
+    import subprocess
+    try:
+        result = subprocess.run(
+            ['git', 'log', '--oneline', '-20'],
+            capture_output=True, text=True, timeout=10
+        )
+        return result.stdout.strip()
+    except Exception:
+        return ""
+
 def build_next_task_prompt(context: str, backlog: str, completed_task: str) -> str:
     context_trimmed = context[:4000]
     backlog_trimmed = backlog[:3000] if backlog else "Нет бэклога — выбери следующую задачу из анализа кода."
+    recent_commits = get_recent_commits()
     return (
         "Ты — технический менеджер проекта Invoice-Tracker. "
         "Claude только что завершил задачу. Тебе нужно:\n\n"
         "1. Кратко оценить выполненную работу (2-3 предложения)\n"
-        "2. Выбрать СЛЕДУЮЩУЮ задачу из бэклога (или предложить свою на основе анализа кода)\n"
+        "2. Выбрать СЛЕДУЮЩУЮ НЕВЫПОЛНЕННУЮ задачу из бэклога\n"
         "3. Написать SOLUTION.md с новым заданием для Claude\n\n"
+        "КРИТИЧЕСКОЕ ПРАВИЛО: НЕ ПОВТОРЯТЬ задачи отмеченные [x] в бэклоге. "
+        "НЕ ПОВТОРЯТЬ задачи видимые в истории коммитов. "
+        "Бери ТОЛЬКО первую задачу с [ ] (незавершённую).\n\n"
         "ФОРМАТ ОТВЕТА — точно этот markdown:\n\n"
         "```solution\n"
         "# SOLUTION\n\n"
@@ -128,7 +144,8 @@ def build_next_task_prompt(context: str, backlog: str, completed_task: str) -> s
         "## Верификация\n"
         "[Как проверить что задание выполнено]\n"
         "```\n\n"
-        f"Бэклог задач:\n{backlog_trimmed}\n\n"
+        f"Бэклог задач ([ ] = не сделано, [x] = уже сделано):\n{backlog_trimmed}\n\n"
+        f"Последние 20 коммитов (уже выполнено — НЕ повторять):\n{recent_commits}\n\n"
         f"Завершённая задача:\n{completed_task[:2000]}\n\n"
         f"Контекст проекта:\n{context_trimmed}"
     )
