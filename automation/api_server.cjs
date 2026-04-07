@@ -70,8 +70,24 @@ app.post('/api/invalidate-cache', requireRole(['admin', 'master']), (req, res) =
     res.json({ ok: true });
 });
 
-// POST /api/users/roles — назначить роль пользователю (только master)
+// GET /api/users/list — список всех пользователей с ролями (только master)
 const { admin: adminFb } = require('./core/firebase.cjs');
+app.get('/api/users/list', requireRole(['master']), async (req, res) => {
+    try {
+        const listResult = await adminFb.auth().listUsers(1000);
+        const users = listResult.users.map(u => ({
+            uid: u.uid,
+            email: u.email || '',
+            role: (u.customClaims && u.customClaims.role) || 'user',
+        }));
+        res.json(users);
+    } catch (err) {
+        console.error('[api/users/list]', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST /api/users/roles — назначить роль пользователю (только master)
 app.post('/api/users/roles', requireRole(['master']), async (req, res) => {
     const { uid, role } = req.body;
     const allowed = ['user', 'admin', 'master'];
