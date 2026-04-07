@@ -293,7 +293,7 @@ async function processInvoiceWithDocAI(buffer, mimeType = 'application/pdf', sup
         // Payment terms
         let paymentTerms = str('PaymentTerm');
 
-        // Line items
+        // Line items — extract full details for buhgalterija
         const lineItems = [];
         let descriptionText = '';
         const itemsField = fields.Items;
@@ -303,7 +303,25 @@ async function processInvoiceWithDocAI(buffer, mimeType = 'application/pdf', sup
                 const itemDesc = (props.Description?.value || props.Description?.content || '').replace(/\n/g, ' ').trim();
                 const itemAmtCurr = props.Amount?.value;
                 const itemAmt = itemAmtCurr?.amount ?? cleanNum(props.Amount?.content || '');
-                if (itemDesc || itemAmt) lineItems.push({ description: itemDesc, amount: itemAmt });
+                const itemTax = props.Tax?.value?.amount ?? cleanNum(props.Tax?.content || '');
+                const itemUnitPrice = props.UnitPrice?.value?.amount ?? cleanNum(props.UnitPrice?.content || '');
+                const itemQty = cleanNum(props.Quantity?.content || '') || 1;
+
+                // Build rich description: "LTR Lisateenused — 22,50 (+ KM 4,95 = 27,45 EUR)"
+                let richDesc = itemDesc;
+                if (itemUnitPrice > 0 && itemTax > 0 && itemAmt > 0) {
+                    richDesc += ` — ${itemUnitPrice} (+ KM ${itemTax} = ${itemAmt} ${currency || 'EUR'})`;
+                } else if (itemUnitPrice > 0 && itemAmt > 0 && itemUnitPrice !== itemAmt) {
+                    richDesc += ` — ${itemUnitPrice} (= ${itemAmt} ${currency || 'EUR'})`;
+                }
+
+                if (itemDesc || itemAmt) lineItems.push({
+                    description: richDesc || itemDesc,
+                    amount: itemAmt,
+                    tax: itemTax || 0,
+                    unitPrice: itemUnitPrice || itemAmt,
+                    quantity: itemQty,
+                });
             }
         }
 
