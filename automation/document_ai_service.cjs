@@ -351,6 +351,21 @@ async function processInvoiceWithDocAI(buffer, mimeType = 'application/pdf', sup
             partial.description = inferDescription(partial.vendorName);
         }
 
+        // Enrich description with main service/product info from rawText
+        // Leasing invoices have "Rent:", "Kirjeldus:", service descriptions before the table
+        {
+            const enrichParts = [];
+            const rentMatch = rawDocText.match(/(?:^|\n)\s*(?:Rent|Kirjeldus|Teenus|Service|Objekt)[:\s]*\n?\s*(.{10,120})/i);
+            if (rentMatch) enrichParts.push(rentMatch[1].trim());
+            const periodMatch = rawDocText.match(/(?:Rent periood|Period|Periood)[:\s]+(.{5,40})/i);
+            if (periodMatch) enrichParts.push('Periood: ' + periodMatch[1].trim());
+            if (enrichParts.length > 0 && partial.description) {
+                partial.description = enrichParts.join('; ') + ' | ' + partial.description;
+            } else if (enrichParts.length > 0) {
+                partial.description = enrichParts.join('; ');
+            }
+        }
+
         if (partial.subtotalAmount === 0 && partial.taxAmount === 0 && partial.amount > 0) {
             partial.subtotalAmount = partial.amount;
         }
