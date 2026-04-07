@@ -23,7 +23,7 @@ module.exports = {
       max_memory_restart: '1G',
       error_file: './automation/logs/invoice-imap-error.log',
       out_file: './automation/logs/invoice-imap-out.log',
-    }
+    },
     // NOTE: invoice-dlq-cron removed — imap_daemon.cjs now calls processDLQ() after every
     // poll cycle (every 5 min), making a separate PM2 cron process redundant.
     {
