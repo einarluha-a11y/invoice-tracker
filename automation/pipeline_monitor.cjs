@@ -1,20 +1,24 @@
 #!/usr/bin/env node
 /**
- * Pipeline Monitor — проверяет SOLUTION.md и REVIEW.md каждые 30 сек.
- * При изменении запускает Claude CLI для выполнения задания.
- * Работает как PM2 процесс — 24/7, перезапуск при падении.
+ * Pipeline Monitor — PM2 процесс, работает 24/7.
+ *
+ * 1. Проверяет SOLUTION.md / REVIEW.md каждые 30 сек → запускает Claude CLI
+ * 2. Проверяет PM2 логи на ошибки каждые 60 сек → отправляет баг-репорт в SOLUTION.md
+ *    → Perplexity ревьюит → Claude CLI исправляет → цикл
  */
 
 'use strict';
 
-const { execSync, spawn } = require('child_process');
+const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
 const PROJECT = '/Users/einarluha/Downloads/invoice-tracker';
 const STATE_SOL = '/tmp/.pipeline_solution_state';
 const STATE_REV = '/tmp/.pipeline_review_state';
-const POLL_INTERVAL = 30000; // 30 sec
+const STATE_ERR = '/tmp/.pipeline_error_state';
+const POLL_INTERVAL = 30000;  // 30 sec — tasks/reviews
+const ERROR_INTERVAL = 60000; // 60 sec — error monitoring
 
 function log(msg) {
     console.log(`[${new Date().toISOString().slice(11, 19)}] ${msg}`);
@@ -24,17 +28,13 @@ function gitFetch() {
     try {
         execSync('git fetch origin main --quiet', { cwd: PROJECT, timeout: 15000, stdio: 'pipe' });
         return true;
-    } catch {
-        return false;
-    }
+    } catch { return false; }
 }
 
 function gitShow(filePath) {
     try {
         return execSync(`git show origin/main:${filePath}`, { cwd: PROJECT, encoding: 'utf-8', timeout: 10000 });
-    } catch {
-        return '';
-    }
+    } catch { return ''; }
 }
 
 function readState(file) {
@@ -72,6 +72,114 @@ function runClaude(prompt) {
     }
 }
 
+// ── Git commit + push helper ─────────────────────────────────────────────────
+function gitCommitAndPush(file, message) {
+    try {
+        execSync(`git add ${file} && git commit -m "${message}" && git push origin HEAD:main`, {
+            cwd: PROJECT, timeout: 30000, stdio: 'pipe'
+        });
+        return true;
+    } catch (err) {
+        // If behind remote, pull and retry
+        try {
+            execSync('git pull origin main --rebase', { cwd: PROJECT, timeout: 15000, stdio: 'pipe' });
+            execSync(`git add ${file} && git commit -m "${message}" && git push origin HEAD:main`, {
+                cwd: PROJECT, timeout: 30000, stdio: 'pipe'
+            });
+            return true;
+        } catch {
+            log('❌ Git push failed: ' + (err.message || '').slice(0, 100));
+            return false;
+        }
+    }
+}
+
+// ── PM2 Error Monitor ────────────────────────────────────────────────────────
+function checkPm2Errors() {
+    const CRITICAL_PATTERNS = [
+        /Cannot find module/i,
+        /SyntaxError/i,
+        /TypeError.*is not a function/i,
+        /FATAL|CRASH/i,
+        /storage\/invalid-argument/i,
+        /ECONNREFUSED.*firestore/i,
+    ];
+    // Ignore patterns (known non-critical)
+    const IGNORE_PATTERNS = [
+        /AUTHENTICATIONFAILED/i,  // known bad IMAP cred in root .env
+        /Invalid credentials/i,
+    ];
+
+    const processes = ['invoice-api', 'invoice-imap'];
+    const errors = [];
+
+    for (const proc of processes) {
+        try {
+            const logs = execSync(
+                `pm2 logs ${proc} --lines 20 --nostream --err 2>/dev/null`,
+                { cwd: PROJECT, encoding: 'utf-8', timeout: 5000 }
+            );
+            for (const line of logs.split('\n')) {
+                if (IGNORE_PATTERNS.some(p => p.test(line))) continue;
+                if (CRITICAL_PATTERNS.some(p => p.test(line))) {
+                    const matched = CRITICAL_PATTERNS.find(p => p.test(line));
+                    errors.push({ process: proc, error: line.trim().slice(0, 200), pattern: matched.toString() });
+                }
+            }
+        } catch { /* pm2 logs failed — skip */ }
+    }
+
+    // Also check restart count — too many restarts = crash loop
+    try {
+        const list = execSync('pm2 jlist', { cwd: PROJECT, encoding: 'utf-8', timeout: 5000 });
+        const procs = JSON.parse(list);
+        for (const p of procs) {
+            if (processes.includes(p.name) && p.pm2_env.restart_time > 20) {
+                errors.push({
+                    process: p.name,
+                    error: `Crash loop: ${p.pm2_env.restart_time} restarts`,
+                    pattern: 'restart_count'
+                });
+            }
+        }
+    } catch { /* ignore */ }
+
+    return errors;
+}
+
+function submitBugReport(errors) {
+    const errorSummary = errors.map(e => `- **${e.process}**: ${e.error}`).join('\n');
+    const bugReport = `# SOLUTION
+
+PHASE: BUGFIX
+ROUND: 1
+TASK: PM2 автоматический баг-репорт — критические ошибки
+
+## ОШИБКИ В PM2 ЛОГАХ
+
+${errorSummary}
+
+## ЗАДАНИЕ
+
+Проанализируй ошибки выше. Найди причину в коде, исправь, проверь syntax (node --check), закоммить и запуши.
+После исправления добавь DEPLOY_STATUS: OK в конец этого файла.
+
+## Верификация
+- \`node --check\` всех изменённых файлов
+- PM2 процессы стабильны (0 рестартов за 1 минуту)
+`;
+
+    const solutionPath = path.join(PROJECT, '_agents/pipeline/SOLUTION.md');
+    fs.writeFileSync(solutionPath, bugReport);
+
+    if (gitCommitAndPush('_agents/pipeline/SOLUTION.md', 'pipeline-monitor: auto bug report from PM2 errors')) {
+        log('🐛 Баг-репорт отправлен в SOLUTION.md');
+        return true;
+    }
+    return false;
+}
+
+// ── Poll tasks/reviews ───────────────────────────────────────────────────────
 async function pollOnce() {
     if (!gitFetch()) return;
 
@@ -91,7 +199,7 @@ async function pollOnce() {
             `После: node --check, DEPLOY_STATUS: OK в SOLUTION.md, коммит, пуш. Русский, коротко.`
         );
         if (ok) {
-            writeState(STATE_SOL, solState); // записать стейт ТОЛЬКО после успеха
+            writeState(STATE_SOL, solState);
         } else {
             log('⏳ Задание не выполнено — повторю на следующем цикле');
         }
@@ -117,21 +225,40 @@ async function pollOnce() {
             );
             if (!ok) {
                 log('⏳ Исправления не выполнены — повторю на следующем цикле');
-                return; // не записывать стейт
+                return;
             }
         }
         writeState(STATE_REV, revState);
     }
 }
 
+// ── Poll PM2 errors ──────────────────────────────────────────────────────────
+function pollErrors() {
+    const errors = checkPm2Errors();
+    if (errors.length === 0) return;
+
+    // Dedup: don't report same error twice
+    const errorKey = errors.map(e => e.error.slice(0, 50)).sort().join('|');
+    const savedErr = readState(STATE_ERR);
+    if (errorKey === savedErr) return;
+
+    log(`🐛 Найдено ${errors.length} критических ошибок в PM2`);
+    errors.forEach(e => log(`  ${e.process}: ${e.error.slice(0, 100)}`));
+
+    if (submitBugReport(errors)) {
+        writeState(STATE_ERR, errorKey);
+    }
+}
+
 // ── Main loop ────────────────────────────────────────────────────────────────
-log('Pipeline monitor started (poll every 30s)');
+log('Pipeline monitor started (tasks: 30s, errors: 60s)');
 
 // Init states if missing
 if (!readState(STATE_SOL)) {
     gitFetch();
     const sol = parsePhaseRound(gitShow('_agents/pipeline/SOLUTION.md'), 'solution');
-    writeState(STATE_SOL, `SOLUTION:${sol.phase}:${sol.round}`);
+    const task = (gitShow('_agents/pipeline/SOLUTION.md').match(/^TASK:\s*(.+)/m) || [])[1] || '';
+    writeState(STATE_SOL, `SOLUTION:${sol.phase}:${sol.round}:${task.slice(0, 50)}`);
 }
 if (!readState(STATE_REV)) {
     gitFetch();
@@ -140,4 +267,5 @@ if (!readState(STATE_REV)) {
 }
 
 setInterval(pollOnce, POLL_INTERVAL);
-pollOnce(); // первый запуск сразу
+setInterval(pollErrors, ERROR_INTERVAL);
+pollOnce();
