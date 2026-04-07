@@ -2,52 +2,30 @@
 
 PHASE: ARCHITECTURE
 ROUND: 1
-TASK: Мультипользовательский режим (Master / Admin / User)
+TASK: Merit Aktiva интеграция — тестирование с реальными credentials
 
 ## ЗАДАНИЕ
 
-Реализовать систему ролей для инвойс-трекера:
+Настроить и протестировать интеграцию с Merit Aktiva API:
 
-1. **Firestore Security Rules** (`firestore.rules`)
-2. **AuthContext.tsx** — три роли: master / admin / user
-3. **Login.tsx** — выбор аккаунта перед входом
-4. **useCompanies.ts** — фильтрация по аккаунту
-5. **App.tsx** — AccountSelector для мастера
+1. **Добавить credentials в Railway** (`RAILWAY_MERIT_AKTIVA_*` env vars)
+2. **automation/test_merit_aktiva.cjs** — LIVE тест с реальными данными:
+   - Запросить последние 10 транзакций
+   - Сохранить в `bank_transactions` (с тегом `merit_aktiva`)
+   - Проверить reconciliation с существующими invoices
+3. **automation/merit_aktiva_agent.cjs** — запустить 1 раз в день (cron):
+   - Импорт новых транзакций (с `since` = last_import_time)
+   - Авто-матчинг с invoices по amount+vendor
+   - Лог в `memory/merit_aktiva.log`
+4. **PM2 config** — добавить `merit_aktiva_agent` в cron (0 9 * * *)
+5. **useBankTransactions.ts** — фильтр по source='merit_aktiva'
+6. **InvoiceTable.tsx** — колонка "Merit Aktiva" (match status)
 
-## ВЫПОЛНЕНО
+Создать тестовый аккаунт Merit Aktiva, получить API ключи.
 
-### 1. `firestore.rules` — Security Rules для мультипользовательского режима
-- `isMaster()` — проверка `master_users/{uid}`
-- `isAccountMember(accountId)` — проверка `accounts/{accountId}/users/{uid}`
-- `isAccountAdmin(accountId)` — проверка role == 'admin'
-- Коллекции `accounts/{id}`, `accounts/{id}/users/{id}`, `accounts/{id}/companies/{id}` защищены по ролям
-- Мастер имеет доступ ко всему; admin — к своему аккаунту; user — только чтение
-
-### 2. `src/context/AuthContext.tsx` — логика трёх ролей
-- После signInWithGoogle: проверка `master_users/{uid}` → role='master'
-- Иначе: `accounts/{accountId}/users/{uid}` → role из документа ('admin'|'user')
-- Нет доступа → signOut + сообщение "Нет доступа к аккаунту"
-- Контекст: `currentAccountId`, `userRole`, `isMaster`, `availableAccounts`, `selectAccount()`
-- Мастер после входа видит AccountSelector (список всех accounts/)
-
-### 3. `src/components/Login.tsx` — выбор аккаунта перед входом
-- Input с datalist autocomplete по `accounts/` коллекции (только поле `name`)
-- Кнопка "Sign in with Google" — только если аккаунт выбран
-- Кнопка "Войти как мастер" — без выбора аккаунта
-- Выбранный accountId сохраняется в pendingAccountIdRef
-
-### 4. `src/hooks/useCompanies.ts` — фильтрация по аккаунту
-- Путь: `accounts/{currentAccountId}/companies/`
-- Fallback на старый путь `companies/` если account-коллекция пуста
-- CRUD: только master и admin (canWrite = isMaster || userRole === 'admin')
-
-### 5. `src/App.tsx` — AccountSelector для мастера
-- Мастер без выбранного аккаунта видит экран AccountSelector
-- В header: dropdown для переключения аккаунта мастером
-
-### Верификация
-- `npm run build` — ✅ (379 modules, без TypeScript ошибок)
-- `node --check automation/merit_aktiva_agent.cjs` — ✅
-- `node --check automation/test_merit_aktiva.cjs` — ✅
-
-DEPLOY_STATUS: OK
+## Верификация
+- `railway variables list | grep MERIT` — credentials установлены
+- `railway run node automation/test_merit_aktiva.cjs` — 10+ транзакций в Firestore
+- `railway run node automation/merit_aktiva_agent.cjs` — лог без ошибок
+- UI: таблица показывает Merit Aktiva транзакции + матчи
+- `npm run build` — без ошибок

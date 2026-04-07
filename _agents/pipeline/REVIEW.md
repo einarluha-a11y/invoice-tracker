@@ -1,27 +1,16 @@
-# REVIEW от Perplexity — 2026-04-07 14:56 UTC
-<!-- phase: INTEGRATION | round: 2 -->
+# REVIEW от Perplexity — 2026-04-07 15:00 UTC
+<!-- phase: ARCHITECTURE | round: 1 -->
 
-ВЕРДИКТ: ✅ **РЕШЕНИЕ ПРИНЯТО**
-
-ОЦЕНКА: **8/10**
-
-ЗАМЕЧАНИЯ:
-
-1. **Аутентификация** — правильно реализована HMAC-SHA256 с ApiId + ApiKey[8]. Сигнатура считается из ApiID+timestamp+RequestJSON[5].
-
-2. **Endpoint** — используется `/getbankstatement` для выгрузки банковских выписок[3]. Проверь, что URL соответствует локализации (Estonian: `https://aktiva.merit.ee/api/v1/` или `https://aktiva.merit.ee/api/v2/`)[1].
-
-3. **Rate limiting** — exponential backoff (2s/4s/8s) логичен, но Merit не публикует точные лимиты. Документация говорит только "rate-limited if too many calls within short period"[5]. Твой подход консервативен — хорошо.
-
-4. **Парсинг European numbers** — "1.234,56" → 1234.56 корректен для эстонской/польской локализации[5] (точка как разделитель тысяч, запятая как decimal).
-
-5. **Кэширование при timeout** — fallback на `merit_aktiva_cache.json` при >30s — разумно, но убедись, что кэш не используется как источник истины для reconciliation. Это только подстраховка.
-
-6. **Логирование ошибок** — 401 в `_agents/merit_aktiva_errors.log` + Firestore `config/integration_logs` — дублирование хорошее для аудита.
-
-7. **Невалидный JSON** — сохранение raw response в `_agents/raw_responses/` поможет диагностировать проблемы API.
-
-**Рекомендация**: После первого успешного запуска `node automation/test_merit_aktiva.cjs` запусти Repairman с флагом `--audit-paid`, чтобы сверить загруженные платежи с инвойсами в Firestore.
+ВЕРДИКТ: CHANGES_NEEDED  
+ОЦЕНКА: Хорошая структура ролей (master/admin/user) с правильной фильтрацией по аккаунтам. Security Rules логично разделяют доступ. Фильтрация в useCompanies.ts с fallback на legacy данные — умно для миграции.  
+ЗАМЕЧАНИЯ:  
+1. **Chief Accountant Charter**: нет упоминания поддержки мультипользовательского режима — это расширение за пределы базового трекинга инвойсов для одного бухгалтера. Нужно подтверждение от Accountant агента.  
+2. **Противоречия с архитектурой**: automation агенты (repairman, merit_aktiva) работают с глобальными коллекциями `companies/`, `invoices/` без accountId — сломается после миграции. Добавить accountId в их пути или dual-read логику.  
+3. **Edge cases не покрыты**: что если user входит в несколько accounts? Нет механизма logout из текущего account. Мастер без availableAccounts — зациклится на AccountSelector.  
+4. **Баги в Login.tsx**: datalist по `accounts/` — race condition при медленном Firestore (пустой список). pendingAccountIdRef не очищается после signOut.  
+5. **App.tsx**: dropdown в header не проверяет isMaster — обычный user увидит пустой список. Нет loading state для AccountSelector.  
+6. **Firestore Rules**: нет правил для глобальных коллекций (`invoices/`, `bank_transactions/`) — legacy данные уязвимы. Добавить `match /invoices/{id}` с проверкой isMaster().  
+7. **Миграция данных**: нет скрипта для переноса существующих companies в `accounts/{defaultAccountId}/companies/`. Без него пустые списки после деплоя.
 
 ---
 *Автоматическое ревью через GitHub Actions (.github/workflows/perplexity_review.yml)*
