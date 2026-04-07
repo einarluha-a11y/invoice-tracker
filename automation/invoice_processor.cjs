@@ -3,6 +3,7 @@ const { reportError } = require('./error_reporter.cjs');
 const { safetyNetSave } = require('./safety_net.cjs');
 const { processInvoiceWithDocAI } = require('./document_ai_service.cjs');
 const { validateAndTeach } = require('./teacher_agent.cjs');
+const { uploadInvoiceToPDF, buildDropboxFolderPath } = require('./dropbox_service.cjs');
 
 // Firebase Admin Initialization (Shared Core)
 const { admin, db, bucket } = require('./core/firebase.cjs');
@@ -354,48 +355,32 @@ async function writeToFirestore(dataArray) {
 
         console.log(`[Firestore] ${dataArray.length} invoice(s) successfully written via Transaction!`);
 
-        // --- ZAPIER WEBHOOKS DISPATCH ---
-        for (const payload of webhooksToSend) {
-            try {
-                const cId = payload.companyId;
-                const companyDoc = await db.collection('companies').doc(cId).get();
-                if (companyDoc.exists) {
-                    const compData = companyDoc.data();
-                    if (compData.zapierWebhookUrl) {
-                        console.log(`[Zapier] Sending webhook to Zapier for Invoice ${payload.invoiceId}...`);
-                        payload.companyName = compData.name || '';
+        // --- DROPBOX UPLOAD ---
+        if (process.env.DROPBOX_ACCESS_TOKEN) {
+            for (const payload of webhooksToSend) {
+                try {
+                    if (!payload.fileUrl) continue;
+                    const cId = payload.companyId;
+                    const companyDoc = cId ? await db.collection('companies').doc(cId).get() : null;
+                    const companyName = companyDoc?.exists ? (companyDoc.data().name || '') : '';
 
-                        // --- DYNAMIC DROPBOX ROUTING ---
-                        let folderBasePath = "UNKNOWN_COMPANY";
-                        let folderPrefix = "UK";
+                    const folderPath = buildDropboxFolderPath(companyName, payload.invoiceYear, payload.invoiceMonth);
 
-                        const compNameUpper = payload.companyName.toUpperCase();
-                        if (compNameUpper.includes("IDEACOM")) {
-                            folderBasePath = "IDEACOM";
-                            folderPrefix = "IC";
-                        } else if (compNameUpper.includes("GLOBAL TECHNICS")) {
-                            folderBasePath = "GLOBAL TECHNICS";
-                            folderPrefix = "GT";
-                        }
+                    // Скачать PDF из Firebase Storage и загрузить в Dropbox
+                    const { default: fetch } = await import('node-fetch');
+                    const pdfRes = await fetch(payload.fileUrl);
+                    if (!pdfRes.ok) throw new Error(`Failed to download PDF: ${pdfRes.status}`);
+                    const pdfBuffer = Buffer.from(await pdfRes.arrayBuffer());
 
-                        // e.g. /GLOBAL TECHNICS/GT_ARVED/GT_arved_meile/GT_arved_meile_2026/GT_arved_meile_2026_3
-                        payload.dropboxFolderPath = `/${folderBasePath}/${folderPrefix}_ARVED/${folderPrefix}_arved_meile/${folderPrefix}_arved_meile_${payload.invoiceYear}/${folderPrefix}_arved_meile_${payload.invoiceYear}_${payload.invoiceMonth}`;
-
-                        const response = await fetch(compData.zapierWebhookUrl, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(payload)
-                        });
-
-                        if (response.ok) {
-                            console.log(`[Zapier] Webhook delivered successfully for ${payload.invoiceId}`);
-                        } else {
-                            console.error(`[Zapier Error] Zapier responded with ${response.status} ${response.statusText}`);
-                        }
-                    }
+                    const dropboxPath = await uploadInvoiceToPDF(payload.invoiceId, pdfBuffer, folderPath);
+                    console.log(`[Dropbox] ✅ Uploaded ${payload.invoiceId} → ${dropboxPath}`);
+                } catch (dbxErr) {
+                    console.error(`[Dropbox] ❌ Upload failed for ${payload.invoiceId}:`, dbxErr.message);
                 }
-            } catch (zErr) {
-                console.error(`[Zapier Error] Failed to dispatch webhook for ${payload.invoiceId}:`, zErr.message);
+            }
+        } else {
+            if (webhooksToSend.length > 0) {
+                console.warn(`[Dropbox] ⚠️  DROPBOX_ACCESS_TOKEN not set — skipping upload for ${webhooksToSend.length} invoice(s)`);
             }
         }
 
