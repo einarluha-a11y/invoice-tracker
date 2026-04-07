@@ -1,30 +1,20 @@
-# REVIEW от Perplexity — 2026-04-07 18:44 UTC
+# REVIEW от Perplexity — 2026-04-07 19:03 UTC
 <!-- phase: BUGFIX | round: 1 -->
 
 ВЕРДИКТ: НЕПРАВИЛЬНОЕ РЕШЕНИЕ  
 ОЦЕНКА: 2/10  
-ЗАМЕЧАНИЯ: 
-
-1. **Нет анализа кода** — не найдены файлы с `cleanVendorNameXYZ`, не показан поиск по коду (`grep -r cleanVendorNameXYZ src/`)
-2. **Не выполнена верификация** — нет результатов `node --check`, нет проверки PM2 (`pm2 status`, `pm2 monit`)
-3. **Не добавлен DEPLOY_STATUS: OK** — файл SOLUTION.md не обновлён
-4. **Не закоммичено/запушено** — нет git операций
-5. **Search results нерелевантны** — PM2 общие гайды вместо анализа конкретных ошибок проекта
-6. **Неправильный подход** — решение должно быть: grep → fix → node --check → git commit/push → DEPLOY_STATUS: OK
-
-**Что нужно было сделать:**
-```
-grep -r "cleanVendorNameXYZ" src/
-grep -r "storage/invalid-argument" src/
-node --check src/**/*.ts
-git add .
-git commit -m "fix: cleanVendorNameXYZ + storage error"
-git push
-echo "DEPLOY_STATUS: OK" >> _agents/pipeline/SOLUTION.md
-git add _agents/pipeline/SOLUTION.md
-git commit -m "update: DEPLOY_STATUS OK"
-git push
-```
+ЗАМЕЧАНИЯ:  
+- **Неправильный подход**: PM2 crash loop вызван **Firestore ошибкой** "Transaction too big" в коде `invoice-imap` и `invoice-api`, а не PM2 настройками[1][2]. Нужно найти код транзакций >500 операций и разбить на батчи по 400.  
+- **Нет анализа кода**: Не прочитаны файлы проекта (`src/**/*.ts`, `automation/*.cjs`) на предмет `db.runTransaction()` или `batch.write()` с большими массивами[3].  
+- **Отсутствует поиск**: Не выполнены `grep -r "Transaction" src/`, `grep -r "batch" src/`, анализ git blame на свежие коммиты.  
+- **Не выполнена верификация**: Нет `node --check`, нет проверки PM2 `pm2 list` (0 restarts).  
+- **Что нужно было сделать**:  
+  1. `grep -r "Transaction\|batch" src/ automation/` → найти проблемный код  
+  2. Разбить transaction на chunks по 400 docs  
+  3. `node --check *.ts *.cjs`  
+  4. `git commit -m "fix: split large Firestore transactions" && git push`  
+  5. Добавить `DEPLOY_STATUS: OK`  
+- **Рекомендация**: Перечитать логи `railway logs invoice-imap --tail`, найти точный stack trace, исправить код транзакций.
 
 ---
 *Автоматическое ревью через GitHub Actions (.github/workflows/perplexity_review.yml)*
