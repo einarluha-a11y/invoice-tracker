@@ -101,9 +101,10 @@ function applyEstonianRegexFallback(rawText, result) {
         if (m) { const v = cleanNum(m[1]); if (v > 0) { result.subtotalAmount = v; filled.push('subtotalAmount'); } }
     }
 
-    // taxAmount: "Käibemaks 24% 7,98" or "Käibemaks 7.98"
+    // taxAmount: "Käibemaks 24% 7,98" or "Käibemaks 7.98" or "Käibemaks 20%:\n4.95"
     if (!result.taxAmount || result.taxAmount === 0) {
-        const m = t.match(/Käibemaks\s+(?:\d+%\s+)?([\d\s,.]+)/i);
+        const m = t.match(/Käibemaks\s+(?:\d+%[:\s]*)?([\d\s,.]+)/i)
+               || t.match(/Käibemaks\s+\d+%\s*:?\s*\n?\s*([\d,.]+)/i);
         if (m) { const v = cleanNum(m[1]); if (v > 0) { result.taxAmount = v; filled.push('taxAmount'); } }
     }
 
