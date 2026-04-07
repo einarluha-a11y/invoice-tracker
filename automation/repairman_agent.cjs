@@ -191,9 +191,8 @@ function detectProblems(d) {
     // Absurd tax: tax >= amount or tax > subtotal (extraction error)
     const hasAbsurdTax = Number(d.taxAmount) > 0 && Number(d.amount) > 0 &&
         (Number(d.taxAmount) >= Number(d.amount) || Number(d.taxAmount) > Number(d.subtotalAmount));
-    // Math mismatch: amount significantly differs from sub + tax (wrong extraction)
-    const hasMathMismatch = Number(d.subtotalAmount) > 0 && Number(d.taxAmount) > 0 && Number(d.amount) > 0 &&
-        Math.abs(Number(d.amount) - Number(d.subtotalAmount) - Number(d.taxAmount)) > 5;
+    // Math mismatch removed — sub + tax ≠ total is NORMAL for leasing, mixed-VAT invoices.
+    // Buhgalterija cares only about total and tax, not arithmetic consistency.
 
     const reasons = [];
     if (mode === 'skeletons') {
@@ -210,7 +209,6 @@ function detectProblems(d) {
     if (hasMissingDescription)               reasons.push('Missing Description');
     if (hasZeroTaxOnTaxableAmount && hasMissingFile) reasons.push('Zero tax but amount = subtotal');
     if (hasAbsurdTax)                            reasons.push('Absurd tax (tax >= amount)');
-    if (hasMathMismatch && !hasAbsurdTax)        reasons.push('Math mismatch (amount ≠ sub + tax)');
     return reasons;
 }
 
@@ -513,9 +511,7 @@ async function repairInvoice(invoiceId, invoiceData) {
     const finalSub = updates.subtotalAmount ?? newData.subtotalAmount ?? invoiceData.subtotalAmount ?? 0;
     const finalTax = updates.taxAmount ?? newData.taxAmount ?? invoiceData.taxAmount ?? 0;
     const qualityIssues = [];
-    if (finalAmount > 0 && finalSub > 0 && Math.abs(finalSub + finalTax - finalAmount) > 0.50) {
-        qualityIssues.push(`Math: ${finalSub} + ${finalTax} = ${(finalSub + finalTax).toFixed(2)} ≠ ${finalAmount}`);
-    }
+    // Math check removed — sub + tax ≠ total is normal for leasing/mixed-VAT invoices
     if (!updates.vendorName && isEmpty(newData.vendorName) && isEmpty(invoiceData.vendorName)) {
         qualityIssues.push('Missing vendor name');
     }

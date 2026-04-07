@@ -307,8 +307,13 @@ async function processInvoiceWithDocAI(buffer, mimeType = 'application/pdf', sup
         }
 
         // Build description from first line item
-        const docDescription = (lineItems.length > 0 && lineItems[0].description)
-            ? lineItems[0].description
+        // Collect ALL line items into description (buhgalterija needs full details)
+        const docDescription = lineItems.length > 0
+            ? lineItems.map(li => {
+                const desc = li.description || '';
+                const amt = li.amount ? ` (${li.amount} ${currency || 'EUR'})` : '';
+                return desc + amt;
+            }).filter(s => s.trim()).join('; ')
             : '';
 
         // Assemble partial result for Шаги 2-3
@@ -353,10 +358,7 @@ async function processInvoiceWithDocAI(buffer, mimeType = 'application/pdf', sup
 
         // --- Validation warnings ---
         const validationWarnings = [];
-        const computedTotal = cleanNum((partial.subtotalAmount + partial.taxAmount).toFixed(2));
-        if (partial.amount > 0 && partial.subtotalAmount > 0 && Math.abs(computedTotal - partial.amount) > 0.05) {
-            validationWarnings.push(`Math mismatch: ${partial.subtotalAmount} + ${partial.taxAmount} != ${partial.amount}`);
-        }
+        // Math check removed — sub + tax ≠ total is normal (leasing, mixed VAT)
         if ((confidenceScores.total || 0) < 0.6 || (confidenceScores.vendor || 0) < 0.6) {
             validationWarnings.push(`Low confidence: total=${(confidenceScores.total||0).toFixed(2)}, vendor=${(confidenceScores.vendor||0).toFixed(2)}`);
         }

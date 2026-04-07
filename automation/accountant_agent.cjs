@@ -587,13 +587,7 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
         if (docAiPayload.taxAmount > 0 && (!docAiPayload.supplierVat || docAiPayload.supplierVat === 'Not_Found')) {
             aiAnalysis.generatedWarnings.push('INFO: Tax charged but supplier VAT number not found on document.');
         }
-        // Rule 3: Math check subtotal + tax = total
-        if (docAiPayload.subtotalAmount > 0 && docAiPayload.taxAmount > 0) {
-            const computed = cleanNum((docAiPayload.subtotalAmount + docAiPayload.taxAmount).toFixed(2));
-            if (Math.abs(computed - docAiPayload.amount) > 0.05) {
-                aiAnalysis.generatedWarnings.push(`INFO: Math check — ${docAiPayload.subtotalAmount} + ${docAiPayload.taxAmount} = ${computed} ≠ ${docAiPayload.amount}`);
-            }
-        }
+        // Rule 3: Math check removed — sub + tax ≠ total is normal (leasing, mixed VAT rates)
 
         console.log(`[Accountant Agent] 📝 Rule-based audit done. Status: ${aiAnalysis.recommendedStatus}`);
         

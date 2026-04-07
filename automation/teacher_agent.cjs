@@ -761,22 +761,14 @@ async function validateAndTeach(invoiceData, companyId) {
             }
         }
 
-        // Check math: subtotal + tax ≈ amount
+        // Math check removed — sub + tax ≠ total is NORMAL for leasing/mixed-VAT invoices.
+        // Бухгалтерию интересует только total и tax, не арифметическая сходимость.
+        // Currency mismatch detection: only if subtotal wildly differs from amount (>2x or <0.5x)
         let mathWrong = false;
         if (invoice.amount > 0 && invoice.subtotalAmount > 0) {
-            const computed = cleanNum((invoice.subtotalAmount + invoice.taxAmount).toFixed(2));
             const ratio = invoice.subtotalAmount / invoice.amount;
-            if (Math.abs(computed - invoice.amount) > 0.05) {
-                if (ratio > 1.5 || ratio < 0.5) {
-                    mathWrong = true; // wildly off — likely wrong currency
-                } else {
-                    corrections.push(`WARNING: Math mismatch: ${invoice.subtotalAmount} + ${invoice.taxAmount} = ${computed} ≠ ${invoice.amount}`);
-                    // Non-blocking flag for UI badge — does not affect status
-                    invoice.mathMismatch = true;
-                }
-            } else if (invoice.mathMismatch) {
-                // Math now correct — clear stale flag
-                delete invoice.mathMismatch;
+            if (ratio > 2 || ratio < 0.3) {
+                mathWrong = true; // wildly off — likely wrong currency extraction
             }
         }
 
