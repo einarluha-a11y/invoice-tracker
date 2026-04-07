@@ -331,7 +331,10 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                             <th onClick={() => handleSort('status')} style={{ width: '10%' }}>
                                 <div className="th-content">{t('table.status')} <span>{renderSortIcon('status')}</span></div>
                             </th>
-                            <th style={{ width: '14%', minWidth: '120px' }}>
+                            <th style={{ width: '8%', minWidth: '80px', textAlign: 'center' }}>
+                                <div className="th-content">Merit</div>
+                            </th>
+                            <th style={{ width: '12%', minWidth: '120px' }}>
                                 <div className="th-content">{t('table.actions')}</div>
                             </th>
                         </tr>
@@ -396,18 +399,19 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                                         )}
                                     </div>
                                 </td>
-                                <td data-label={t('table.status')} style={{ minWidth: '150px' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                        <span style={{ whiteSpace: 'nowrap' }} className={`status-badge ${getStatusClass(invoice.status)}`}>
-                                            {invoice.status === 'Paid' ? t('filters.paid') : invoice.status === 'Pending' ? t('filters.pending') : t('filters.overdue')}
-                                        </span>
-                                        {invoice.meritSyncedAt && (
-                                            <span title="Merit ✓" style={{ color: '#4caf50', fontSize: '0.75em', fontWeight: 600 }}>M✓</span>
-                                        )}
-                                        {invoice.meritSyncError && !invoice.meritSyncedAt && (
-                                            <span title={invoice.meritSyncError} style={{ color: '#ff5252', fontSize: '0.75em', fontWeight: 600 }}>M⚠</span>
-                                        )}
-                                    </div>
+                                <td data-label={t('table.status')} style={{ minWidth: '100px' }}>
+                                    <span style={{ whiteSpace: 'nowrap' }} className={`status-badge ${getStatusClass(invoice.status)}`}>
+                                        {invoice.status === 'Paid' ? t('filters.paid') : invoice.status === 'Pending' ? t('filters.pending') : t('filters.overdue')}
+                                    </span>
+                                </td>
+                                <td data-label="Merit" style={{ textAlign: 'center', fontSize: '0.8rem' }}>
+                                    {invoice.meritSyncedAt ? (
+                                        <span title={`Synced: ${invoice.meritInvoiceId || '—'}`} style={{ color: '#4caf50', fontWeight: 700 }}>✓</span>
+                                    ) : invoice.meritSyncError ? (
+                                        <span title={invoice.meritSyncError} style={{ color: '#ff5252', fontWeight: 700, cursor: 'help' }}>⚠</span>
+                                    ) : (
+                                        <span style={{ color: 'var(--text-secondary)' }}>—</span>
+                                    )}
                                 </td>
                                 <td data-label={t('table.actions')}>
                                     <div className="action-buttons">
@@ -438,7 +442,7 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                             </tr>
                             {expandedRows.has(invoice.id) && (
                                 <tr className="expanded-child-row">
-                                    <td colSpan={7} style={{ padding: 0, borderTop: 'none' }}>
+                                    <td colSpan={8} style={{ padding: 0, borderTop: 'none' }}>
                                         <div className="expanded-content">
                                             <div className="financial-summary">
                                                 <span><strong>Subtotal:</strong> {formatCurrency(invoice.subtotalAmount || 0, invoice.originalForeignCurrency || invoice.currency)}</span>

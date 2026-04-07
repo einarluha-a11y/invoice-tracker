@@ -1,12 +1,15 @@
-// test_merit_aktiva.cjs — тест Merit Aktiva API (dry-run, без сохранения)
-// Запуск: node automation/test_merit_aktiva.cjs
+// test_merit_aktiva.cjs — тест Merit Aktiva API
+// Запуск:
+//   node automation/test_merit_aktiva.cjs           → dry-run (только вывод)
+//   node automation/test_merit_aktiva.cjs --live    → сохранить первые 10 транзакций в bank_transactions
 
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env.pipeline') });
 
-const { fetchBankStatements, parseEuropeanNumber } = require('./merit_aktiva_agent.cjs');
+const { fetchBankStatements, parseEuropeanNumber, saveToFirestore } = require('./merit_aktiva_agent.cjs');
 
-// Последние 7 дней
+const LIVE = process.argv.includes('--live');
+
 function dateStr(offsetDays = 0) {
     const d = new Date();
     d.setDate(d.getDate() + offsetDays);
@@ -17,7 +20,7 @@ async function runTest() {
     const endDate   = dateStr(0);
     const startDate = dateStr(-7);
 
-    console.log(`\n=== Merit Aktiva API Test ===`);
+    console.log(`\n=== Merit Aktiva API Test (${LIVE ? 'LIVE' : 'dry-run'}) ===`);
     console.log(`Period: ${startDate} → ${endDate}`);
     console.log(`ApiId:  ${process.env.MERIT_AKTIVA_USERNAME || '(not set)'}`);
     console.log(`ApiKey: ${process.env.MERIT_AKTIVA_PASSWORD ? '***' : '(not set)'}`);
@@ -45,23 +48,22 @@ async function runTest() {
         process.exit(0);
     }
 
-    // Validation checks
     let ok = true;
 
     // 1. Check date format
     const badDates = transactions.filter(t => !/^\d{4}-\d{2}-\d{2}$/.test(t.date));
     if (badDates.length) {
-        console.error(`FAIL: ${badDates.length} transactions have bad date format:`);
+        console.error(`FAIL: ${badDates.length} transactions have bad date format`);
         badDates.slice(0, 3).forEach(t => console.error(`  index=${t.index} date="${t.date}"`));
         ok = false;
     } else {
         console.log(`OK: all dates in ISO format (YYYY-MM-DD)`);
     }
 
-    // 2. Check amounts parsed correctly
+    // 2. Check amounts
     const zeroAmounts = transactions.filter(t => t.amount === 0);
     if (zeroAmounts.length > 0) {
-        console.warn(`WARN: ${zeroAmounts.length} transactions have amount=0 (check raw data)`);
+        console.warn(`WARN: ${zeroAmounts.length} transactions have amount=0`);
     } else {
         console.log(`OK: all amounts non-zero`);
     }
@@ -88,11 +90,25 @@ async function runTest() {
     }
     if (parseOk) console.log('OK: European number format parsing correct');
 
-    // Print sample transactions
+    // Print sample (first 5)
     console.log('\n--- Sample transactions (first 5) ---');
     transactions.slice(0, 5).forEach((t, i) => {
-        console.log(`[${i+1}] ${t.date}  ${t.currency} ${t.amount.toFixed(2).padStart(10)}  "${t.description.slice(0, 50)}"`);
+        console.log(`[${i+1}] ${t.date}  ${t.currency} ${t.amount.toFixed(2).padStart(10)}  "${(t.description || '').slice(0, 50)}"`);
     });
+
+    // Save first 10 to Firestore if --live
+    if (LIVE) {
+        const companyId = process.env.MERIT_AKTIVA_COMPANY_ID || '';
+        const first10 = transactions.slice(0, 10);
+        console.log(`\nSaving first ${first10.length} transaction(s) to bank_transactions...`);
+        try {
+            const { saved, skipped } = await saveToFirestore(first10, companyId, false);
+            console.log(`Saved: ${saved}, Skipped (dup): ${skipped}`);
+        } catch (err) {
+            console.error('Firestore save FAILED:', err.message);
+            ok = false;
+        }
+    }
 
     console.log(`\n${ok ? '✓ TEST PASSED' : '✗ TEST FAILED'}`);
     process.exit(ok ? 0 : 1);
