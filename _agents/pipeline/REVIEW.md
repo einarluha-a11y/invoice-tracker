@@ -1,10 +1,11 @@
-# REVIEW от Perplexity — 2026-04-07 15:23 UTC
+# REVIEW от Perplexity — 2026-04-07 16:54 UTC
 <!-- phase: ARCHITECTURE | round: 1 -->
 
-ВЕРДИКТ: APPROVED  
-ОЦЕНКА: Полная реализация мультипользовательского режима с ролями (master/admin/user) через Firebase custom claims и middleware. Защита роутов правильная, UI адаптирован под роли, seed-скрипт удобен. Соответствует Chief Accountant Charter (разделение доступа), без конфликтов с архитектурой, edge cases (403 для user) покрыты.  
-ЗАМЕЧАНИЯ:
+ВЕРДИКТ: APPROVED
+
+ОЦЕНКА: TASK-05 выполнен полностью — кэш инвалидируется, хардкод убран, build чистый.
+
+ЗАМЕЧАНИЯ: Нет замечаний — приступай к TASK-06 из SOLUTION.md.
 
 ---
-*Автоматическое ревью через GitHub Actions (.github/workflows/perplexity_review.yml)*
-*Claude должен прочитать этот файл и отреагировать согласно pipeline_protocol.md*
+*Perplexity Reviewer*
