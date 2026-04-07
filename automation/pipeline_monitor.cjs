@@ -83,14 +83,18 @@ async function pollOnce() {
     const savedSol = readState(STATE_SOL);
 
     if (solState !== savedSol && sol.phase && sol.phase !== 'WAITING' && !solution.includes('DEPLOY_STATUS: OK')) {
-        writeState(STATE_SOL, solState);
         log(`📋 Новое задание: ${sol.phase} round ${sol.round}`);
-        runClaude(
+        const ok = runClaude(
             `Ты — автономный агент Invoice Tracker. Рабочая директория: ${PROJECT}. ` +
             `Прочитай _agents/pipeline/SOLUTION.md из origin/main (git show origin/main:_agents/pipeline/SOLUTION.md). ` +
             `Выполни задание. Соблюдай протоколы из CLAUDE.md. ` +
             `После: node --check, DEPLOY_STATUS: OK в SOLUTION.md, коммит, пуш. Русский, коротко.`
         );
+        if (ok) {
+            writeState(STATE_SOL, solState); // записать стейт ТОЛЬКО после успеха
+        } else {
+            log('⏳ Задание не выполнено — повторю на следующем цикле');
+        }
     } else if (solState !== savedSol) {
         writeState(STATE_SOL, solState);
     }
@@ -102,17 +106,21 @@ async function pollOnce() {
     const savedRev = readState(STATE_REV);
 
     if (revState !== savedRev && rev.phase && rev.round) {
-        writeState(STATE_REV, revState);
         const verdict = (review.match(/ВЕРДИКТ:\s*([A-Z_]+)/) || [])[1] || '';
         log(`📋 Ревью: ${rev.phase} round ${rev.round} — ${verdict}`);
 
         if (verdict.includes('CHANGES_NEEDED')) {
-            runClaude(
+            const ok = runClaude(
                 `Ты — автономный агент Invoice Tracker. Рабочая директория: ${PROJECT}. ` +
                 `Прочитай _agents/pipeline/REVIEW.md из origin/main. Вердикт: ${verdict}. ` +
                 `Прочитай замечания, исправь код, обнови SOLUTION.md (ROUND+1), запуши. Русский.`
             );
+            if (!ok) {
+                log('⏳ Исправления не выполнены — повторю на следующем цикле');
+                return; // не записывать стейт
+            }
         }
+        writeState(STATE_REV, revState);
     }
 }
 
