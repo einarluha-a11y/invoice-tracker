@@ -4,47 +4,35 @@ PHASE: ARCHITECTURE
 ROUND: 1
 TASK: TASK-02 — Фаза 2 Frontend мультипользовательский режим
 
-## ЗАДАНИЕ
+## ВЫПОЛНЕНО
 
-Реализуй три изменения во фронтенде. Не трогай backend — только src/.
+### 1. Login.tsx
+- Добавлен input "Название аккаунта" с HTML5 datalist autocomplete (данные из `accounts/`)
+- Кнопка "Sign in with Google" активна только при выбранном аккаунте
+- Кнопка "Войти как мастер" — вход без выбора аккаунта, AuthContext сам определяет master role
+- Выбранный accountId передаётся в `signInWithGoogle(accountId)`
 
-### 1. Login.tsx — поле выбора аккаунта
+### 2. AuthContext.tsx
+- `signInWithGoogle(accountId?)` принимает опциональный accountId (через ref, не state)
+- `onAuthStateChanged`: сначала проверяет `master_users/{uid}` → если есть, грузит все `accounts/`
+- Обычный пользователь: проверяет `accounts/{accountId}/users/{uid}` → role из документа
+- Нет доступа → signOut + authError
+- Persistence: accountId в localStorage (currentAccountId / masterSelectedAccount)
+- Новые поля контекста: currentAccountId, userRole, isMaster, availableAccounts, selectAccount
 
-Перед кнопкой Google Sign In добавить:
-- Input "Название аккаунта" с autocomplete по коллекции `accounts/` (только поле name)
-- Для мастера uid=MI9J2VBriwQ45jEMJ5tmbagfHm93 — показывать кнопку "Войти как мастер" (пропускает выбор аккаунта)
-- Сохранять выбранный accountId в локальный state до Google входа
+### 3. useCompanies.ts
+- Зависит от `currentAccountId` и `isMaster` из AuthContext
+- `getDocs(accounts/{accountId}/companies)` → если пусто, fallback на `companies/`
+- onSnapshot на выбранный путь, activePathRef для CRUD операций
+- addCompany/deleteCompany: бросают ошибку если `!canWrite` (canWrite = isMaster || role=admin)
 
-### 2. AuthContext.tsx — три роли
-
-После signInWithGoogle:
-1. Проверить uid в `master_users/{uid}` → role='master', isMaster=true
-2. Иначе: проверить `accounts/{selectedAccountId}/users/{uid}` → role из документа
-3. Если нет → signOut + authError: "Нет доступа к аккаунту. Обратитесь к администратору."
-
-Добавить в контекст:
-- currentAccountId: string | null
-- userRole: 'master' | 'admin' | 'user' | null
-- isMaster: boolean
-- availableAccounts: Account[] (только для мастера — список всех accounts/)
-- selectAccount(accountId: string): void — для мастера чтобы переключаться
-
-### 3. useCompanies.ts — фильтрация по аккаунту
-
-- Новый путь: `accounts/{currentAccountId}/companies/`
-- Для мастера: принимать accountId как параметр через selectAccount
-- CRUD addCompany/deleteCompany — только если isMaster || role === 'admin'
-- Backward compat: если accounts/{accountId}/companies/ пустой → fallback на `companies/`
-
-### 4. App.tsx — AccountSelector для мастера
-
-Если isMaster и не выбран accountId → показать AccountSelector компонент:
-- Список всех аккаунтов из availableAccounts
-- При выборе → selectAccount(id) → загрузить компании этого аккаунта
+### 4. App.tsx
+- Добавлен компонент `AccountSelector` — список кнопок из `availableAccounts`
+- Если `isMaster && !currentAccountId` → рендерит AccountSelector вместо дашборда
+- В хедере для мастера добавлен select для переключения аккаунтов
+- `selectAccount(id)` → сбрасывает selectedCompanyId, меняет currentAccountId
 
 ### Верификация
-- `npm run build` без TypeScript ошибок
-- `npm run dev` — войти как einar.luha@gmail.com
-- Мастер видит AccountSelector → выбирает Global Technics → видит инвойсы
-- Мастер переключается на Ideacom → видит инвойсы Ideacom
+- `npm run build` — ✅ без ошибок TypeScript
 
+DEPLOY_STATUS: OK

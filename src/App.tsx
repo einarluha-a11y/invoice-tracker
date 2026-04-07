@@ -12,9 +12,40 @@ import { InvoiceModal } from './components/InvoiceModal';
 import { AiChat } from './components/AiChat';
 import './App.css';
 
+function AccountSelector() {
+    const { availableAccounts, selectAccount } = useAuth();
+    return (
+        <div className="login-container">
+            <div className="login-card">
+                <h1 className="login-title" style={{ fontSize: '1.4rem' }}>Выберите аккаунт</h1>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '1rem' }}>
+                    {availableAccounts.map(acc => (
+                        <button
+                            key={acc.id}
+                            onClick={() => selectAccount(acc.id)}
+                            style={{
+                                padding: '0.75rem 1rem',
+                                borderRadius: 'var(--radius-md)',
+                                border: '1px solid var(--border-color)',
+                                background: 'var(--bg-secondary)',
+                                color: 'var(--text-primary)',
+                                fontSize: '0.95rem',
+                                cursor: 'pointer',
+                                textAlign: 'left',
+                            }}
+                        >
+                            {acc.name}
+                        </button>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+}
+
 function App() {
     const { t, i18n } = useTranslation();
-    const { user, loading: authLoading, logout, isFirebaseConfigured } = useAuth();
+    const { user, loading: authLoading, logout, isFirebaseConfigured, isMaster, currentAccountId, availableAccounts, selectAccount } = useAuth();
     const { companies, companiesLoading, companiesError } = useCompanies();
 
     const [selectedCompanyId, setSelectedCompanyId] = useState<string>('');
@@ -160,6 +191,11 @@ function App() {
         return <Login />;
     }
 
+    // Master must pick an account first
+    if (isMaster && !currentAccountId) {
+        return <AccountSelector />;
+    }
+
     // View Router
     if (view === 'settings') {
         return <Settings onBack={() => setView('dashboard')} />;
@@ -179,6 +215,17 @@ function App() {
                     <span>Invoice-<span className="header-accent">Tracker</span></span>
                 </h1>
                 <div className="header-controls" style={{ display: 'flex', gap: '1rem' }}>
+                    {isMaster && availableAccounts.length > 0 && (
+                        <select
+                            className="company-select"
+                            value={currentAccountId || ''}
+                            onChange={e => { selectAccount(e.target.value); setSelectedCompanyId(''); }}
+                        >
+                            {availableAccounts.map(acc => (
+                                <option key={acc.id} value={acc.id}>{acc.name}</option>
+                            ))}
+                        </select>
+                    )}
                     <select
                         className="company-select"
                         value={selectedCompanyId}
