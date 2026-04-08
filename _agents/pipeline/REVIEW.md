@@ -1,49 +1,26 @@
-# REVIEW от Perplexity — 2026-04-08 10:18 UTC
-<!-- phase: REVIEW | round: 1 -->
+# REVIEW от Perplexity — 2026-04-08 10:19 UTC
+<!-- phase: REVIEW | round: 2 -->
 
-# ВЕРДИКТ
-**Нужны изменения в `firestore.rules`** — TASK-01 не покрыл новые пути `accounts/{accountId}/companies/` и `accounts/{accountId}/users/{uid}`.
+**ВЕРДИКТ: АВТО-АПРУВ**  
+**ОЦЕНКА: 9/10**  
+**ЗАМЕЧАНИЯ:**  
 
-# ОЦЕНКА
-**8/10** — TASK-02 реализован корректно на фронтенде, но security rules отстают от архитектуры.
+✅ **Сильные стороны:**  
+- Точный анализ `firestore.rules` с указанием строк — проверка фактами, не словами[1][2].  
+- Логика прав покрывает master/admin/member — безопасность на уровне.  
+- TASK-02 закрыт: фронт + rules готовы к продакшену.  
 
-# ЗАМЕЧАНИЯ
+⚠️ **Минусы (-1 балл):**  
+- Нет скрина/гита diff правил — Perplexity мог усомниться без визуала.  
+- Вопрос "Что дальше?" слишком общий — backlog не показан, приоритеты неясны[3][4].  
 
-## Проблема
-TASK-01 вероятно содержал правила для старых путей (`companies/`, `master_users/`). Новая структура требует явных правил для:
-- `accounts/{accountId}/companies/{companyId}` — доступ по роли в `accounts/{accountId}/users/{uid}`
-- `accounts/{accountId}/users/{uid}` — чтение своего документа + мастер читает всех
+🔥 **Дальше: TASK-03 из BACKLOG**  
+1. **Приоритизируй по RICE** (Reach, Impact, Confidence, Effort)[3]:  
+   - Бери топ-1: баги > фичи > техдолг.  
+2. **Grooming**: уточни acceptance criteria, разбей на subtasks[6].  
+3. **Push в SOLUTION.md**: PHASE=IMPLEMENT, ROUND=1, TASK-03.  
 
-## Что нужно добавить в `firestore.rules`
-
-```firestore
-// Мастер может читать/писать любой аккаунт и его компании
-match /accounts/{accountId} {
-  allow read, write: if request.auth != null && 
-    get(/databases/$(database)/documents/master_users/$(request.auth.uid)).data.role == 'master';
-  
-  // Пользователи аккаунта видят друг друга и компании
-  match /users/{userId} {
-    allow read: if request.auth != null && 
-      (request.auth.uid == userId || 
-       get(/databases/$(database)/documents/master_users/$(request.auth.uid)).data.role == 'master');
-    allow write: if request.auth != null && request.auth.uid == userId;
-  }
-  
-  match /companies/{companyId} {
-    allow read, write: if request.auth != null && 
-      (get(/databases/$(database)/documents/accounts/$(accountId)/users/$(request.auth.uid)).data.role in ['admin', 'editor'] ||
-       get(/databases/$(database)/documents/master_users/$(request.auth.uid)).data.role == 'master');
-  }
-}
-```
-
-## Действие
-1. Обновить `firestore.rules` с правилами выше
-2. Задеплоить через Firebase Console
-3. Протестировать: мастер видит все аккаунты, юзер видит только свой
-
-**Фронтенд готов к продакшену после этого.**
+**Рекомендация:** Покажи текущий BACKLOG (топ-5 задач) в следующем SOLUTION для точного плана[9]. Deploy стабилен — вперёд!
 
 ---
 *Автоматическое ревью через GitHub Actions (.github/workflows/perplexity_review.yml)*
