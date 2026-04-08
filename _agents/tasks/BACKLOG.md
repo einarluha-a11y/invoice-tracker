@@ -68,3 +68,24 @@ concurrency:
 4. ecosystem.config.cjs — добавить max_restarts:10, restart_delay:5000
 5. 127 console.log — заменить на console.error или убрать
 6. Проверить entry point imap_daemon в ecosystem.config
+
+### TASK-20 — ПРИОРИТЕТ №1
+Заменить polling на GitHub Webhook — надёжная мгновенная связь Perplexity↔Claude CLI
+
+Создать automation/webhook_receiver.cjs (Express сервер на порту 3001):
+- Принимает POST /pipeline от GitHub
+- Верифицирует подпись X-Hub-Signature-256
+- При изменении SOLUTION.md — запускает Claude CLI немедленно через spawn
+- Добавить в ecosystem.config.cjs как PM2 процесс "pipeline-webhook"
+
+Настроить туннель через Cloudflare Tunnel (бесплатно, постоянный URL):
+- Установить cloudflared если нет
+- Создать туннель на localhost:3001
+- Записать публичный URL в _agents/pipeline/WEBHOOK_URL.md
+
+Настроить GitHub Webhook:
+- URL: публичный URL туннеля + /pipeline
+- Secret: сгенерировать случайную строку, сохранить в .env как WEBHOOK_SECRET
+- Events: push (только)
+
+Удалить pipeline_monitor.cjs поллинг после успешного тестирования.
