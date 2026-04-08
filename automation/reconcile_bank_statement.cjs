@@ -16,7 +16,7 @@ const isFix = process.argv.includes('--fix');
 const configs = {
     '1': {
         name: 'GLOBAL TECHNICS OÜ',
-        companyId: 'bP6dc0PMdFtnmS5QTX4N',
+        companyId: process.env.COMPANY_ID_1 || 'bP6dc0PMdFtnmS5QTX4N',
         imap: {
             user: process.env.IMAP_USER,
             password: process.env.IMAP_PASSWORD,
@@ -29,7 +29,7 @@ const configs = {
     },
     '2': {
         name: 'IDEACOM OÜ',
-        companyId: 'vlhvA6i8d3Hry8rtrA3Z',
+        companyId: process.env.COMPANY_ID_2 || 'vlhvA6i8d3Hry8rtrA3Z',
         imap: {
             user: process.env.IMAP_USER_2,
             password: process.env.IMAP_PASSWORD_2,

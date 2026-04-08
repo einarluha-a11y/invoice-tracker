@@ -1243,13 +1243,13 @@ async function runEvalMode(vendorFilter) {
         try {
             extracted = await processInvoiceWithDocAI(buffer, 'application/pdf');
         } catch (err) {
-            console.log(`  ${C.red}✗ Extraction error: ${err.message}${C.reset}`);
+            console.error(`  ${C.red}✗ Extraction error: ${err.message}${C.reset}`);
             failures.push({ id: example.id, error: err.message });
             continue;
         }
 
         if (!extracted || extracted.length === 0) {
-            console.log(`  ${C.red}✗ AI returned empty — extraction completely failed.${C.reset}`);
+            console.error(`  ${C.red}✗ AI returned empty — extraction completely failed.${C.reset}`);
             failures.push({ id: example.id, error: 'empty result' });
             continue;
         }
@@ -1303,8 +1303,8 @@ async function runEvalMode(vendorFilter) {
     });
 
     if (failures.length > 0) {
-        console.log(`\n  ${C.red}Extraction failures (${failures.length}):${C.reset}`);
-        failures.forEach(f => console.log(`    ${f.id}: ${f.error}`));
+        console.error(`\n  ${C.red}Extraction failures (${failures.length}):${C.reset}`);
+        failures.forEach(f => console.error(`    ${f.id}: ${f.error}`));
     }
 
     console.log('');

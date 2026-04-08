@@ -72,34 +72,6 @@ async function writeToFirestore(dataArray) {
             const vendorName = data.vendorName || 'Unknown Vendor';
             const invoiceId = data.invoiceId || `Auto-${Date.now()}`;
 
-            // --- IDEACOM VENDOR-SPECIFIC DUE DATE RULE (FALLBACK) ---
-            // Pronto and Inovatus invoice Ideacom OÜ on net-30 terms.
-            // This rule is a FALLBACK: it only fires if the AI did not already calculate
-            // a distinct dueDate via customAiRules (i.e. dueDate equals dateCreated or is absent).
-            // If customAiRules is set in company Settings and handles this vendor, it takes priority.
-            const IDEACOM_ID = 'vlhvA6i8d3Hry8rtrA3Z';
-            const lowerVendor = vendorName.toLowerCase();
-            const aiAlreadySetDueDate = data.dueDate && data.dueDate !== data.dateCreated;
-            if (data.companyId === IDEACOM_ID && !aiAlreadySetDueDate &&
-                (lowerVendor.includes('pronto') || lowerVendor.includes('inovatus'))) {
-                if (data.dateCreated) {
-                    const parts = data.dateCreated.includes('-') ? data.dateCreated.split('-') : data.dateCreated.split('.');
-                    if (parts.length === 3) {
-                        let day, month, year;
-                        if (parts[0].length === 4) { // YYYY-MM-DD
-                            year = parseInt(parts[0], 10); month = parseInt(parts[1], 10) - 1; day = parseInt(parts[2], 10);
-                        } else { // DD-MM-YYYY
-                            day = parseInt(parts[0], 10); month = parseInt(parts[1], 10) - 1; year = parseInt(parts[2], 10);
-                        }
-                        if (year < 2000) year += 2000;
-                        const d = new Date(year, month, day);
-                        d.setDate(d.getDate() + 30);
-                        data.dueDate = `${String(d.getDate()).padStart(2,'0')}-${String(d.getMonth()+1).padStart(2,'0')}-${d.getFullYear()}`;
-                        console.log(`[Ideacom Rule] Fallback +30 days dueDate for ${vendorName}: ${data.dueDate}`);
-                    }
-                }
-            }
-
             // --- FILE INTEGRITY CHECK (Rule 31: no file = no record) ---
             // IMPORTANT: throw, do NOT silently return.
             // A silent return would cause saveParsedData() to set success=true

@@ -11,6 +11,7 @@ const crypto = require('crypto');
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
+const { cleanNum } = require('./core/utils.cjs');
 
 require('dotenv').config({ path: path.join(__dirname, '..', '.env.pipeline') });
 
@@ -201,7 +202,7 @@ function parseTransactions(data) {
 
     return rows.map((row, i) => {
         const rawAmount = String(row.Amount || row.SumEur || row.Sum || '0');
-        const amount = parseEuropeanNumber(rawAmount);
+        const amount = cleanNum(rawAmount);
 
         let date = row.TransactionDate || row.Date || row.DocDate || '';
         if (/^\d{8}$/.test(date)) {
@@ -222,26 +223,6 @@ function parseTransactions(data) {
     });
 }
 
-/**
- * Parse European number format: "1.234,56" → 1234.56
- */
-function parseEuropeanNumber(str) {
-    if (!str) return 0;
-    const s = String(str).trim();
-    if (s.includes(',') && s.includes('.')) {
-        const lastComma = s.lastIndexOf(',');
-        const lastDot   = s.lastIndexOf('.');
-        if (lastComma > lastDot) {
-            return parseFloat(s.replace(/\./g, '').replace(',', '.')) || 0;
-        } else {
-            return parseFloat(s.replace(/,/g, '')) || 0;
-        }
-    }
-    if (s.includes(',')) {
-        return parseFloat(s.replace(',', '.')) || 0;
-    }
-    return parseFloat(s) || 0;
-}
 
 /**
  * Log integration event to Firestore config/integration_logs.
@@ -333,7 +314,7 @@ async function autoMatch(transactions, companyId) {
 
     for (const tx of transactions) {
         for (const inv of invoices) {
-            const invAmount = parseFloat(inv.amount) || 0;
+            const invAmount = cleanNum(inv.amount);
             if (Math.abs(tx.amount - invAmount) > 0.50) continue;
 
             // Vendor overlap
@@ -432,4 +413,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { fetchBankStatements, parseTransactions, parseEuropeanNumber, logToFirestore, saveToFirestore, autoMatch };
+module.exports = { fetchBankStatements, parseTransactions, logToFirestore, saveToFirestore, autoMatch };

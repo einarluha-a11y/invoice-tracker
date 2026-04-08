@@ -1,6 +1,7 @@
 require('dotenv').config({ path: __dirname + '/.env' });
 const { reportError } = require('./error_reporter.cjs');
 const { safetyNetSave } = require('./safety_net.cjs');
+const DEBUG = process.env.DEBUG === '1';
 const imaps = require('imap-simple');
 const simpleParser = require('mailparser').simpleParser;
 const pdfParse = require('pdf-parse');
@@ -151,7 +152,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                     // Skip duplicate attachments in same email (same file attached + inlined)
                     const attachKey = `${filename}|${attachment.size || attachment.content?.length || 0}`;
                     if (processedAttachments.has(attachKey)) {
-                        console.log(`[Email] Skipping duplicate attachment: ${filename} (already processed in this email)`);
+                        if (DEBUG) console.log(`[Email] Skipping duplicate attachment: ${filename} (already processed in this email)`);
                         continue;
                     }
                     processedAttachments.add(attachKey);
@@ -163,7 +164,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                         mime.includes('image/jpeg') || mime.includes('image/png') ||
                         filename.endsWith('.jpg') || filename.endsWith('.jpeg') || filename.endsWith('.png')
                     ) {
-                        console.log(`[Email] Found relevant attachment: ${attachment.filename || 'unknown'}. Reading text...`);
+                        if (DEBUG) console.log(`[Email] Found relevant attachment: ${attachment.filename || 'unknown'}. Reading text...`);
 
                         let rawContent = '';
 
@@ -173,9 +174,9 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                         while (uploadAttempts < 3 && !fileUrl) {
                             try {
                                 uploadAttempts++;
-                                console.log(`[Storage] Uploading ${filename} to Firebase Storage (Attempt ${uploadAttempts})...`);
+                                if (DEBUG) console.log(`[Storage] Uploading ${filename} to Firebase Storage (Attempt ${uploadAttempts})...`);
                                 fileUrl = await uploadToStorage(companyId, filename, mime, attachment.content);
-                                console.log(`[Storage] Successfully uploaded! URL: ${fileUrl}`);
+                                if (DEBUG) console.log(`[Storage] Successfully uploaded! URL: ${fileUrl}`);
                             } catch (uploadError) {
                                 console.error(`[Storage Error] Failed to upload ${filename} on attempt ${uploadAttempts}:`, uploadError.message || uploadError);
                                 await reportError('STORAGE_UPLOAD_ERROR', filename, uploadError).catch(() => {});
@@ -247,7 +248,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
 
                         try {
                             if (mime.includes('pdf') || filename.endsWith('.pdf')) {
-                                console.log('[PDF] Parsing PDF data...');
+                                if (DEBUG) console.log('[PDF] Parsing PDF data...');
                                 const pdfData = await pdfParse(attachment.content);
                                 rawContent = pdfData.text;
 
