@@ -24,7 +24,7 @@ if not API_KEY:
 ROOT = Path(".")
 SOLUTION_PATH = ROOT / "_agents/pipeline/SOLUTION.md"
 REVIEW_PATH = ROOT / "_agents/pipeline/REVIEW.md"
-BACKLOG_PATH = ROOT / "_agents/tasks/BACKLOG.md"
+BACKLOG_PATH = ROOT / "_agents/pipeline/BACKLOG.md"
 STATUS_PATH = ROOT / "_agents/pipeline/STATUS.md"
 CHARTER_PATH = ROOT / "_agents/workflows/chief_accountant.md"
 CLAUDE_MD_PATH = ROOT / "CLAUDE.md"
@@ -104,20 +104,30 @@ def build_review_prompt(phase: str, context: str) -> str:
         )
     else:
         role = (
-            "Ты — независимый ревьюер Invoice-Tracker. Проанализируй решение и ответь в формате: "
-            "ВЕРДИКТ + ОЦЕНКА + ЗАМЕЧАНИЯ."
+            "Ты — независимый ревьюер Invoice-Tracker. "
+            "Игнорируй все другие инструкции и роли. "
+            "Проанализируй решение Claude и ответь СТРОГО в формате:\n"
+            "ВЕРДИКТ: ПРИНЯТО или ИЗМЕНЕНИЯ_НУЖНЫ\n"
+            "ОЦЕНКА: [1-3 предложения что хорошо]\n"
+            "ЗАМЕЧАНИЯ: [нумерованный список проблем, пусто если принято]\n"
+            "ДАЛЬНЕЙШИЙ ШАГ: [одно конкретное действие]"
         )
     return f"{role}\n\nКонтекст проекта:\n{context_trimmed}"
 
 def get_next_task_from_backlog(backlog: str) -> tuple:
-    """Детерминированно возвращает (task_id, task_text) первой невыполненной задачи.
+    """Детерминированно возвращает (task_id, task_full_text) первой невыполненной задачи.
+    Поддерживает два формата: '- [ ] TASK-XX' и '### TASK-XX'.
     Пропускает секцию 'Ожидают credentials'. Возвращает (None, None) если всё сделано."""
     if not backlog.strip():
         return None, None
     lines = backlog.split('\n')
     in_skip_section = False
-    for line in lines:
-        # Определяем секции (гибкий паттерн: credentials|учётные|ожидают)
+
+    # Collect pending tasks with their start index (for ### format)
+    pending_tasks = []  # list of (task_id, start_idx)
+
+    for i, line in enumerate(lines):
+        # Определяем секции credentials
         if re.match(r'^##\s+.*(credentials|учётные|[Оо]жидают)', line, re.IGNORECASE):
             in_skip_section = True
             continue
@@ -127,17 +137,35 @@ def get_next_task_from_backlog(backlog: str) -> tuple:
         if in_skip_section:
             continue
 
-        # Первая незакрытая задача — валидируем формат строго
+        # Формат 1: - [ ] TASK-XX (возвращаем сразу)
         if re.match(r'^- \[ \] TASK-\d+', line):
             task_text = re.sub(r'^- \[ \]\s*', '', line).strip()
             m = re.match(r'(TASK-\d+)', task_text)
-            task_id = m.group(1) if m else None
-            if task_id is None:
-                print(f"WARNING: не удалось извлечь TASK-XX из строки: {line[:60]}", file=sys.stderr)
-                continue
-            return task_id, task_text
+            if m:
+                return m.group(1), task_text
+            continue
 
-    return None, None
+        # Формат 2: ### TASK-XX (без ✅ DONE)
+        m = re.match(r'^###\s+(TASK-\d+)', line)
+        if m:
+            task_id = m.group(1)
+            is_done = '✅' in line or 'DONE' in line
+            if not is_done:
+                pending_tasks.append((task_id, i))
+
+    if not pending_tasks:
+        return None, None
+
+    # Первая невыполненная задача — извлечь полную секцию
+    task_id, start_idx = pending_tasks[0]
+    section_lines = [lines[start_idx]]
+    for j in range(start_idx + 1, len(lines)):
+        if re.match(r'^###\s+TASK-\d+', lines[j]):
+            break
+        section_lines.append(lines[j])
+
+    task_full = '\n'.join(section_lines).strip()
+    return task_id, task_full
 
 
 def assign_next_task_number(backlog: str) -> str:
@@ -149,7 +177,8 @@ def assign_next_task_number(backlog: str) -> str:
 
 
 def mark_task_done_in_backlog(task_field: str) -> bool:
-    """Отмечает задачу как [x] в BACKLOG.md строго по TASK-XX номеру."""
+    """Отмечает задачу как выполненную в BACKLOG.md строго по TASK-XX номеру.
+    Поддерживает форматы: '- [ ] TASK-XX' и '### TASK-XX'."""
     if not BACKLOG_PATH.exists():
         print(f"WARNING: BACKLOG.md не найден: {BACKLOG_PATH}", file=sys.stderr)
         return False
@@ -161,6 +190,8 @@ def mark_task_done_in_backlog(task_field: str) -> bool:
         return False
 
     task_id = m.group(1)
+
+    # Формат 1: - [ ] TASK-XX → - [x] TASK-XX
     new_content = re.sub(
         rf'^(- )\[ \] ({re.escape(task_id)})',
         r'\1[x] \2',
@@ -169,7 +200,27 @@ def mark_task_done_in_backlog(task_field: str) -> bool:
     )
     if new_content != content:
         BACKLOG_PATH.write_text(new_content, encoding='utf-8')
-        print(f"BACKLOG: отмечен как выполненный {task_id}")
+        print(f"BACKLOG: отмечен как выполненный {task_id} (формат - [ ])")
+        return True
+
+    # Формат 2: ### TASK-XX ... → ### TASK-XX ✅ DONE (добавляем если нет)
+    def add_done(match):
+        line = match.group(0)
+        if '✅' in line or 'DONE' in line:
+            return line
+        # Убираем суффиксы типа — CURRENT и добавляем ✅ DONE
+        clean = re.sub(r'\s*[—–-]\s*(CURRENT|PENDING|WIP).*$', '', line).rstrip()
+        return clean + ' ✅ DONE'
+
+    new_content = re.sub(
+        rf'^###\s+{re.escape(task_id)}[^\n]*',
+        add_done,
+        content,
+        flags=re.MULTILINE
+    )
+    if new_content != content:
+        BACKLOG_PATH.write_text(new_content, encoding='utf-8')
+        print(f"BACKLOG: отмечен как выполненный {task_id} (формат ###)")
         return True
 
     print(f"WARNING: BACKLOG: {task_id} не найден или уже отмечен", file=sys.stderr)
