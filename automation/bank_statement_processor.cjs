@@ -293,7 +293,21 @@ async function reconcilePayment(reference, description, paidAmount, totalBankDra
                 await db.runTransaction(async (t) => {
                     const freshDoc = await t.get(docRef);
                     if (freshDoc.exists) {
-                        t.update(docRef, { amount: cleanNum(newAmount.toFixed(2)), status: newStatus });
+                        const freshData = freshDoc.data();
+                        const existingPayments = freshData.payments || [];
+                        const paymentEntry = {
+                            date: paymentDateStr || new Date().toISOString().slice(0, 10),
+                            amount: cleanNum(paidAmount.toFixed(2)),
+                            reference: reference || '',
+                            counterparty: description || '',
+                        };
+                        t.update(docRef, {
+                            amount: cleanNum(newAmount.toFixed(2)),
+                            originalAmount: freshData.originalAmount || freshData.amount,
+                            remainingAmount: cleanNum(newAmount.toFixed(2)),
+                            payments: [...existingPayments, paymentEntry],
+                            status: newStatus,
+                        });
                     }
                 });
                 console.log(`  -> Partial payment. Remaining: €${newAmount.toFixed(2)}. Status: ${newStatus}`);
