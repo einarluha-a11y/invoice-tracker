@@ -50,15 +50,21 @@ service cloud.firestore {
     match /accounts/{accountId} {
       // Any authenticated user can read accounts (needed for login/registration flow)
       allow read: if request.auth != null;
-      // Any authenticated user can create a new account (registration)
-      allow create: if request.auth != null;
+      // Registration: validate name field exists and is reasonable length
+      allow create: if request.auth != null
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() < 256;
       allow update, delete: if request.auth != null && (isMaster() || isAccountAdmin(accountId));
     }
 
     match /accounts/{accountId}/users/{userId} {
       allow read: if request.auth != null && (isMaster() || isAccountMember(accountId));
-      // Allow user to create their OWN user doc (self-registration)
-      allow create: if request.auth != null && userId == request.auth.uid;
+      // Self-registration: user can only create their OWN doc, forced role=user, must match email
+      allow create: if request.auth != null
+        && userId == request.auth.uid
+        && request.resource.data.role == 'user'
+        && request.resource.data.email == request.auth.token.email;
       allow update, delete: if request.auth != null && (isMaster() || isAccountAdmin(accountId));
     }
 

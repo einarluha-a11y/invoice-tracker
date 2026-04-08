@@ -140,16 +140,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                         isNewAccount = true;
                     }
 
-                    // Create user doc
+                    // Create user doc — always role=user (Firestore rules enforce this)
+                    // Master can promote to admin later
                     await setDoc(doc(db, 'accounts', accountId, 'users', currentUser.uid), {
                         email: currentUser.email,
-                        role: isNewAccount ? 'admin' : 'user',
+                        role: 'user',
                         createdAt: serverTimestamp(),
                     });
 
                     setUser(currentUser);
                     setCurrentAccountId(accountId);
-                    setUserRole(isNewAccount ? 'admin' : 'user');
+                    setUserRole('user');
                     setIsMaster(false);
                     setAuthError(null);
                     localStorage.setItem('currentAccountId', accountId);

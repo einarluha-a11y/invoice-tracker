@@ -225,6 +225,8 @@ const resources = {
                 verifying: "Проверка...",
                 invalidPassword: "Неверный мастер-пароль.",
                 notMaster: "Этот аккаунт не является мастером.",
+                tooManyAttempts: "Слишком много попыток. Подождите 30 секунд.",
+                locked: "Заблокировано",
             },
 
             loadingData: "Загрузка данных...",
@@ -457,6 +459,8 @@ const resources = {
                 verifying: "Verifying...",
                 invalidPassword: "Invalid master password.",
                 notMaster: "This account is not a master user.",
+                tooManyAttempts: "Too many attempts. Please wait 30 seconds.",
+                locked: "Locked",
             },
 
             loadingData: "Loading data...",
@@ -689,6 +693,8 @@ const resources = {
                 verifying: "Kontrollimine...",
                 invalidPassword: "Vale master-parool.",
                 notMaster: "See konto ei ole master-kasutaja.",
+                tooManyAttempts: "Liiga palju katseid. Oodake 30 sekundit.",
+                locked: "Lukustatud",
             },
 
             loadingData: "Andmete laadimine...",

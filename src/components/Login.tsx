@@ -153,21 +153,21 @@ export function Login() {
                                     type="text"
                                     placeholder={t('login.companyPlaceholder')}
                                     value={companyName}
-                                    onChange={e => setCompanyName(e.target.value)}
+                                    onChange={e => { setCompanyName(e.target.value); setLocalError(null); }}
                                 />
                                 <input
                                     className="login-input"
                                     type="email"
                                     placeholder={t('login.emailPlaceholder')}
                                     value={email}
-                                    onChange={e => setEmail(e.target.value)}
+                                    onChange={e => { setEmail(e.target.value); setLocalError(null); }}
                                 />
                                 <input
                                     className="login-input"
                                     type="password"
                                     placeholder={t('login.passwordPlaceholder')}
                                     value={password}
-                                    onChange={e => setPassword(e.target.value)}
+                                    onChange={e => { setPassword(e.target.value); setLocalError(null); }}
                                     onKeyDown={e => handleKeyDown(e, handleEmailLogin)}
                                 />
                                 <button
@@ -199,7 +199,7 @@ export function Login() {
                                     type="text"
                                     placeholder={t('login.companyPlaceholder')}
                                     value={companyName}
-                                    onChange={e => setCompanyName(e.target.value)}
+                                    onChange={e => { setCompanyName(e.target.value); setLocalError(null); }}
                                 />
                                 <p className="login-helper">{t('register.companyHelp')}</p>
                                 <input
@@ -207,14 +207,14 @@ export function Login() {
                                     type="email"
                                     placeholder={t('login.emailPlaceholder')}
                                     value={email}
-                                    onChange={e => setEmail(e.target.value)}
+                                    onChange={e => { setEmail(e.target.value); setLocalError(null); }}
                                 />
                                 <input
                                     className="login-input"
                                     type="password"
                                     placeholder={t('login.passwordPlaceholder')}
                                     value={password}
-                                    onChange={e => setPassword(e.target.value)}
+                                    onChange={e => { setPassword(e.target.value); setLocalError(null); }}
                                     onKeyDown={e => handleKeyDown(e, handleRegister)}
                                 />
                                 <button

@@ -17,12 +17,30 @@ function MasterPasswordGate({ verifyMasterPassword, logout }: { verifyMasterPass
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
+    const [attempts, setAttempts] = useState(0);
+    const [lockedUntil, setLockedUntil] = useState(0);
+
+    const isLocked = Date.now() < lockedUntil;
+    const lockSeconds = isLocked ? Math.ceil((lockedUntil - Date.now()) / 1000) : 0;
 
     const handleVerify = async () => {
+        if (isLocked) return;
         setLoading(true);
         setError('');
         const ok = await verifyMasterPassword(password);
-        if (!ok) setError(t('master.invalidPassword'));
+        if (!ok) {
+            const newAttempts = attempts + 1;
+            setAttempts(newAttempts);
+            if (newAttempts >= 3) {
+                setLockedUntil(Date.now() + 30000);
+                setAttempts(0);
+                setError(t('master.tooManyAttempts'));
+                // Auto-unlock UI after 30s
+                setTimeout(() => setLockedUntil(0), 30000);
+            } else {
+                setError(t('master.invalidPassword'));
+            }
+        }
         setLoading(false);
     };
 
@@ -36,17 +54,18 @@ function MasterPasswordGate({ verifyMasterPassword, logout }: { verifyMasterPass
                     type="password"
                     placeholder={t('master.masterPasswordPlaceholder')}
                     value={password}
-                    onChange={e => setPassword(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && handleVerify()}
+                    onChange={e => { setPassword(e.target.value); setError(''); }}
+                    onKeyDown={e => e.key === 'Enter' && !isLocked && handleVerify()}
                     style={{ marginTop: '1rem' }}
+                    disabled={isLocked}
                 />
                 <button
                     className="btn-login-primary"
                     onClick={handleVerify}
-                    disabled={loading}
+                    disabled={loading || isLocked}
                     style={{ marginTop: '0.75rem' }}
                 >
-                    {loading ? t('master.verifying') : t('master.verifyBtn')}
+                    {isLocked ? `${t('master.locked')} (${lockSeconds}s)` : loading ? t('master.verifying') : t('master.verifyBtn')}
                 </button>
                 <button
                     onClick={logout}
