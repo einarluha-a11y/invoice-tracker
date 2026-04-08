@@ -57,27 +57,49 @@ function parsePhaseRound(text, type) {
     }
 }
 
+let claudeRunning = false;
+
 function runClaude(prompt) {
-    log('🤖 Запускаю Claude CLI...');
-    try {
-        const result = execSync(
-            `claude --dangerously-skip-permissions -p "${prompt.replace(/"/g, '\\"')}" --max-turns 50`,
-            { cwd: PROJECT, encoding: 'utf-8', timeout: 3600000, stdio: 'pipe' }
-        );
-        log('✅ Claude завершил');
-        // Deploy: pull latest code and restart services
-        try {
-            execSync('git pull origin main --rebase', { cwd: PROJECT, timeout: 15000, stdio: 'pipe' });
-            execSync('pm2 restart invoice-api invoice-imap', { timeout: 15000, stdio: 'pipe' });
-            log('🚀 Deploy: pulled + restarted invoice-api/imap');
-        } catch (e) {
-            log('⚠️ Deploy failed: ' + (e.message || '').slice(0, 100));
-        }
-        return result;
-    } catch (err) {
-        log('❌ Claude ошибка: ' + (err.message || '').slice(0, 200));
-        return null;
+    if (claudeRunning) {
+        log('⏳ Claude CLI уже работает — пропускаю');
+        return 'BUSY';
     }
+    claudeRunning = true;
+    log('🤖 Запускаю Claude CLI...');
+
+    const child = spawn('claude', [
+        '--dangerously-skip-permissions',
+        '-p', prompt,
+        '--max-turns', '50'
+    ], { cwd: PROJECT, stdio: 'pipe', env: { ...process.env, PATH: '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin' } });
+
+    let output = '';
+    child.stdout.on('data', d => output += d.toString());
+    child.stderr.on('data', d => output += d.toString());
+
+    child.on('close', (code) => {
+        claudeRunning = false;
+        if (code === 0) {
+            log('✅ Claude завершил');
+            // Deploy
+            try {
+                execSync('git pull origin main --rebase', { cwd: PROJECT, timeout: 15000, stdio: 'pipe' });
+                execSync('pm2 restart invoice-api invoice-imap', { timeout: 15000, stdio: 'pipe' });
+                log('🚀 Deploy: pulled + restarted invoice-api/imap');
+            } catch (e) {
+                log('⚠️ Deploy failed: ' + (e.message || '').slice(0, 100));
+            }
+        } else {
+            log('❌ Claude ошибка (exit ' + code + '): ' + output.slice(-200));
+        }
+    });
+
+    child.on('error', (err) => {
+        claudeRunning = false;
+        log('❌ Claude spawn error: ' + err.message);
+    });
+
+    return 'STARTED';
 }
 
 // ── Git commit + push helper ─────────────────────────────────────────────────
@@ -205,16 +227,14 @@ async function pollOnce() {
     const isDeployed = /^DEPLOY_STATUS:\s*OK\s*$/m.test(solution);
     if (solState !== savedSol && sol.phase && sol.phase !== 'WAITING' && !isDeployed) {
         log(`📋 Новое задание: ${sol.phase} round ${sol.round}`);
-        const ok = runClaude(
+        const status = runClaude(
             `Ты — автономный агент Invoice Tracker. Рабочая директория: ${PROJECT}. ` +
             `Прочитай _agents/pipeline/SOLUTION.md из origin/main (git show origin/main:_agents/pipeline/SOLUTION.md). ` +
             `Выполни задание. Соблюдай протоколы из CLAUDE.md. ` +
             `После: node --check, DEPLOY_STATUS: OK в SOLUTION.md, коммит, пуш. Русский, коротко.`
         );
-        if (ok) {
-            writeState(STATE_SOL, solState);
-        } else {
-            log('⏳ Задание не выполнено — повторю на следующем цикле');
+        if (status === 'STARTED' || status === 'BUSY') {
+            writeState(STATE_SOL, solState); // Claude работает в фоне, не блокируем
         }
     } else if (solState !== savedSol) {
         writeState(STATE_SOL, solState);
@@ -231,15 +251,11 @@ async function pollOnce() {
         log(`📋 Ревью: ${rev.phase} round ${rev.round} — ${verdict}`);
 
         if (verdict.includes('CHANGES_NEEDED')) {
-            const ok = runClaude(
+            runClaude(
                 `Ты — автономный агент Invoice Tracker. Рабочая директория: ${PROJECT}. ` +
                 `Прочитай _agents/pipeline/REVIEW.md из origin/main. Вердикт: ${verdict}. ` +
                 `Прочитай замечания, исправь код, обнови SOLUTION.md (ROUND+1), запуши. Русский.`
             );
-            if (!ok) {
-                log('⏳ Исправления не выполнены — повторю на следующем цикле');
-                return;
-            }
         }
         writeState(STATE_REV, revState);
     }
