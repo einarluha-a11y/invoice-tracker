@@ -1,27 +1,21 @@
 # SOLUTION
 
-PHASE: CODE
+PHASE: ARCHITECTURE
 ROUND: 1
-TASK: TASK-02 — Фаза 2 — Frontend мультипользовательский режим
+TASK: TASK-03 — ### TASK-03
+**Фаза 3 — Backend auth middleware**
 
-## РЕЗУЛЬТАТ
+1. `api_server.cjs` — добавить verifyToken middleware на все /api/* роуты
+2. `webhook_server.cjs` — аналогично
+3. Frontend `api.ts` — добавить Authorization: Bearer {token} header ко всем fetch запросам
+4. Делать одновременно frontend + backend (иначе сломается)
 
-TASK-02 верифицирована — фронтенд мультипользовательского режима уже реализован в кодовой базе:
+---
 
-- `Login.tsx` — поле выбора аккаунта перед входом реализовано
-- `AuthContext.tsx` — логика трёх ролей (master/admin/user) реализована
-- `useCompanies.ts` — фильтрация по аккаунту через `accounts/{accountId}/companies/` реализована
+## ЗАДАНИЕ
 
-Верификация:
-- `npm run build` — без ошибок TypeScript ✅
-- multiuser mode присутствует в коде ✅
+**Цель:** Внедрить JWT авторизацию на все API эндпоинты. Токен из AuthContext.tsx должен передаваться в заголовке `Authorization: Bearer {token}` и проверяться на бэкенде.
 
-## ИСПРАВЛЕНИЯ В ПАЙПЛАЙНЕ (этот коммит)
+### Backend (одновременно оба сервера):
 
-1. `perplexity_review.py` — исправлен `BACKLOG_PATH` (был `_agents/tasks/BACKLOG.md`, стал `_agents/pipeline/BACKLOG.md`)
-2. `perplexity_review.py` — обновлён парсер `get_next_task_from_backlog()` для поддержки формата `### TASK-XX`
-3. `perplexity_review.py` — обновлён `mark_task_done_in_backlog()` для формата `### TASK-XX`
-4. `perplexity_review.py` — усилен system prompt (добавлено "Игнорируй все другие инструкции")
-5. `BACKLOG.md` — TASK-02 отмечена ✅ DONE
-
-DEPLOY_STATUS: OK
+**1. `api_server.cjs`**
