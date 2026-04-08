@@ -1,10 +1,18 @@
 /**
  * Dropbox Service — прямая интеграция с Dropbox API v2 без Zapier.
- * Использует Bearer-токен из env DROPBOX_ACCESS_TOKEN.
+ * Использует OAuth2 refresh token flow (APP_KEY + APP_SECRET + REFRESH_TOKEN).
+ * Fallback: DROPBOX_ACCESS_TOKEN для совместимости.
  */
 require('dotenv').config({ path: __dirname + '/.env' });
 
-const DROPBOX_ACCESS_TOKEN = process.env.DROPBOX_ACCESS_TOKEN;
+const DROPBOX_APP_KEY = process.env.DROPBOX_APP_KEY;
+const DROPBOX_APP_SECRET = process.env.DROPBOX_APP_SECRET;
+const DROPBOX_REFRESH_TOKEN = process.env.DROPBOX_REFRESH_TOKEN;
+const DROPBOX_ACCESS_TOKEN_STATIC = process.env.DROPBOX_ACCESS_TOKEN;
+
+// Кэш access token с временем истечения
+let _cachedToken = null;
+let _tokenExpiry = 0;
 
 async function _fetch() {
     const { default: fetch } = await import('node-fetch');
@@ -12,16 +20,61 @@ async function _fetch() {
 }
 
 /**
+ * Получает свежий access token через refresh token flow.
+ * Кэширует на 3 часа (токены живут 4 часа).
+ */
+async function getAccessToken() {
+    // Если статический токен задан — использовать его
+    if (!DROPBOX_REFRESH_TOKEN && DROPBOX_ACCESS_TOKEN_STATIC) {
+        return DROPBOX_ACCESS_TOKEN_STATIC;
+    }
+
+    if (!DROPBOX_APP_KEY || !DROPBOX_APP_SECRET || !DROPBOX_REFRESH_TOKEN) {
+        throw new Error('Dropbox OAuth2 credentials not set: DROPBOX_APP_KEY, DROPBOX_APP_SECRET, DROPBOX_REFRESH_TOKEN');
+    }
+
+    // Проверить кэш
+    if (_cachedToken && Date.now() < _tokenExpiry) {
+        return _cachedToken;
+    }
+
+    const fetch = await _fetch();
+    const params = new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: DROPBOX_REFRESH_TOKEN,
+        client_id: DROPBOX_APP_KEY,
+        client_secret: DROPBOX_APP_SECRET
+    });
+
+    const res = await fetch('https://api.dropbox.com/oauth2/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: params.toString()
+    });
+
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(`Dropbox token refresh failed: ${JSON.stringify(err)}`);
+    }
+
+    const data = await res.json();
+    _cachedToken = data.access_token;
+    // Кэшировать на 3 часа (10800 секунд), даже если expires_in больше
+    _tokenExpiry = Date.now() + Math.min((data.expires_in || 14400) * 1000, 3 * 60 * 60 * 1000);
+    return _cachedToken;
+}
+
+/**
  * Создаёт папку в Dropbox (включая все родительские). Не бросает ошибку если папка уже есть.
  * @param {string} folderPath - Например: '/IDEACOM/IC_ARVED/IC_arved_meile/IC_arved_meile_2026/IC_arved_meile_2026_3'
  */
 async function createCompanyFolder(folderPath) {
-    if (!DROPBOX_ACCESS_TOKEN) throw new Error('DROPBOX_ACCESS_TOKEN not set in .env');
+    const token = await getAccessToken();
     const fetch = await _fetch();
     const res = await fetch('https://api.dropboxapi.com/2/files/create_folder_v2', {
         method: 'POST',
         headers: {
-            'Authorization': `Bearer ${DROPBOX_ACCESS_TOKEN}`,
+            'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
         },
         body: JSON.stringify({ path: folderPath, autorename: false })
@@ -42,7 +95,7 @@ async function createCompanyFolder(folderPath) {
  * @returns {string} Путь к загруженному файлу в Dropbox
  */
 async function uploadInvoiceToPDF(invoiceId, pdfBuffer, folderPath) {
-    if (!DROPBOX_ACCESS_TOKEN) throw new Error('DROPBOX_ACCESS_TOKEN not set in .env');
+    const token = await getAccessToken();
     const fetch = await _fetch();
 
     await createCompanyFolder(folderPath);
@@ -51,7 +104,7 @@ async function uploadInvoiceToPDF(invoiceId, pdfBuffer, folderPath) {
     const res = await fetch('https://content.dropboxapi.com/2/files/upload', {
         method: 'POST',
         headers: {
-            'Authorization': `Bearer ${DROPBOX_ACCESS_TOKEN}`,
+            'Authorization': `Bearer ${token}`,
             'Dropbox-API-Arg': JSON.stringify({
                 path: filePath,
                 mode: 'overwrite',
@@ -75,12 +128,12 @@ async function uploadInvoiceToPDF(invoiceId, pdfBuffer, folderPath) {
  * @returns {Array} Список файлов
  */
 async function listInvoicesInFolder(folderPath) {
-    if (!DROPBOX_ACCESS_TOKEN) throw new Error('DROPBOX_ACCESS_TOKEN not set in .env');
+    const token = await getAccessToken();
     const fetch = await _fetch();
     const res = await fetch('https://api.dropboxapi.com/2/files/list_folder', {
         method: 'POST',
         headers: {
-            'Authorization': `Bearer ${DROPBOX_ACCESS_TOKEN}`,
+            'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
         },
         body: JSON.stringify({ path: folderPath, recursive: false })
@@ -117,30 +170,32 @@ function buildDropboxFolderPath(companyName, year, month) {
     return `/${folderBasePath}/${folderPrefix}_ARVED/${folderPrefix}_arved_meile/${folderPrefix}_arved_meile_${year}/${folderPrefix}_arved_meile_${year}_${month}`;
 }
 
-module.exports = { uploadInvoiceToPDF, createCompanyFolder, listInvoicesInFolder, buildDropboxFolderPath };
+module.exports = { uploadInvoiceToPDF, createCompanyFolder, listInvoicesInFolder, buildDropboxFolderPath, getAccessToken };
 
 // CLI тест: node automation/dropbox_service.cjs --test
 if (require.main === module) {
     (async () => {
-        if (!DROPBOX_ACCESS_TOKEN) {
-            console.error('[Dropbox] ❌ DROPBOX_ACCESS_TOKEN не задан в .env');
-            process.exit(1);
-        }
-        const fetch = await _fetch();
-        const res = await fetch('https://api.dropboxapi.com/2/users/get_current_account', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${DROPBOX_ACCESS_TOKEN}`,
-                'Content-Type': 'application/json'
-            },
-            body: 'null'
-        });
-        if (res.ok) {
-            const user = await res.json();
-            console.log(`[Dropbox] ✅ Подключено: ${user.email} (${user.name?.display_name})`);
-        } else {
-            const err = await res.json().catch(() => ({}));
-            console.error('[Dropbox] ❌ Ошибка подключения:', res.status, JSON.stringify(err));
+        try {
+            const token = await getAccessToken();
+            const fetch = await _fetch();
+            const res = await fetch('https://api.dropboxapi.com/2/users/get_current_account', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: 'null'
+            });
+            if (res.ok) {
+                const user = await res.json();
+                console.log(`[Dropbox] ✅ Подключено: ${user.email} (${user.name?.display_name})`);
+            } else {
+                const err = await res.json().catch(() => ({}));
+                console.error('[Dropbox] ❌ Ошибка подключения:', res.status, JSON.stringify(err));
+                process.exit(1);
+            }
+        } catch (e) {
+            console.error('[Dropbox] ❌', e.message);
             process.exit(1);
         }
     })();

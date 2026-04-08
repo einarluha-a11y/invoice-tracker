@@ -4,30 +4,28 @@ PHASE: ARCHITECTURE
 ROUND: 1
 TASK: Активировать Dropbox интеграцию — добавить credentials в .env и Railway
 
-## ЗАДАНИЕ
+## ВЫПОЛНЕНО
 
-Dropbox токены получены. Добавь в проект:
+### 1. Обновлён dropbox_service.cjs
+Сервис переведён с устаревшего `DROPBOX_ACCESS_TOKEN` на OAuth2 refresh token flow:
+- `getAccessToken()` — запрашивает свежий токен у Dropbox API, кэширует на 3 часа
+- Fallback на `DROPBOX_ACCESS_TOKEN` если refresh token не задан
+- Все функции используют `getAccessToken()` вместо статического токена
 
-### 1. Добавить в .env.production и Railway environment variables:
+### 2. Credentials добавлены в .env
+- `automation/.env` — DROPBOX_APP_KEY, DROPBOX_APP_SECRET, DROPBOX_REFRESH_TOKEN
+- `.env.production` — те же переменные
 
+### 3. Railway variables установлены
+```
 DROPBOX_APP_KEY=2ex6ewd9ag00f94
 DROPBOX_APP_SECRET=ayum6suv86iglbu
 DROPBOX_REFRESH_TOKEN=6XWsZeEs0Y8AAAAAAAAAAX0cf9Av7VhnhJHFTDjuMuJEIZQabfV7pzZiTmvgMCgB
-
-### 2. Добавить в Railway через CLI:
-```bash
-railway variables set DROPBOX_APP_KEY=2ex6ewd9ag00f94
-railway variables set DROPBOX_APP_SECRET=ayum6suv86iglbu
-railway variables set DROPBOX_REFRESH_TOKEN=6XWsZeEs0Y8AAAAAAAAAAX0cf9Av7VhnhJHFTDjuMuJEIZQabfV7pzZiTmvgMCgB
 ```
 
-### 3. Проверить automation/dropbox_service.cjs
-Убедиться что сервис читает эти переменные и инициализируется корректно.
-Запустить тестовую загрузку файла если есть тестовый режим.
+### 4. Тест подключения
+```
+[Dropbox] ✅ Подключено: einar.luha@gmail.com (Einar Luha)
+```
 
-### 4. pm2 restart all после добавления переменных
-
-### Верификация
-- `railway variables` — убедиться что три переменные есть
-- В логах PM2 не должно быть ошибок Dropbox при старте
-
+DEPLOY_STATUS: OK
