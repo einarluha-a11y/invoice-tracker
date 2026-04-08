@@ -6,7 +6,7 @@ const REQUIRED_FIELDS = [
   'dateCreated', 'dueDate', 'supplierVat', 'supplierRegistration',
   'subtotalAmount', 'taxAmount'
 ];
-const VALID_STATUSES = new Set(['Draft', 'Pending', 'Paid']);
+const VALID_STATUSES = new Set(['Draft', 'Pending', 'Paid', 'Overdue', 'Needs Action', 'Duplicate', 'UNREPAIRABLE']);
 
 async function main() {
   console.log('=== DATA AUDIT START ===\n');
