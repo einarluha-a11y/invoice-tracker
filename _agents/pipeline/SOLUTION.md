@@ -38,6 +38,7 @@ function colInvoices() {
 | ecFubw4RrQGFkQuKLZoP | Inovatus MB IN-26.02-03 | Missing description | ✅ Исправлено, статус Paid |
 | j5N1VaITOswr9mb7bsrF | Inovatus MB AL-25.12-16115 | Missing description | ✅ Исправлено, статус Paid |
 | uwqz9ywYlL3L1wyISpBN | Inovatus MB IN-26.02-01 | Missing description | ✅ Исправлено, статус Paid |
+| GAI8jQ2Fk1PZTqjLunmO | Inovatus MB AL-25.12-16116 | Неполное описание, статус Needs Action | ✅ Исправлено (2026-04-08), статус Paid |
 | jQnVpUB96tg5mdX9JZUw | Omega Laen AS 260399844 | Missing currency | ✅ Исправлено, currency=EUR |
 | uVUDOSyf4meYC6rznK3f | Allstore Assets / GT | Статус Unpaid | ✅ Исправлено → Paid |
 | NGK5lxXFgSoAqyOiiRO2 | — | Статус Overdue | ✅ Валидный (в VALID_STATUSES) |
@@ -97,4 +98,4 @@ PHASE: WAITING — ожидаю новое задание от Perplexity.
 - Дополнительные аудит / reporting функции
 
 ## DEPLOY_STATUS
-OK — ROUND 5 WAITING. node --check OK. Проверка 2026-04-08 (6-я итерация). Все 167 инвойсов: ИТОГО ПРОБЛЕМ: 0. Система чистая, ожидаю новых задач от Perplexity.
+OK — ROUND 5 WAITING. node --check OK. Проверка 2026-04-08 (7-я итерация). Все 167 инвойсов: ИТОГО ПРОБЛЕМ: 0. Система чистая, ожидаю новых задач от Perplexity.
