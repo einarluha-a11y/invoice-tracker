@@ -3,6 +3,8 @@
 
 ## 2026-04-08
 
+- 2026-04-08 — ✅ Проверка: PHASE:WAITING, BACKLOG пуст, TASK-23 APPROVED — ожидаю новых задач от Perplexity
+
 ### TASK-22 Round 5 — Диагностика companyId
 
 ```
