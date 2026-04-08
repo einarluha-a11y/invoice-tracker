@@ -68,3 +68,5 @@ companyId:vlhvA6i8d3Hry8rtrA3Z (Ideacom) → 64 invoices
 - 2026-04-08 13:46 — ✅ Проверка: PHASE:WAITING, BACKLOG пуст, ожидаю новых задач
 webhook-test 17:10:00
 - 2026-04-08 — ✅ Проверка: TASK-22 DONE, BACKLOG пуст, node --check OK, TS OK — ожидаю новых задач
+
+- 2026-04-08 — ✅ Завершено: 1:TASK-24 Round 1 — CSV export кнопка добавлена в filters-bar (src/App.tsx). Build OK.
