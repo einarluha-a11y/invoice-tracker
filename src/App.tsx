@@ -549,7 +549,7 @@ function App() {
                         <h3 style={{ marginBottom: '1rem', color: 'var(--text-primary)', fontSize: '1.25rem', fontWeight: 600 }}>{t('modal.archiveTitle', 'Архивировать инвойс')}</h3>
                         <p style={{ marginBottom: '2rem', color: 'var(--text-secondary)', lineHeight: '1.5' }}>{t('modal.archiveDesc', 'Переместить инвойс в архив? Его можно будет восстановить позже.')}</p>
                         <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem' }}>
-                            <button onClick={() => setDeletingInvoiceId(null)} className="px-6 py-2 rounded-full border border-gray-400 text-gray-300 hover:border-gray-200 hover:text-gray-100 transition-colors font-medium" style={{ background: 'transparent' }}>{t('modal.cancelBtn')}</button>
+                            <button onClick={() => setDeletingInvoiceId(null)} style={{ borderRadius: '50px', padding: '0.75rem 1.5rem', fontWeight: 500, color: '#e5e7eb', border: '1px solid #9ca3af', background: 'transparent', cursor: 'pointer', fontSize: '1rem' }}>{t('modal.cancelBtn')}</button>
                             <button onClick={confirmDelete} className="btn-primary" style={{ borderRadius: '50px', color: '#fff', padding: '0.75rem 1.5rem', fontWeight: 600, boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}>{t('modal.archiveConfirm', 'В архив')}</button>
                         </div>
                     </div>
