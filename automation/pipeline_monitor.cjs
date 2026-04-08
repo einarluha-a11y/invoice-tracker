@@ -88,6 +88,12 @@ function runClaude(prompt) {
         claudeRunning = false;
         if (code === 0) {
             log('✅ Claude завершил');
+            // Instant notification — macOS + file signal
+            const taskName = readState(STATE_SOL).split(':').slice(2).join(':').slice(0, 60) || 'task';
+            try {
+                execSync(`osascript -e 'display notification "✅ ${taskName}" with title "Invoice Tracker" sound name "Glass"'`, { stdio: 'pipe' });
+            } catch {}
+            fs.writeFileSync('/tmp/.pipeline_event', `COMPLETED:${taskName}:${new Date().toISOString()}\n`);
             // Deploy
             try {
                 execSync('git pull origin main --rebase', { cwd: PROJECT, timeout: 15000, stdio: 'pipe' });
@@ -116,6 +122,10 @@ function runClaude(prompt) {
             } catch { /* non-critical */ }
         } else {
             log('❌ Claude ошибка (exit ' + code + '): ' + output.slice(-200));
+            try {
+                execSync(`osascript -e 'display notification "❌ Claude CLI failed (exit ${code})" with title "Invoice Tracker" sound name "Basso"'`, { stdio: 'pipe' });
+            } catch {}
+            fs.writeFileSync('/tmp/.pipeline_event', `ERROR:exit ${code}:${new Date().toISOString()}\n`);
         }
     });
 
