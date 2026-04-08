@@ -181,6 +181,56 @@ function App() {
         }
     };
 
+    const handleExportCsv = () => {
+        const csvEscape = (val: string | number | undefined | null) => {
+            const s = val == null ? '' : String(val);
+            if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+                return '"' + s.replace(/"/g, '""') + '"';
+            }
+            return s;
+        };
+
+        const baseInvoices = invoices.filter(i => showArchived ? i.archived === true : !i.archived);
+        const filtered = baseInvoices.filter(invoice => {
+            const matchesSearch = !searchTerm ||
+                invoice.vendor.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                invoice.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                (invoice.description && invoice.description.toLowerCase().includes(searchTerm.toLowerCase()));
+
+            let matchesStatus = false;
+            if (statusFilter === 'All') matchesStatus = true;
+            else if (statusFilter === 'Unpaid') matchesStatus = invoice.status === 'Pending' || invoice.status === 'Overdue';
+            else matchesStatus = invoice.status === statusFilter;
+
+            let matchesDate = true;
+            const compareDate = dateFilterType === 'due' ? (invoice.dueDate || '') : invoice.dateCreated;
+            if (startDate) matchesDate = compareDate >= startDate;
+            if (endDate) matchesDate = matchesDate && compareDate <= endDate;
+
+            return matchesSearch && matchesStatus && matchesDate;
+        });
+
+        const headers = ['Vendor', 'Invoice No', 'Date Created', 'Due Date', 'Amount', 'Currency', 'Status'];
+        const rows = filtered.map(inv => [
+            csvEscape(inv.vendor),
+            csvEscape(inv.invoiceNumber),
+            csvEscape(inv.dateCreated),
+            csvEscape(inv.dueDate),
+            csvEscape(inv.amount),
+            csvEscape(inv.currency || 'EUR'),
+            csvEscape(inv.status),
+        ].join(','));
+
+        const csv = [headers.join(','), ...rows].join('\r\n');
+        const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `invoices_${new Date().toISOString().slice(0, 10)}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+    };
+
 
     // Stats computed from loaded data using useMemo to prevent main-thread freezing sequentially
     const { totalInvoices, overdueCount, totalAmount } = useMemo(() => {
@@ -397,6 +447,22 @@ function App() {
                     <option value="Paid">{t('filters.paid')}</option>
                     <option value="Overdue">{t('filters.overdue')}</option>
                 </select>
+                <button
+                    onClick={handleExportCsv}
+                    title={t('export.csvTitle', 'Export filtered invoices as CSV')}
+                    style={{
+                        background: 'transparent',
+                        border: '1px solid var(--border-color)',
+                        color: 'var(--text-secondary)',
+                        padding: '0.5rem 0.9rem',
+                        borderRadius: 'var(--radius-md)',
+                        cursor: 'pointer',
+                        fontSize: '0.85rem',
+                        whiteSpace: 'nowrap',
+                    }}
+                >
+                    ⬇ CSV
+                </button>
             </div>
 
             {error ? (
