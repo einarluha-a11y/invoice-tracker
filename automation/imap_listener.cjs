@@ -40,7 +40,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
     };
 
     try {
-        console.log(`[Email] Connecting to IMAP server ${config.imap.host} for ${companyName} (${config.imap.user})...`);
+        if (DEBUG) console.log(`[Email] Connecting to IMAP server ${config.imap.host} for ${companyName} (${config.imap.user})...`);
 
         // Retry with backoff on rate-limit errors (some IMAP servers throttle rapid reconnects)
         let connection;
@@ -62,7 +62,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
         }
         if (!connection) throw new Error('IMAP connection failed after retries');
 
-        console.log('[Email] Connection successful! Opening INBOX.');
+        if (DEBUG) console.log('[Email] Connection successful! Opening INBOX.');
         await connection.openBox('INBOX');
 
         const horizonDate = new Date();
@@ -79,7 +79,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
 
         const allMessages = await connection.search(searchCriteria, fetchOptions);
         const messages = allMessages;
-        console.log(`[Email] Found ${messages.length} total emails in the trailing 3-day recovery window.`);
+        if (DEBUG) console.log(`[Email] Found ${messages.length} total emails in the trailing 3-day recovery window.`);
 
         for (const item of messages) {
             const all = item.parts.find(a => a.which === '');
@@ -94,7 +94,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
 
             const parsedEmail = await simpleParser(all.body);
 
-            console.log(`[Email] Processing email subject: "${parsedEmail.subject}"`);
+            if (DEBUG) console.log(`[Email] Processing email subject: "${parsedEmail.subject}"`);
 
             // Catch-all flag: set to true whenever UID is saved anywhere below.
             // At the end of this email's processing, if still false, we save the UID
@@ -134,7 +134,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
             const isBillingBody = emailBodyText.includes('anthropic') && (emailBodyText.includes('receipt') || emailBodyText.includes('stripe') || emailBodyText.includes('charge'));
 
             if (isBillingSender || isBillingSubject || isBillingBody) {
-                console.log(`[Email] 🚫 Skipping billing/system email: "${parsedEmail.subject}" from ${senderAddress}`);
+                if (DEBUG) console.log(`[Email] 🚫 Skipping billing/system email: "${parsedEmail.subject}" from ${senderAddress}`);
                 // Save UID so it's never touched again
                 await saveUid('billing_skip');
                 continue;
@@ -219,7 +219,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                         skipCatchAllUid = true; // Don't save UID — allow retry after code fix
                                         // success stays false → email stays UNSEEN for retry
                                     } else if (auditedData.status === 'Duplicate') {
-                                        console.log(`[Accountant Agent] ℹ️ Duplicate detected — skipping.`);
+                                        if (DEBUG) console.log(`[Accountant Agent] ℹ️ Duplicate detected — skipping.`);
                                         await markStagingResult(stagingId, { status: 'duplicate', resultIds: [] });
                                         success = true;
                                     } else {
@@ -272,7 +272,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                 });
 
                                 if (isBankStatement) {
-                                    console.log(`[Email] Detected Bank Statement PDF: ${attachment.filename || 'unknown'}`);
+                                    if (DEBUG) console.log(`[Email] Detected Bank Statement PDF: ${attachment.filename || 'unknown'}`);
                                     const parsedTransactions = await parseBankStatementWithAI(rawContent);
 
                                     if (parsedTransactions && Array.isArray(parsedTransactions)) {
@@ -280,23 +280,23 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                             await reconcilePayment(tx.reference || '', tx.description || '', tx.amount, null, null, tx.date || (new Date().toISOString().split('T')[0]), null, null, companyId);
                                         }
                                         await markStagingResult(stagingId, { status: 'success', resultIds: [] });
-                                        console.log(`[Email] Email UID ${id} successfully processed as PDF Bank Statement!`);
+                                        if (DEBUG) console.log(`[Email] Email UID ${id} successfully processed as PDF Bank Statement!`);
                                         try { connection.imap.addFlags(id, ['\\Seen'], () => {}); } catch(_) {}
                                         await saveUid('bank_statement');
                                     }
                                 } else {
                                     // Invoice PDF — Scout → Teacher pipeline
-                                    console.log('[Email] Detected Invoice PDF. Running Scout → Teacher pipeline...');
+                                    if (DEBUG) console.log('[Email] Detected Invoice PDF. Running Scout → Teacher pipeline...');
 
                                     const parsedData = await scoutTeacherPipeline(attachment.content, mime || 'application/pdf', companyId, customRules);
                                     if (await saveParsedData(parsedData)) {
-                                        console.log(`[Email] Email UID ${id} successfully processed by Scout → Teacher!`);
+                                        if (DEBUG) console.log(`[Email] Email UID ${id} successfully processed by Scout → Teacher!`);
                                         try { connection.imap.addFlags(id, ['\\Seen'], () => {}); } catch(_) {}
                                         await saveUid('invoice_pdf');
                                     }
                                 }
                             } else if (mime.includes('image/') || filename.endsWith('.jpg') || filename.endsWith('.jpeg') || filename.endsWith('.png')) {
-                                console.log(`[Image] Native Image detected: ${filename}. Requesting Vision Audit...`);
+                                if (DEBUG) console.log(`[Image] Native Image detected: ${filename}. Requesting Vision Audit...`);
 
                                 // --- STAGE RAW DOCUMENT (Image) ---
                                 stagingId = await stageDocument({
@@ -314,11 +314,11 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                 });
 
                                 // Image invoice — Scout → Teacher pipeline
-                                console.log('[Image] Running Scout → Teacher pipeline for image...');
+                                if (DEBUG) console.log('[Image] Running Scout → Teacher pipeline for image...');
 
                                 const parsedData = await scoutTeacherPipeline(attachment.content, mime, companyId, customRules);
                                 if (await saveParsedData(parsedData)) {
-                                    console.log(`[Email] Email UID ${id} successfully processed by Scout → Teacher from Image!`);
+                                    if (DEBUG) console.log(`[Email] Email UID ${id} successfully processed by Scout → Teacher from Image!`);
                                     try { connection.imap.addFlags(id, ['\\Seen'], () => {}); } catch(_) {}
                                     await saveUid('invoice_image');
                                 }
@@ -328,7 +328,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
 
                                 // --- Prevent Binary Leakage ---
                                 if ((mime && mime.includes('image')) || filename.endsWith('.gif') || filename.endsWith('.heic') || filename.endsWith('.bmp')) {
-                                    console.log(`[System] Ignoring unsupported binary image format: ${filename}`);
+                                    if (DEBUG) console.log(`[System] Ignoring unsupported binary image format: ${filename}`);
                                     await saveUid('unsupported_format');
                                     continue;
                                 }
@@ -352,16 +352,16 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                 });
 
                                 if (isCsvBankStatement) {
-                                    console.log(`[Email] Detected Bank Statement CSV: ${attachment.filename}`);
+                                    if (DEBUG) console.log(`[Email] Detected Bank Statement CSV: ${attachment.filename}`);
                                     await processBankStatement(rawContent, companyId);
                                     await markStagingResult(stagingId, { status: 'success', resultIds: [] });
-                                    console.log(`[Email] Email UID ${id} successfully processed as Bank Statement!`);
+                                    if (DEBUG) console.log(`[Email] Email UID ${id} successfully processed as Bank Statement!`);
                                     await saveUid('bank_statement_csv');
                                 } else {
                                     // Treat as regular invoice text/csv, parse with Claude
                                     const parsedData = await parseInvoiceDataWithAI(rawContent, companyName, customRules);
                                     if (await saveParsedData(parsedData)) {
-                                        console.log(`[Email] Email UID ${id} successfully processed!`);
+                                        if (DEBUG) console.log(`[Email] Email UID ${id} successfully processed!`);
                                         await saveUid('invoice_csv');
                                     }
                                 }
@@ -390,7 +390,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                 console.warn(`[Email] ⚠️  Email UID ${id} has NO attachments. Attempting body-text parse (Completeness Gate active).`);
                 const emailBody = parsedEmail.text || parsedEmail.html || '';
                 if (emailBody.trim().length <= 10) {
-                    console.log(`[Email] UID ${id} has empty body — skipping.`);
+                    if (DEBUG) console.log(`[Email] UID ${id} has empty body — skipping.`);
                     await saveUid('empty_body');
                 } else if (emailBody.trim().length > 10) {
                     const parsedData = await parseInvoiceDataWithAI(emailBody, companyName, customRules);
@@ -420,7 +420,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                                 } else {
                                     try {
                                         await writeToFirestore([auditedData]);
-                                        console.log(`[Email] Body-text invoice saved: ${auditedData.vendorName} / ${auditedData.invoiceId}`);
+                                        if (DEBUG) console.log(`[Email] Body-text invoice saved: ${auditedData.vendorName} / ${auditedData.invoiceId}`);
                                         await saveUid('body_text_invoice');
                                     } catch (writeErr) {
                                         if (writeErr.message && writeErr.message.startsWith('FILE_INTEGRITY_BLOCK')) {
@@ -438,7 +438,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                             }
                         }
                     } else {
-                        console.log(`[Email] AI found no invoices in body text of UID ${id}.`);
+                        if (DEBUG) console.log(`[Email] AI found no invoices in body text of UID ${id}.`);
                         await saveUid('no_invoice_found');
                     }
                 } // end else if emailBody.trim().length > 10
@@ -451,7 +451,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
             }
         } // end for each email
 
-        console.log(`[System] IMAP connection closed for ${companyName}.`);
+        if (DEBUG) console.log(`[System] IMAP connection closed for ${companyName}.`);
     } catch (error) {
         console.error(`[Email Error] IMAP Failure for ${companyName} (${config.imap.user}):`, error);
         await reportError('IMAP_ERROR', config.imap.user || companyId, error).catch(() => {});
@@ -459,7 +459,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
 }
 
 async function pollAllCompanyInboxes() {
-    console.log('[System] Polling all company inboxes...');
+    if (DEBUG) console.log('[System] Polling all company inboxes...');
     try {
         // 1. Check default backend .env inbox first (requires IMAP_COMPANY_ID to route invoices)
         if (process.env.IMAP_USER && process.env.IMAP_PASSWORD && process.env.IMAP_HOST && process.env.IMAP_COMPANY_ID) {
@@ -506,18 +506,18 @@ async function checkAndRunFlagTasks() {
     const flags = fs.readdirSync(flagDir).filter(f => f.endsWith('.flag'));
     if (flags.length === 0) return;
 
-    console.log(`[Flag Runner] 🚩 Found ${flags.length} task flag(s). Executing...`);
+    if (DEBUG) console.log(`[Flag Runner] 🚩 Found ${flags.length} task flag(s). Executing...`);
 
     for (const flag of flags) {
         const flagPath = path.join(flagDir, flag);
-        console.log(`[Flag Runner] ▶️  Running task: ${flag}`);
+        if (DEBUG) console.log(`[Flag Runner] ▶️  Running task: ${flag}`);
 
         // IMPORTANT: Delete the flag BEFORE running the task.
         // If we delete it after, PM2 watch may detect other file writes
         // (e.g. log files) and restart the process mid-task, causing an
         // infinite restart loop where the task never completes.
         try { fs.unlinkSync(flagPath); } catch (_) {}
-        console.log(`[Flag Runner] 🗑  Flag removed pre-emptively: ${flag}`);
+        if (DEBUG) console.log(`[Flag Runner] 🗑  Flag removed pre-emptively: ${flag}`);
 
         // Run as a CHILD PROCESS (not via require) to give it a fully isolated
         // Node.js environment with its own Firebase/gRPC connection.
@@ -527,7 +527,7 @@ async function checkAndRunFlagTasks() {
             const { spawn } = require('child_process');
             await new Promise((resolve) => {
                 const scriptPath = path.join(flagDir, 'nunner_recover.cjs');
-                console.log(`[Flag Runner] 🚀 Spawning: ${process.execPath} ${scriptPath}`);
+                if (DEBUG) console.log(`[Flag Runner] 🚀 Spawning: ${process.execPath} ${scriptPath}`);
                 const child = spawn(process.execPath, [scriptPath], {
                     cwd: flagDir,
                     env: { ...process.env },
@@ -539,7 +539,7 @@ async function checkAndRunFlagTasks() {
                     if (code !== 0) {
                         console.error(`[Flag Runner] ❌ Recovery process exited with code ${code}`);
                     } else {
-                        console.log(`[Flag Runner] ✅ Recovery process complete (exit 0)`);
+                        if (DEBUG) console.log(`[Flag Runner] ✅ Recovery process complete (exit 0)`);
                     }
                     resolve();
                 });
@@ -555,7 +555,7 @@ async function checkAndRunFlagTasks() {
 }
 
 // Overlap-safe IMAP polling daemon
-console.log('Automated Invoice Processor Started. Checking every 2 minutes...');
+console.error('Automated Invoice Processor Started. Checking every 2 minutes...');
 async function pollLoop() {
     while (true) {
         try {

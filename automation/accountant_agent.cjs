@@ -6,6 +6,7 @@ const { admin, db } = require('./core/firebase.cjs');
 const { enrichCompanyData } = require('./company_enrichment.cjs');
 const { cleanNum } = require('./core/utils.cjs');
 const { saveBankTransaction } = require('./core/bank_dedup.cjs');
+const debug = (...a) => process.env.DEBUG && console.log(...a);
 
 // ── Companies cache (TTL 5 min) — avoids re-reading all companies per invoice ──
 let _companiesCache = null;
@@ -42,7 +43,7 @@ function vendorMatches(invData, paymentData) {
 async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
     // --- 0. BANK STATEMENT INTERCEPTOR (with partial payment support) ---
     if (docAiPayload.type === 'BANK_STATEMENT') {
-        console.log(`\n[Accountant Agent] 🏦 Bank Statement Detected! Initiating Auto-Reconciliation for: ${docAiPayload.vendorName} [Amount: ${docAiPayload.amount}]`);
+        debug(`\n[Accountant Agent] 🏦 Bank Statement Detected! Initiating Auto-Reconciliation for: ${docAiPayload.vendorName} [Amount: ${docAiPayload.amount}]`);
         try {
             const invoicesRef = db.collection('invoices');
             const snap = await invoicesRef.where('companyId', '==', companyId)
@@ -58,7 +59,7 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
                     const remaining = invData.remainingAmount ?? Math.abs(cleanNum(invData.amount));
 
                     if (Math.abs(remaining - payAmt) < 0.50 && vendorMatches(invData, docAiPayload)) {
-                        console.log(`[Accountant Agent] 🪙 FULL PAYMENT MATCH! Reconciling Invoice ${invData.invoiceId} (${invData.vendorName}) as 'Paid'!`);
+                        debug(`[Accountant Agent] 🪙 FULL PAYMENT MATCH! Reconciling Invoice ${invData.invoiceId} (${invData.vendorName}) as 'Paid'!`);
                         await db.runTransaction(async (t) => {
                             const freshDoc = await t.get(doc.ref);
                             if (!freshDoc.exists || freshDoc.data().status === 'Paid') return;
@@ -87,7 +88,7 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
 
                         if (payAmt > 0 && payAmt < remaining && vendorMatches(invData, docAiPayload)) {
                             const newRemaining = cleanNum((remaining - payAmt).toFixed(2));
-                            console.log(`[Accountant Agent] 💰 PARTIAL PAYMENT: ${payAmt}/${remaining} for ${invData.invoiceId}. Remaining: ${newRemaining}`);
+                            debug(`[Accountant Agent] 💰 PARTIAL PAYMENT: ${payAmt}/${remaining} for ${invData.invoiceId}. Remaining: ${newRemaining}`);
                             await db.runTransaction(async (t) => {
                                 const freshDoc = await t.get(doc.ref);
                                 if (!freshDoc.exists || freshDoc.data().status === 'Paid') return;
@@ -109,19 +110,19 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
             }
 
             if (!matched) {
-                console.log(`[Accountant Agent] ⚠️ No unsettled invoice found for payment: ${docAiPayload.amount} to ${docAiPayload.vendorName}.`);
+                debug(`[Accountant Agent] ⚠️ No unsettled invoice found for payment: ${docAiPayload.amount} to ${docAiPayload.vendorName}.`);
 
                 const paymentDate = new Date(docAiPayload.dateCreated || '2020-01-01');
                 const cutoffYear = parseInt(process.env.SEARCH_AGENT_CUTOFF_YEAR || new Date().getFullYear(), 10);
                 const cutoffDate = new Date(`${cutoffYear}-01-01`);
 
                 if (paymentDate >= cutoffDate || String(docAiPayload.dateCreated).includes(String(cutoffYear))) {
-                    console.log(`[Accountant Agent] 🚨 Payment falls within ${cutoffYear}+ window! Escalating to Search Agent...`);
+                    debug(`[Accountant Agent] 🚨 Payment falls within ${cutoffYear}+ window! Escalating to Search Agent...`);
                     const { findAndInjectMissingInvoice } = require('./search_agent.cjs');
                     const recovered = await findAndInjectMissingInvoice(docAiPayload.vendorName, docAiPayload.amount, companyId);
 
                     if (recovered) {
-                        console.log(`[Accountant Agent] 🕵️‍♂️ Search Agent found the missing invoice! Reconciling it as 'Paid'...`);
+                        debug(`[Accountant Agent] 🕵️‍♂️ Search Agent found the missing invoice! Reconciling it as 'Paid'...`);
                         await db.runTransaction(async (t) => {
                             const recRef = db.collection('invoices').doc(recovered.id);
                             const recDoc = await t.get(recRef);
@@ -130,10 +131,10 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
                             }
                         });
                     } else {
-                        console.log(`[Accountant Agent] 📉 Search Agent could not locate the invoice in the email archives.`);
+                        debug(`[Accountant Agent] 📉 Search Agent could not locate the invoice in the email archives.`);
                     }
                 } else {
-                    console.log(`[Accountant Agent] ⏭️ Payment is prior to ${cutoffYear} boundary. Skipping Search Agent.`);
+                    debug(`[Accountant Agent] ⏭️ Payment is prior to ${cutoffYear} boundary. Skipping Search Agent.`);
                 }
             }
         } catch(err) {
@@ -207,7 +208,7 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
 
         // Exception: "arve-saateleht" / "arvesaateleht" = invoice-waybill, a legitimate invoice type
         if (isNonInvoice && /arve.?saateleht/i.test(allText)) {
-            console.log(`[Accountant Agent] ℹ️ "arve-saateleht" detected — treating as invoice (not waybill)`);
+            debug(`[Accountant Agent] ℹ️ "arve-saateleht" detected — treating as invoice (not waybill)`);
             isNonInvoice = false;
         }
 
@@ -242,7 +243,7 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
             const regMatch = compReg && invReg && compReg === invReg;
 
             if (vatMatch || regMatch) {
-                console.log(`[Accountant Agent] ⚠️ SELF-INVOICE GUARD: vendor VAT/Reg matches receiver "${comp.name}". Clearing buyer data from vendor fields.`);
+                debug(`[Accountant Agent] ⚠️ SELF-INVOICE GUARD: vendor VAT/Reg matches receiver "${comp.name}". Clearing buyer data from vendor fields.`);
                 // Clear fields that belong to the buyer, not the vendor
                 if (vatMatch) docAiPayload.supplierVat = '';
                 if (regMatch) docAiPayload.supplierRegistration = '';
@@ -252,7 +253,7 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
         }
     }
 
-    console.log(`\n[Accountant Agent] 🚀 Beginning Audit for ${docAiPayload.vendorName} (Inv: ${docAiPayload.invoiceId})`);
+    debug(`\n[Accountant Agent] 🚀 Beginning Audit for ${docAiPayload.vendorName} (Inv: ${docAiPayload.invoiceId})`);
 
     let systemStatus = docAiPayload.status || 'Pending';
     let warnings = docAiPayload.validationWarnings || [];
@@ -291,7 +292,7 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
     }
 
     // --- 1.2. PRE-FLIGHT AUDIT: THE CROSS-COMPANY ROUTING PROTOCOL (Rule 10) ---
-    console.log(`[Accountant Agent] 🌐 Validating multi-tenant Receiver boundaries...`);
+    debug(`[Accountant Agent] 🌐 Validating multi-tenant Receiver boundaries...`);
     const companiesSnap = await getCachedCompanies();
     let bestMatchedCompanyId = null;
     let rxName = String(docAiPayload.receiverName || '').toLowerCase().trim();
@@ -314,10 +315,10 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
             warnings.push("CRITICAL SPAM FILTER: Target Receiver name bears no relation to internal registered companies. Document rejected.");
             return null; // Don't save spam/misrouted records
         } else if (bestMatchedCompanyId && bestMatchedCompanyId !== companyId) {
-            console.log(`[Accountant Agent] 🔄 CROSS-COMPANY REROUTING: Document mathematically designated for target ${bestMatchedCompanyId}, overriding incorrect inbound SMTP matrix payload ${companyId}!`);
+            debug(`[Accountant Agent] 🔄 CROSS-COMPANY REROUTING: Document mathematically designated for target ${bestMatchedCompanyId}, overriding incorrect inbound SMTP matrix payload ${companyId}!`);
             companyId = bestMatchedCompanyId; 
         } else {
-            console.log(`[Accountant Agent] ✅ Identity boundary verified. Proceeding on default trajectory.`);
+            debug(`[Accountant Agent] ✅ Identity boundary verified. Proceeding on default trajectory.`);
         }
     } else {
          console.warn(`[Accountant Agent] ⚠️ Receiver Name absent or unreadable. Defaulting to inbound vector payload.`);
@@ -336,7 +337,7 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
     const isPrivate = isPrivatePerson(docAiPayload.vendorName);
 
     if (isPrivate) {
-        console.log(`[Accountant Agent] 👤 Vendor "${docAiPayload.vendorName}" appears to be a private person. VAT/Reg may not be required.`);
+        debug(`[Accountant Agent] 👤 Vendor "${docAiPayload.vendorName}" appears to be a private person. VAT/Reg may not be required.`);
         
         // Scrub only Supervisor's VAT/Reg "missing data" warnings — private persons inherently
         // don't have these. Use a targeted pattern to avoid removing unrelated warnings.
@@ -355,7 +356,7 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
         const regMissing = !docAiPayload.supplierRegistration || docAiPayload.supplierRegistration === "Not_Found" || docAiPayload.supplierRegistration === "NOT_FOUND_ON_INVOICE" || String(docAiPayload.supplierRegistration).trim() === "";
 
         if (vatMissing || regMissing) {
-            console.log(`[Accountant Agent] 🔍 VAT/Reg missing from document. Attempting government source lookup for: ${docAiPayload.vendorName}`);
+            debug(`[Accountant Agent] 🔍 VAT/Reg missing from document. Attempting government source lookup for: ${docAiPayload.vendorName}`);
             try {
                 // Detect country hint from vendor name or existing VAT prefix
                 const countryHint = docAiPayload.supplierVat?.match(/^([A-Z]{2})/)?.[1]
@@ -378,13 +379,13 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
                         docAiPayload.supplierVat = enriched.vatNumber;
                         docAiPayload.enrichmentSource = enriched.source;
                         warnings.push(`INFO: VAT number auto-enriched from ${enriched.source} (matched: "${enriched.matchedName}")`);
-                        console.log(`[Accountant Agent] ✅ VAT enriched from ${enriched.source}: ${enriched.vatNumber}`);
+                        debug(`[Accountant Agent] ✅ VAT enriched from ${enriched.source}: ${enriched.vatNumber}`);
                     }
                     if (regMissing && enriched.registrationNumber) {
                         docAiPayload.supplierRegistration = enriched.registrationNumber;
                         docAiPayload.enrichmentSource = enriched.source;
                         warnings.push(`INFO: Registration number auto-enriched from ${enriched.source} (matched: "${enriched.matchedName}")`);
-                        console.log(`[Accountant Agent] ✅ Reg No enriched from ${enriched.source}: ${enriched.registrationNumber}`);
+                        debug(`[Accountant Agent] ✅ Reg No enriched from ${enriched.source}: ${enriched.registrationNumber}`);
                     }
                 }
             } catch (enrichErr) {
@@ -410,7 +411,7 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
 
     // --- 1.8. PRE-FLIGHT AUDIT: KREEDITARVE (CREDIT NOTE) PROTOCOL ---
     if (numericAmount < 0 || String(docAiPayload.amount).trim().startsWith('-')) {
-        console.log(`[Accountant Agent] 🟢 KREEDITARVE DETECTED: Amount ${docAiPayload.amount}. Status → 'Paid'. Will offset matching invoice.`);
+        debug(`[Accountant Agent] 🟢 KREEDITARVE DETECTED: Amount ${docAiPayload.amount}. Status → 'Paid'. Will offset matching invoice.`);
         systemStatus = 'Paid';
         warnings.push("NOTE: Kreeditarve (Credit Note) detected. Separate record with negative amount, status 'Paid'.");
 
@@ -432,7 +433,7 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
 
                 if (Math.abs(pRemaining - creditAmount) <= 0.05) {
                     // Exact match — mark original as Paid
-                    console.log(`[Accountant Agent] ⚖️ Credit note exactly offsets invoice ${pData.invoiceId}. Marking as Paid.`);
+                    debug(`[Accountant Agent] ⚖️ Credit note exactly offsets invoice ${pData.invoiceId}. Marking as Paid.`);
                     await pendingDoc.ref.update({
                         status: 'Paid',
                         remainingAmount: 0,
@@ -443,7 +444,7 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
                 } else if (creditAmount < pRemaining) {
                     // Partial credit — reduce remaining
                     const newRemaining = cleanNum((pRemaining - creditAmount).toFixed(2));
-                    console.log(`[Accountant Agent] ⚖️ Partial credit: ${creditAmount} off ${pRemaining}. New remaining: ${newRemaining}`);
+                    debug(`[Accountant Agent] ⚖️ Partial credit: ${creditAmount} off ${pRemaining}. New remaining: ${newRemaining}`);
                     await pendingDoc.ref.update({
                         remainingAmount: newRemaining,
                         creditNoteId: docAiPayload.invoiceId || null,
@@ -453,7 +454,7 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
                 }
             }
             if (!offsetApplied) {
-                console.log(`[Accountant Agent] ⚠️ No matching invoice found to offset with credit note.`);
+                debug(`[Accountant Agent] ⚠️ No matching invoice found to offset with credit note.`);
             }
         } catch (creditErr) {
             console.warn(`[Accountant Agent] Credit note offset failed: ${creditErr.message}`);
@@ -465,7 +466,7 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
         const sixMonthsAgo = new Date();
         sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
 
-        console.log(`[Accountant Agent] 🔍 Checking Firestore for Duplicates (Last 6 Months) natively using Deep Fuzzy Logic...`);
+        debug(`[Accountant Agent] 🔍 Checking Firestore for Duplicates (Last 6 Months) natively using Deep Fuzzy Logic...`);
         const duplicateCheck = await db.collection('invoices')
             .where('companyId', '==', companyId)
             .where('createdAt', '>=', sixMonthsAgo)
@@ -518,18 +519,18 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
                 if (strongIdAmtMatch && !vendorFuzzyMatch) {
                     if (incomingHasSuffix && !existingHasSuffix) {
                         // Incoming has proper company name — replace existing
-                        console.log(`[Accountant Agent] ⚔️ COMPANY NAME UPGRADE: "${data.vendorName}" → "${docAiPayload.vendorName}" (has legal suffix). Destroying ${doc.id}.`);
+                        debug(`[Accountant Agent] ⚔️ COMPANY NAME UPGRADE: "${data.vendorName}" → "${docAiPayload.vendorName}" (has legal suffix). Destroying ${doc.id}.`);
                         ghostDocIdToDestroy = doc.id;
                     } else if (existingHasSuffix && !incomingHasSuffix) {
                         // Existing already has proper name — skip incoming
-                        console.log(`[Accountant Agent] 🛑 DUPLICATE: "${docAiPayload.vendorName}" rejected — "${data.vendorName}" already has legal suffix.`);
+                        debug(`[Accountant Agent] 🛑 DUPLICATE: "${docAiPayload.vendorName}" rejected — "${data.vendorName}" already has legal suffix.`);
                         isDuplicate = true;
                     } else {
                         // Both or neither have suffix — keep existing
                         isDuplicate = true;
                     }
                 } else if (dbNoFile && incomingIsBetter) {
-                    console.log(`[Accountant Agent] ⚔️ GHOST ASSASSINATION: Destroying skeleton duplicate ${doc.id} in favor of full DocAI payload!`);
+                    debug(`[Accountant Agent] ⚔️ GHOST ASSASSINATION: Destroying skeleton duplicate ${doc.id} in favor of full DocAI payload!`);
                     ghostDocIdToDestroy = doc.id;
                 } else {
                     isDuplicate = true;
@@ -545,7 +546,7 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
                 const ghostDoc = await t.get(ghostRef);
                 // The ghost must still exist and must still lack a proper fileUrl to be assassinated.
                 if (ghostDoc.exists && (!ghostDoc.data().fileUrl || ghostDoc.data().fileUrl === 'BODY_TEXT_NO_ATTACHMENT')) {
-                    console.log(`[Accountant Agent] 🗑️  Ghost verified and deleted via Transaction lock: ${ghostDocIdToDestroy}`);
+                    debug(`[Accountant Agent] 🗑️  Ghost verified and deleted via Transaction lock: ${ghostDocIdToDestroy}`);
                     t.delete(ghostRef);
                 } else {
                     console.warn(`[Accountant Agent] ⚠️  Ghost deletion aborted: doc state changed or file now present (${ghostDocIdToDestroy})`);
@@ -565,15 +566,15 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
     // --- 3. COMPLIANCE AUDIT: VIES Validation ---
     let viesResult = null;
     if (docAiPayload.supplierVat && docAiPayload.supplierVat !== 'Not_Found' && !isPrivate) {
-        console.log(`[Accountant Agent] 🌍 Verifying VAT [${docAiPayload.supplierVat}] with EU VIES...`);
+        debug(`[Accountant Agent] 🌍 Verifying VAT [${docAiPayload.supplierVat}] with EU VIES...`);
         viesResult = await validateVat(docAiPayload.supplierVat);
-        console.log(`[Accountant Agent] 💶 VIES Response: Valid? ${viesResult.isValid}`);
+        debug(`[Accountant Agent] 💶 VIES Response: Valid? ${viesResult.isValid}`);
         // Attach raw result to DB for UI
         docAiPayload.viesValidation = viesResult;
     }
 
     // --- 4. RULE-BASED ACCOUNTING AUDIT (Claude disabled) ---
-    console.log(`[Accountant Agent] 🔢 Running rule-based compliance audit (no AI)...`);
+    debug(`[Accountant Agent] 🔢 Running rule-based compliance audit (no AI)...`);
     {
         // Apply the same 3 compliance rules that Claude was checking, but in code
         const aiAnalysis = { recommendedStatus: 'Pending', generatedWarnings: [] };
@@ -589,7 +590,7 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
         }
         // Rule 3: Math check removed — sub + tax ≠ total is normal (leasing, mixed VAT rates)
 
-        console.log(`[Accountant Agent] 📝 Rule-based audit done. Status: ${aiAnalysis.recommendedStatus}`);
+        debug(`[Accountant Agent] 📝 Rule-based audit done. Status: ${aiAnalysis.recommendedStatus}`);
         
         // Merge AI findings
         if (aiAnalysis.generatedWarnings && aiAnalysis.generatedWarnings.length > 0) {
@@ -605,7 +606,7 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
                 systemStatus = 'Needs Action';
             }
         } else {
-             console.log(`[Accountant Agent] 🔒 Immutable 'Paid' status preserved despite ${warnings.length} warnings.`);
+             debug(`[Accountant Agent] 🔒 Immutable 'Paid' status preserved despite ${warnings.length} warnings.`);
         }
 
     }
@@ -617,7 +618,7 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
         due.setHours(0, 0, 0, 0);
         today.setHours(0, 0, 0, 0);
         if (!isNaN(due.getTime()) && today.getTime() > due.getTime()) {
-            console.log(`[Accountant Agent] ⏰ dueDate ${docAiPayload.dueDate} is past → status Overdue`);
+            debug(`[Accountant Agent] ⏰ dueDate ${docAiPayload.dueDate} is past → status Overdue`);
             systemStatus = 'Overdue';
         }
     }

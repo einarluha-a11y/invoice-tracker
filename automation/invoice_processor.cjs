@@ -13,6 +13,7 @@ const { stageDocument, markStagingResult } = require('./core/staging.cjs');
 const { cleanNum } = require('./core/utils.cjs');
 // Merit Aktiva sync — sends invoices automatically
 const { syncInvoiceToMerit } = require('./merit_sync.cjs');
+const debug = (...a) => process.env.DEBUG && console.log(...a);
 
 /**
  * Helper to upload an attachment directly to Firebase Storage and get a secure download URL.
@@ -56,7 +57,7 @@ async function writeToFirestore(dataArray) {
     if (!dataArray || !Array.isArray(dataArray) || dataArray.length === 0) return;
 
     try {
-        console.log(`[Firestore] Adding ${dataArray.length} invoice(s) to database via Atomic Transaction...`);
+        debug(`[Firestore] Adding ${dataArray.length} invoice(s) to database via Atomic Transaction...`);
         const invoicesRef = db.collection('invoices');
         const webhooksToSend = [];
 
@@ -134,7 +135,7 @@ async function writeToFirestore(dataArray) {
                         .limit(1)
                         .get();
                     if (!indexedSnap.empty) {
-                        console.log(`[Firestore] Duplicate caught by filename match (indexed): ${currentFileBasename}`);
+                        debug(`[Firestore] Duplicate caught by filename match (indexed): ${currentFileBasename}`);
                         isDuplicate = true;
                         existingDocId = indexedSnap.docs[0].id;
                     } else {
@@ -149,7 +150,7 @@ async function writeToFirestore(dataArray) {
                             const existingFile = doc.data().fileUrl || '';
                             const existingBasename = (existingFile.match(/\d+_([^?]+)/)?.[1] || '').toLowerCase();
                             if (existingBasename && existingBasename === currentFileBasename) {
-                                console.log(`[Firestore] Duplicate caught by filename match (legacy scan): ${currentFileBasename}`);
+                                debug(`[Firestore] Duplicate caught by filename match (legacy scan): ${currentFileBasename}`);
                                 isDuplicate = true;
                                 existingDocId = doc.id;
                                 break;
@@ -188,7 +189,7 @@ async function writeToFirestore(dataArray) {
                     const newVendor = (vendorName || '').toString().toLowerCase().trim();
 
                     if (existingVendor === newVendor && existingData.companyId === data.companyId) {
-                        console.log(`[Firestore] Duplicate caught by Date/Amount/Vendor match. Existing ID: ${existingData.invoiceId}, New ID: ${invoiceId}`);
+                        debug(`[Firestore] Duplicate caught by Date/Amount/Vendor match. Existing ID: ${existingData.invoiceId}, New ID: ${invoiceId}`);
                         isDuplicate = true;
                         existingDocId = doc.id;
                         break;
@@ -202,15 +203,15 @@ async function writeToFirestore(dataArray) {
                     // Only patch the fileUrl if the existing record in the DB is completely empty (no file attached).
                     const currDoc = await invoicesRef.doc(existingDocId).get();
                     if (!currDoc.data().fileUrl) {
-                        console.log(`[Firestore] Patching duplicate invoice with missing fileUrl: ${vendorName} - ${invoiceId}`);
+                        debug(`[Firestore] Patching duplicate invoice with missing fileUrl: ${vendorName} - ${invoiceId}`);
                         t.update(invoicesRef.doc(existingDocId), {
                             fileUrl: data.fileUrl
                         });
                     } else {
-                        console.log(`[Firestore] Audit Guard: Refusing to overwrite existing valid fileUrl for duplicate invoice: ${vendorName} - ${invoiceId}`);
+                        debug(`[Firestore] Audit Guard: Refusing to overwrite existing valid fileUrl for duplicate invoice: ${vendorName} - ${invoiceId}`);
                     }
                 } else {
-                    console.log(`[Firestore] Skipping duplicate invoice: ${vendorName} - ${invoiceId}`);
+                    debug(`[Firestore] Skipping duplicate invoice: ${vendorName} - ${invoiceId}`);
                 }
                 return; // CRITICAL: This bypasses both Firestore creation AND Webhook scheduling below
             }
@@ -237,7 +238,7 @@ async function writeToFirestore(dataArray) {
                         const v1 = String(vendorName).toLowerCase().replace(/[^a-z0-9]/g, '');
                         const v2 = String(passData.vendorName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
                         if (v1 && v2 && (v1.includes(v2) || v2.includes(v1))) {
-                            console.log(`[Credit-Offset] Matched credit invoice to original invoice ${passData.invoiceId} (Amount: ${passData.amount}). Marking original as Paid.`);
+                            debug(`[Credit-Offset] Matched credit invoice to original invoice ${passData.invoiceId} (Amount: ${passData.amount}). Marking original as Paid.`);
                             t.update(potentialOffset.ref, { status: 'Paid' });
                             break;
                         }
@@ -325,7 +326,7 @@ async function writeToFirestore(dataArray) {
           }
         }
 
-        console.log(`[Firestore] ${dataArray.length} invoice(s) successfully written via Transaction!`);
+        debug(`[Firestore] ${dataArray.length} invoice(s) successfully written via Transaction!`);
 
         // --- DROPBOX UPLOAD ---
         if (process.env.DROPBOX_ACCESS_TOKEN) {
@@ -345,7 +346,7 @@ async function writeToFirestore(dataArray) {
                     const pdfBuffer = Buffer.from(await pdfRes.arrayBuffer());
 
                     const dropboxPath = await uploadInvoiceToPDF(payload.invoiceId, pdfBuffer, folderPath);
-                    console.log(`[Dropbox] ✅ Uploaded ${payload.invoiceId} → ${dropboxPath}`);
+                    debug(`[Dropbox] ✅ Uploaded ${payload.invoiceId} → ${dropboxPath}`);
                 } catch (dbxErr) {
                     console.error(`[Dropbox] ❌ Upload failed for ${payload.invoiceId}:`, dbxErr.message);
                 }
@@ -383,7 +384,7 @@ async function scoutTeacherPipeline(content, mimeType, companyId, customRules) {
         tempParsed[0] = teacherResult.invoice;
 
         if (teacherResult.corrections && teacherResult.corrections.length > 0) {
-            console.log(`[Teacher] Corrections applied: ${teacherResult.corrections.join('; ')}`);
+            debug(`[Teacher] Corrections applied: ${teacherResult.corrections.join('; ')}`);
         }
 
         if (!teacherResult.approved) {
@@ -410,14 +411,14 @@ async function scoutTeacherPipeline(content, mimeType, companyId, customRules) {
                             if (fixes.amount !== undefined) tempParsed[0].amount = fixes.amount;
                             if (fixes.subtotalAmount !== undefined) tempParsed[0].subtotalAmount = fixes.subtotalAmount;
                             if (fixes.taxAmount !== undefined) tempParsed[0].taxAmount = fixes.taxAmount;
-                            console.log(`[Claude QC] Currency ${sub > 0 ? '→' : 'set to'} ${fixes.currency}, amount=${fixes.amount}`);
+                            debug(`[Claude QC] Currency ${sub > 0 ? '→' : 'set to'} ${fixes.currency}, amount=${fixes.amount}`);
                         } else {
                             if (fixes.amount !== undefined) tempParsed[0].amount = fixes.amount;
                             if (fixes.subtotalAmount !== undefined) tempParsed[0].subtotalAmount = fixes.subtotalAmount;
                             if (fixes.taxAmount !== undefined) tempParsed[0].taxAmount = fixes.taxAmount;
                         }
                         if (fixes.isPaid) tempParsed[0].status = 'Paid';
-                        console.log(`[Claude QC] Applied fixes in Scout pipeline`);
+                        debug(`[Claude QC] Applied fixes in Scout pipeline`);
                     }
                     tempParsed[0].claudeFixAttempted = true;
                 } catch (claudeErr) {

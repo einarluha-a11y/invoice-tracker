@@ -37,6 +37,7 @@ const path        = require('path');
 const readline    = require('readline');
 const { admin, db, bucket } = require('./core/firebase.cjs');
 const { cleanNum, cleanVendorName } = require('./core/utils.cjs');
+const debug = (...a) => process.env.DEBUG && console.log(...a);
 
 // ── Colours for terminal output ──────────────────────────────────────────────
 const C = {
@@ -111,22 +112,22 @@ ${snippet}`
 
         // Anti-hallucination: validate VAT format (2 letters + 8-12 digits)
         if (parsed.supplierVat && !/^[A-Z]{2}\d{8,12}$/.test(parsed.supplierVat)) {
-            console.log(`[Teacher] ⚠️ Rejected hallucinated VAT: ${parsed.supplierVat}`);
+            debug(`[Teacher] ⚠️ Rejected hallucinated VAT: ${parsed.supplierVat}`);
             parsed.supplierVat = '';
         }
         // Anti-hallucination: regCode must be digits only, 6-12 chars
         if (parsed.supplierRegistration && !/^\d{6,12}$/.test(parsed.supplierRegistration)) {
-            console.log(`[Teacher] ⚠️ Rejected hallucinated RegCode: ${parsed.supplierRegistration}`);
+            debug(`[Teacher] ⚠️ Rejected hallucinated RegCode: ${parsed.supplierRegistration}`);
             parsed.supplierRegistration = '';
         }
         // Anti-hallucination: if VAT = country prefix + regCode (fabricated), reject VAT
         if (parsed.supplierVat && parsed.supplierRegistration &&
             parsed.supplierVat.slice(2) === parsed.supplierRegistration) {
-            console.log(`[Teacher] ⚠️ Rejected fabricated VAT (= prefix + regCode): ${parsed.supplierVat}`);
+            debug(`[Teacher] ⚠️ Rejected fabricated VAT (= prefix + regCode): ${parsed.supplierVat}`);
             parsed.supplierVat = '';
         }
 
-        console.log(`[Teacher] 🤖 Claude: vendor="${parsed.vendorName}", VAT=${parsed.supplierVat}, Reg=${parsed.supplierRegistration}, amount=${parsed.amount} ${parsed.currency}`);
+        debug(`[Teacher] 🤖 Claude: vendor="${parsed.vendorName}", VAT=${parsed.supplierVat}, Reg=${parsed.supplierRegistration}, amount=${parsed.amount} ${parsed.currency}`);
         return parsed;
     } catch (err) {
         console.warn(`[Teacher] Claude extraction failed: ${err.message}`);
@@ -559,7 +560,7 @@ async function validateAndTeach(invoiceData, companyId) {
         try {
             examples = await findExamplesByIdentifiers(invoice);
             if (examples.length > 0) {
-                console.log(`[Teacher] Found ${examples.length} example(s) by VAT/RegNo/patterns match`);
+                debug(`[Teacher] Found ${examples.length} example(s) by VAT/RegNo/patterns match`);
             }
         } catch { /* no match — proceed without examples */ }
     }
@@ -584,7 +585,7 @@ async function validateAndTeach(invoiceData, companyId) {
                 const exVat = (gt.supplierVat || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
                 const exReg = (gt.supplierRegistration || '').replace(/[^0-9]/g, '');
                 if ((exVat && receiverIds.has(exVat)) || (exReg && receiverIds.has(exReg))) {
-                    console.log(`[Teacher] ⚠️ Example "${examples[i].vendorName}" has buyer VAT/Reg — REMOVING from candidates`);
+                    debug(`[Teacher] ⚠️ Example "${examples[i].vendorName}" has buyer VAT/Reg — REMOVING from candidates`);
                     examples.splice(i, 1);
                 }
             }
@@ -610,7 +611,7 @@ async function validateAndTeach(invoiceData, companyId) {
             const exTokens = gt.vendorName.toLowerCase().replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter(t => t.length > 2);
             const hasOverlap = isEmpty(invoice.vendorName) || invTokens.some(t => exTokens.some(e => e.includes(t) || t.includes(e)));
             if (!hasOverlap) {
-                console.log(`[Teacher] ⚠️ Skipping vendorName from example: "${gt.vendorName}" ≠ "${invoice.vendorName}" (no token overlap)`);
+                debug(`[Teacher] ⚠️ Skipping vendorName from example: "${gt.vendorName}" ≠ "${invoice.vendorName}" (no token overlap)`);
             } else {
                 if (!isEmpty(invoice.vendorName)) {
                     corrections.push(`Corrected vendorName: ${invoice.vendorName} → ${gt.vendorName} (from example)`);
@@ -673,7 +674,7 @@ async function validateAndTeach(invoiceData, companyId) {
 
         // Apply teachingNotes if available (vendor-specific rules)
         if (bestExample.teachingNotes) {
-            console.log(`[Teacher] Applying teaching notes for ${bestExample.vendorName}: ${bestExample.teachingNotes}`);
+            debug(`[Teacher] Applying teaching notes for ${bestExample.vendorName}: ${bestExample.teachingNotes}`);
         }
     }
 
@@ -883,10 +884,10 @@ async function validateAndTeach(invoiceData, companyId) {
     const approved = missing.length === 0;
 
     if (!approved) {
-        console.log(`[Teacher] ⚠ Missing fields after validation: ${missing.join(', ')}`);
+        debug(`[Teacher] ⚠ Missing fields after validation: ${missing.join(', ')}`);
     }
     if (corrections.length > 0) {
-        console.log(`[Teacher] ✅ Applied ${corrections.length} correction(s): ${corrections.join('; ')}`);
+        debug(`[Teacher] ✅ Applied ${corrections.length} correction(s): ${corrections.join('; ')}`);
     }
 
     // Attach teacher corrections as metadata

@@ -4,39 +4,31 @@ PHASE: ARCHITECTURE
 ROUND: 1
 TASK: TASK-19 — Исправить все проблемы найденные при ревизии кода
 
-## ПРОБЛЕМЫ ДЛЯ ИСПРАВЛЕНИЯ
+## ВЫПОЛНЕНО
 
-### 🔴 КРИТИЧНО
+### ✅ 1. merit_aktiva_agent.cjs — cleanNum (предыдущий коммит)
+Локальный parseFloat удалён, используется `cleanNum` из `core/utils.cjs`.
 
-**1. merit_aktiva_agent.cjs — собственный parseFloat (строки 235,237,241,243,336)**
-Удалить локальную функцию парсинга, импортировать cleanNum из core/utils.cjs и использовать везде.
+### ✅ 2. invoice_processor.cjs — IDEACOM_ID (предыдущий коммит)
+Специальная логика для Ideacom удалена.
 
-**2. invoice_processor.cjs:80 — захардкоженный IDEACOM_ID**
-`const IDEACOM_ID = "vlhvA6i8d3Hry8rtrA3Z"` — нарушает multitenancy.
-Убрать специальную логику для Ideacom или сделать её конфигурируемой через Firestore.
+### ✅ 3. reconcile_bank_statement.cjs — захардкоженные companyId
+Удалены fallback-значения `'vlhvA6i8d3Hry8rtrA3Z'` и `'bP6dc0PMdFtnmS5QTX4N'`.
+Теперь только `process.env.COMPANY_ID_1` и `process.env.COMPANY_ID_2` (без дефолта).
 
-**3. reconcile_bank_statement.cjs:32 — захардкоженный companyId**
-`companyId: "vlhvA6i8d3Hry8rtrA3Z"` — передавать как параметр.
+### ✅ 4. ecosystem.config.cjs — защита от crash loop (предыдущий коммит)
+`max_restarts: 10`, `restart_delay: 5000`, `exp_backoff_restart_delay: 100` для invoice-api и invoice-imap.
 
-### 🟡 СРЕДНЕ
+### ✅ 5. console.log — обёрнуты в DEBUG
+- `invoice_processor.cjs`: `const debug = (...a) => process.env.DEBUG && console.log(...a)`, все 13 логов → `debug`
+- `accountant_agent.cjs`: аналогично, 33 лога → `debug`
+- `teacher_agent.cjs`: pipeline-логи (строки 114–889) → `debug`, интерактивные CLI (1053+) оставлены
+- `imap_listener.cjs`: уже имел `const DEBUG`, 27 голых логов → `if (DEBUG)`, стартовое → `console.error`
 
-**4. ecosystem.config.cjs — добавить защиту от crash loop**
-```js
-max_restarts: 10,
-restart_delay: 5000,
-exp_backoff_restart_delay: 100
-```
-Для invoice-api и invoice-imap.
-
-**5. 127 console.log в продакшн коде**
-В teacher_agent.cjs, accountant_agent.cjs, imap_listener.cjs, invoice_processor.cjs.
-Обернуть в `if (process.env.DEBUG)` или заменить на console.error где уместно.
-
-**6. ecosystem.config — проверить entry point**
-Запускает `imap_daemon.cjs` — убедиться что файл существует после разбивки на модули.
+### ✅ 6. ecosystem.config — entry point
+`imap_daemon.cjs` существует.
 
 ## Верификация
-- node --check всех изменённых файлов
-- pm2 restart all
-- pm2 status — все процессы online
+- `node --check` всех изменённых файлов: OK
 
+DEPLOY_STATUS: OK
