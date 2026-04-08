@@ -74,9 +74,30 @@ function runClaude(prompt) {
     claudeStartedAt = Date.now();
     log('🤖 Запускаю Claude CLI...');
 
+    // Load project context for Claude CLI
+    let projectContext = '';
+    try {
+        const memoryDir = path.join(PROJECT, '.claude', 'memory');
+        if (fs.existsSync(memoryDir)) {
+            for (const f of fs.readdirSync(memoryDir).filter(f => f.endsWith('.md'))) {
+                projectContext += fs.readFileSync(path.join(memoryDir, f), 'utf-8') + '\n';
+            }
+        }
+    } catch {}
+    const systemRules = [
+        'Проект использует inline styles и CSS переменные (var(--...)), НЕ Tailwind.',
+        'После изменений: node --check, аудит imports/variables, commit, push.',
+        'Не править Firestore напрямую — только через агентов.',
+        'description в инвойсах = все line items, не только первый.',
+        'sub + tax ≠ total — это нормально (лизинг, разные ставки НДС).',
+        'Дашборд — PWA на localhost:4173, после build переоткрыть.',
+        projectContext.slice(0, 3000),
+    ].join('\n');
+
     const child = spawn('claude', [
         '--dangerously-skip-permissions',
         '-p', prompt,
+        '--append-system-prompt', systemRules,
         '--max-turns', '100'
     ], { cwd: PROJECT, stdio: 'pipe', env: { ...process.env, PATH: '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin' } });
 
