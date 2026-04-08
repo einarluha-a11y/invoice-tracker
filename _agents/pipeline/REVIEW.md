@@ -1,31 +1,31 @@
-# REVIEW от Perplexity — 2026-04-08 14:15 UTC
-<!-- phase: ARCHITECTURE | round: 2 -->
+# REVIEW от Perplexity — 2026-04-08 15:03 UTC
+<!-- phase: ARCHITECTURE | round: 3 -->
 
-ВЕРДИКТ: CHANGES_NEEDED
+📋 Получил: TASK-22 Round 3 — архитектурное решение для синхронизации selectedCompanyId при переключении компании
 
-ОЦЕНКА: Архитектурное разделение компаний реализовано корректно на уровне приложения — данные физически разделены по `accounts/{id}/companies/`, fallback удалён, цепочка `selectedCompanyId` работает. Сборка чистая.
+---
 
-ЗАМЕЧАНИЯ:
+## ВЕРДИКТ: APPROVED
 
-1. **Firestore Security Rules — критично**. Текущее разделение работает только на уровне UI/логики приложения. Если скомпрометирован Firebase token любого пользователя, он может напрямую запросить `companies/{anyCompanyId}` или `invoices` с чужим `companyId` через REST API. Нужны правила, которые блокируют это на уровне БД[2][3][4].
+## ОЦЕНКА
 
-2. **Рекомендуемая структура правил** (по Chief Accountant Charter — разделение по компаниям):
-   - Коллекция `companies/` должна быть недоступна напрямую
-   - Доступ только через `accounts/{uid}/companies/{companyId}` (где `uid` — текущий пользователь)[2]
-   - Коллекции `invoices`, `bank_transactions` должны требовать `companyId` в документе и проверку через `get()` что пользователь принадлежит этой компании[3]
+Решение корректно идентифицирует root cause (selectedCompanyId не сбрасывается при смене companies[]) и предлагает правильный паттерн через useEffect с зависимостью от companies. Логика цепочки обновлений (AuthContext → useCompanies → setSelectedCompanyId → subscribeToInvoices) соответствует архитектуре приложения. Проверка на пустой массив защищает от edge case.
 
-3. **Пример минимального правила**:
-   ```
-   match /invoices/{invoiceId} {
-     allow read, write: if 
-       request.auth != null &&
-       resource.data.companyId in 
-       get(/databases/(default)/documents/accounts/$(request.auth.uid)).data.companies;
-   }
-   ```
-   Это гарантирует, что пользователь может работать только с инвойсами компаний, к которым он привязан[1][3].
+## ЗАМЕЧАНИЯ
 
-4. **Edge case**: Если пользователь удалён из компании в `accounts/{uid}/companies/`, но старый token ещё живой — он сможет читать данные до истечения токена. Нужна логика инвалидации токенов при изменении доступа (опционально, но рекомендуется для высокого уровня безопасности).
+Пусто — решение готово к реализации.
+
+---
+
+**🔧 Рекомендация по реализации:**
+
+1. Добавить useEffect в App.tsx с зависимостью `[companies]`
+2. Убедиться что этот эффект находится ПОСЛЕ useCompanies (или в том же компоненте ниже по коду)
+3. После коммита → push → Railway auto-deploy
+4. Проверить PM2 логи на ошибки гидрации
+5. Тестировать в браузере: Ideacom → GT → Ideacom (инвойсы должны переключаться синхронно)
+
+Готов к кодированию?
 
 ---
 *Автоматическое ревью через GitHub Actions (.github/workflows/perplexity_review.yml)*
