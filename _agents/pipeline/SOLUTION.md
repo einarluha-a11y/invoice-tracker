@@ -1,52 +1,50 @@
 # SOLUTION
 
 PHASE: ARCHITECTURE
-ROUND: 3
-TASK: TASK-22 Round 3 — При переключении компании инвойсы не перегружаются
+ROUND: 4
+TASK: TASK-22 Round 4 — companyId перепутан в Firestore (инвойсы GT показываются в Ideacom и наоборот)
 
-## СИМПТОМ
+## ТОЧНЫЙ СИМПТОМ
 
-Открытие → Ideacom окно + Ideacom инвойсы ✅
-Переключение на GT → GT окно + Ideacom инвойсы ❌
+- Открытие → окно Ideacom + инвойсы GT ❌
+- Переключение на GT → окно GT + инвойсы Ideacom ❌
 
-## ПРИЧИНА
+Это значит companyId в инвойсах перепутан — инвойсы GT записаны с companyId от Ideacom и наоборот.
 
-При переключении компании selectedCompanyId не обновляется.
-Инвойсы продолжают загружаться для старого companyId.
+## ДИАГНОСТИКА — запусти и покажи вывод
 
-## ДИАГНОСТИКА
+```js
+const { db } = require("./automation/core/firebase.cjs");
 
-В App.tsx найти:
-1. Где устанавливается selectedCompanyId по умолчанию
-2. Есть ли useEffect который реагирует на смену companies[]
-3. Как работает переключатель компании — что происходит при onChange
-
-## ИСПРАВЛЕНИЕ
-
-В App.tsx — добавить сброс selectedCompanyId при смене companies[]:
-
-```tsx
-// При смене списка компаний — сбросить выбор на первую компанию
-useEffect(() => {
-  if (companies.length > 0) {
-    setSelectedCompanyId(companies[0].id);
-  } else {
-    setSelectedCompanyId("");
+// 1. Смотрим companyId компаний
+const snap = await db.collection("accounts").get();
+for (const acc of snap.docs) {
+  const companies = await acc.ref.collection("companies").get();
+  for (const c of companies.docs) {
+    console.log(`ACCOUNT: ${acc.id} | COMPANY_DOC_ID: ${c.id} | NAME: ${c.data().name}`);
   }
-}, [companies]);
+}
+
+// 2. Смотрим что записано в инвойсах
+const inv = await db.collection("invoices").limit(10).get();
+inv.docs.forEach(d => {
+  console.log(`INVOICE companyId: ${d.data().companyId} | vendor: ${(d.data().vendorName||"").substring(0,25)}`);
+});
 ```
 
-Убедиться что этот useEffect срабатывает ПОСЛЕ того как companies обновился
-при переключении аккаунта.
+## ОЖИДАЕМЫЙ РЕЗУЛЬТАТ ДИАГНОСТИКИ
 
-Также проверить — при переключении аккаунта в dropdown:
-- currentAccountId меняется в AuthContext
-- useCompanies загружает новый список
-- useEffect выше срабатывает → selectedCompanyId обновляется
-- subscribeToInvoices получает новый companyId → загружает правильные инвойсы
+Если companyId в инвойсах не совпадает с ID компании в accounts/ — нужно исправить в Firestore.
+Если совпадает — проблема в том как фронтенд маппит companyId на название.
+
+## ИСПРАВЛЕНИЕ (после диагностики)
+
+Вариант А: если companyId перепутан в инвойсах → написать скрипт который меняет companyId у всех инвойсов.
+
+Вариант Б: если маппинг компаний неверный → исправить в accounts/ структуре.
 
 ## Верификация
-- Открыть → Ideacom → инвойсы Ideacom ✅
-- Переключить на GT → инвойсы GT ✅
-- Переключить обратно на Ideacom → инвойсы Ideacom ✅
+- Ideacom окно → инвойсы Ideacom ✅
+- GT окно → инвойсы GT ✅
+- Переключить 5 раз подряд — всегда правильно ✅
 
