@@ -60,3 +60,11 @@ concurrency:
   group: perplexity-review
   cancel-in-progress: false
 ```
+### TASK-19 — В РАБОТЕ
+Полная ревизия кода — исправить все найденные проблемы:
+1. merit_aktiva_agent.cjs — заменить собственный parseFloat на cleanNum (5 мест)
+2. invoice_processor.cjs:80 — убрать захардкоженный IDEACOM_ID
+3. reconcile_bank_statement.cjs:32 — убрать захардкоженный companyId
+4. ecosystem.config.cjs — добавить max_restarts:10, restart_delay:5000
+5. 127 console.log — заменить на console.error или убрать
+6. Проверить entry point imap_daemon в ecosystem.config
