@@ -1,26 +1,20 @@
 # SOLUTION
 
-PHASE: ARCHITECTURE
+PHASE: WAITING
 ROUND: 1
-TASK: TASK-24 — ### TASK-24 ⏳ IN PROGRESS
-**CSV экспорт инвойсов**
+TASK: TASK-24 — COMPLETED
 
-Добавить кнопку "Export CSV" в интерфейс — выгрузка текущего отфильтрованного списка инвойсов.
+## ВЫПОЛНЕНО
 
-**Что экспортировать:**
-- Все поля текущего отфильтрованного вида: vendorName, invoiceNumber, dateCreated, dueDate, amount, currency, status
-- Только видимые (отфильтрованные) инвойсы, а не все
+**CSV экспорт инвойсов** — реализован в `src/App.tsx`.
+
+### Что сделано:
+- Функция `handleExportCsv` (строки 184–232) — RFC 4180 escape, BOM для Excel
+- Кнопка "⬇ CSV" в `filters-bar` рядом с фильтрами (строки 450–465)
+- Экспортируются только отфильтрованные инвойсы (учитывает searchTerm, statusFilter, dateRange, showArchived)
+- Поля: Vendor, Invoice No, Date Created, Due Date, Amount, Currency, Status
 - Имя файла: `invoices_YYYY-MM-DD.csv`
+- Без внешних зависимостей (browser Blob API)
+- `npm run build` — ✓ без ошибок
 
-**Где разместить:**
-- Кнопка "⬇ CSV" рядом с фильтрами в `src/App.tsx`
-- Функция `exportToCsv(invoices)` в `src/data/utils.ts` или прямо в App.tsx
-
-**Требования:**
-- Без внешних зависимостей (только browser Blob API)
-- Корректная обработка запятых и кавычек в полях (RFC 4180)
-- `npm run build` без ошибок TypeScript
-
-## ЗАДАНИЕ
-
-**1. Создать функцию `exportToCsv` в `src/App.tsx` (после строки 180, перед JSX):**
+DEPLOY_STATUS: OK
