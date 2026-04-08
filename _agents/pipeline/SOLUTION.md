@@ -2,36 +2,30 @@
 
 PHASE: ARCHITECTURE
 ROUND: 1
-TASK: Мягкое удаление инвойсов (архив вместо delete)
+TASK: КРИТИЧНО — исправить perplexity_review.py чтобы читал BACKLOG и не повторял выполненные задачи
 
-## ЗАДАНИЕ
+## ПРОБЛЕМА
 
-Реализовать **мягкое удаление** инвойсов вместо жесткого DELETE:
+perplexity_review.py генерирует задания сам через Perplexity API и не знает что уже сделано.
+Результат — бесконечный loop одних и тех же задач (TASK-02, мягкое удаление и т.д.).
 
-1. **Backend API** (`src/lib/invoices.ts`):
-   - `archiveInvoice(id)` — добавить поле `archived: true, archivedAt: serverTimestamp()`
-   - `unarchiveInvoice(id)` — убрать поле `archived`
-   - `deleteInvoice(id)` — теперь = `archiveInvoice(id)` (прозрачно)
-   - Все `getInvoices()` по умолчанию `where('archived', '==', false)`
-   - Новый query param `?includeArchived=true` для показа архива
+## ИСПРАВЛЕНИЕ
 
-2. **Frontend** (`InvoicesPage.tsx`, `InvoiceRow.tsx`):
-   - Кнопка "Архив" вместо "Удалить" 
-   - Badge **📦 Архив** для archived инвойсов (opacity: 0.5)
-   - Чекбокс "Показать архив" — добавляет `includeArchived=true` в URL
-   - Счетчик "Все: 25 (+3 архив)" в заголовке
-   - Контекстное меню: "Восстановить из архива"
+В `.github/scripts/perplexity_review.py` изменить логику генерации следующего задания:
 
-3. **UI/UX**:
-   - Архивные инвойсы: `opacity: 0.5`, курсив даты
-   - Фильтр PDF экспорта: "Только активные" / "Включая архив"
-   - Search работает только по активным (добавить toggle)
+1. Читать `_agents/tasks/BACKLOG.md`
+2. Найти первую задачу БЕЗ отметки `✅` 
+3. Использовать её текст как следующее задание
+4. После выдачи задания — НЕ отмечать его в BACKLOG (отмечать только после DEPLOY_STATUS: OK)
+5. Если все задачи отмечены ✅ → записать в SOLUTION.md: PHASE: WAITING, не генерировать ничего
+
+## Логика определения выполненной задачи
+
+DEPLOY_STATUS: OK в SOLUTION.md → задание выполнено → найти эту задачу в BACKLOG по TASK номеру → поставить ✅
 
 ## Верификация
-- Создать инвойс → "Архив" → исчез из списка, появился в "Архив"
-- `?includeArchived=true` → показывает все
-- `npm run build` — без TS ошибок
-- PDF экспорт: отдельно активные/все
-- Backward compatibility: старые инвойсы без `archived` = активные
 
-DEPLOY_STATUS: OK
+- Запустить скрипт локально с тестовым SOLUTION.md где PHASE: WAITING
+- Убедиться что он берёт первую незакрытую задачу из BACKLOG
+- Убедиться что при всех ✅ пишет PHASE: WAITING
+
