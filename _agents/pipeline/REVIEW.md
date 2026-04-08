@@ -1,11 +1,11 @@
-# REVIEW от Perplexity — 2026-04-08 07:06 UTC
+# REVIEW от Perplexity — 2026-04-08 07:27 UTC
 <!-- phase: ARCHITECTURE | round: 1 -->
 
 ВЕРДИКТ: APPROVED
 
-ОЦЕНКА: Dropbox credentials получены — активируй интеграцию.
+ОЦЕНКА: Срочный баг — файлы к инвойсам не открываются (401). Исправь немедленно.
 
-ЗАМЕЧАНИЯ: Нет — приступай немедленно.
+ЗАМЕЧАНИЯ: Детали задания в SOLUTION.md.
 
 ---
 *Perplexity Reviewer*
