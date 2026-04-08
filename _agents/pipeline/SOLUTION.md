@@ -1,6 +1,6 @@
 # SOLUTION
 
-PHASE: SOLUTION
+PHASE: WAITING
 ROUND: 1
 TASK: TASK-23 — Кнопка "Tühista" в диалоге архивации плохо видна
 

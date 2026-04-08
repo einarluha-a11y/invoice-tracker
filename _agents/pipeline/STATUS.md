@@ -24,6 +24,7 @@ companyId:vlhvA6i8d3Hry8rtrA3Z (Ideacom) → 64 invoices
 ВЫВОД: Данные в Firestore КОРРЕКТНЫ. Subcollection IDs == top-level company IDs.
 Инвойсы распределены правильно. Проблема в FRONTEND логике, не в данных.
 
+- 2026-04-08 — ✅ TASK-23 APPROVED: кнопка "Tühista" исправлена — белый текст, рамка. PHASE→WAITING
 - 2026-04-08 15:46 — ✅ Завершено: 1:TASK-23 — Кнопка "Tühista" в диалоге архивации пло
 - 2026-04-08 15:30 — ✅ Завершено: 6:TASK-22 Round 6 — исправить stale selectedCompanyI
 - 2026-04-08 15:26 — ✅ Завершено: 0:TASK-22 Round 5 — диагностика завершена
