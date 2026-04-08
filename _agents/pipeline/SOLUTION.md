@@ -1,48 +1,46 @@
 # SOLUTION
 
-PHASE: ARCHITECTURE
+PHASE: COMPLETED
 ROUND: 1
 TASK: TASK-21 — СРОЧНО: перепутаны инвойсы Global Technics и Ideacom
 
-## ПРОБЛЕМА
+## ДИАГНОСТИКА
 
-На дашборде при выборе "Global Technics" показываются инвойсы Ideacom и наоборот.
+Firestore данные **в порядке**:
+- `accounts/global-technics` → компания `bP6dc0PMdFtnmS5QTX4N` (Global Technics OÜ)
+- `accounts/ideacom` → компания `vlhvA6i8d3Hry8rtrA3Z` (Ideacom OÜ)
+- Инвойсы GT: `companyId=bP6dc0PMdFtnmS5QTX4N`, инвойсы Ideacom: `companyId=vlhvA6i8d3Hry8rtrA3Z`
 
-## ДИАГНОСТИКА — сделай в первую очередь
+## ПРИЧИНА (Вариант В — код)
 
-1. Проверь в Firestore что лежит в accounts/:
-```js
-const snap = await db.collection("accounts").get();
-snap.docs.forEach(d => console.log(d.id, d.data().name));
+`App.tsx` строки 86–90: при смене аккаунта `selectedCompanyId` **не сбрасывался**.
+
+```tsx
+// БЫЛО — условие не срабатывало при смене аккаунта:
+useEffect(() => {
+    if (!selectedCompanyId && companies.length > 0) {
+        setSelectedCompanyId(companies[0].id);
+    }
+}, [companies, selectedCompanyId]);
 ```
-Ожидаем: "global-technics" → "Global Technics", "ideacom" → "Ideacom"
 
-2. Проверь companyId в инвойсах:
-```js
-const inv = await db.collection("invoices").limit(5).get();
-inv.docs.forEach(d => console.log(d.data().companyId, d.data().vendorName));
-```
-
-3. Проверь что в accounts/global-technics/companies/ лежит правильная компания
-и в accounts/ideacom/companies/ — правильная.
-
-## ВЕРОЯТНЫЕ ПРИЧИНЫ
-
-**А) Маппинг перепутан при миграции** — accountId "global-technics" указывает
-на компанию с данными Ideacom в Firestore.
-
-**Б) localStorage** — `currentAccountId` сохранён неверно, фронтенд
-грузит данные не той компании.
-
-**В) useCompanies fallback** — старая коллекция `companies/` возвращает
-компании в другом порядке чем новая `accounts/{id}/companies/`.
+Сценарий баги:
+1. Выбран Global Technics → `selectedCompanyId = "bP6dc0PMdFtnmS5QTX4N"`
+2. Переключаемся на Ideacom → companies обновляется, но `selectedCompanyId` не пуст
+3. Условие `!selectedCompanyId` = false → ID не меняется
+4. `subscribeToInvoices("bP6dc0PMdFtnmS5QTX4N")` → показывает инвойсы GT при выбранном Ideacom
 
 ## ИСПРАВЛЕНИЕ
 
-После диагностики — исправить маппинг в Firestore или в коде.
-Если перепутан маппинг в accounts/ структуре — пересоздать правильно.
+Добавлен `useEffect` сброса `selectedCompanyId` при смене `currentAccountId`:
 
-## Верификация
-- Выбрать Global Technics → видны инвойсы GT (проверить по vendorName)
-- Выбрать Ideacom → видны инвойсы Ideacom
+```tsx
+// ДОБАВЛЕНО:
+useEffect(() => {
+    setSelectedCompanyId('');
+}, [currentAccountId]);
+```
 
+## DEPLOY_STATUS: OK
+
+Коммит: `315a4fe` — задеплоен через Railway auto-deploy (push в main).
