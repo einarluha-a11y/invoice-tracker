@@ -452,7 +452,7 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                                                                 )}
                                                             </div>
                                                         )}
-                                                        {invoice.supplierRegistration && <div><strong style={{ color: 'var(--text-primary)' }}>Supplier Reg:</strong> {invoice.supplierRegistration}</div>}
+                                                        {invoice.supplierRegistration && <div><strong style={{ color: 'var(--text-primary)' }}>{t('invoiceDetails.regNo')}</strong> {invoice.supplierRegistration}</div>}
                                                         {invoice.paymentTerms && <div><strong style={{ color: 'var(--text-primary)' }}>{t('invoiceDetails.bankDetails')}</strong> {invoice.paymentTerms}</div>}
                                                         {invoice.viesValidation && invoice.viesValidation.name && (
                                                             <div style={{ gridColumn: '1 / -1' }}><strong style={{ color: 'var(--text-primary)' }}>{t('invoiceDetails.registeredEU')}</strong> {invoice.viesValidation.name}</div>
