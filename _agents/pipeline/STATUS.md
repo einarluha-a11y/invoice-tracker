@@ -3,6 +3,27 @@
 
 ## 2026-04-08
 
+### TASK-22 Round 5 — Диагностика companyId
+
+```
+=== ACCOUNTS/COMPANIES ===
+account:global-technics | company_id:bP6dc0PMdFtnmS5QTX4N | name:Global Technics OÜ
+account:ideacom         | company_id:vlhvA6i8d3Hry8rtrA3Z | name:Ideacom OÜ
+
+=== TOP-LEVEL COMPANIES ===
+id:bP6dc0PMdFtnmS5QTX4N | name:Global Technics OÜ
+id:vlhvA6i8d3Hry8rtrA3Z | name:Ideacom OÜ
+
+=== INVOICES COUNT ===
+companyId:bP6dc0PMdFtnmS5QTX4N (GT) → 103 invoices
+  top: Täisteenusliisingu AS:18, Allstore Assets OÜ:15, SIA Citadele Leasing:9, ESTMA Terminaali:9, Tele2 Eesti:8
+companyId:vlhvA6i8d3Hry8rtrA3Z (Ideacom) → 64 invoices
+  top: PRONTO Sp. z o.o.:15, UAB "Ursus LT":8, SIA Citadele Leasing:5, Alexela AS:5, LHV:4
+```
+
+ВЫВОД: Данные в Firestore КОРРЕКТНЫ. Subcollection IDs == top-level company IDs.
+Инвойсы распределены правильно. Проблема в FRONTEND логике, не в данных.
+
 - 2026-04-08 15:26 — ✅ Завершено: 0:TASK-22 Round 5 — диагностика завершена
 - 2026-04-08 18:25 — ✅ Завершено: 5:TASK-22 Round 5 — диагностика companyId выполнена (данные корректны)
 - 2026-04-08 15:04 — ✅ Завершено: 4:TASK-22 Round 4 — companyId перепутан в Firestore
