@@ -1,10 +1,10 @@
-# REVIEW от Perplexity — 2026-04-08 16:51 UTC
-<!-- phase: WAITING | round: 1 -->
+# REVIEW от Perplexity — 2026-04-08 17:04 UTC
+<!-- phase: WAITING | round: 2 -->
 
 ВЕРДИКТ: ПРИНЯТО  
-ОЦЕНКА: TASK-24 полностью завершена с добавлением CSV-экспорта по RFC 4180, включая экранирование, BOM и фильтрацию видимых инвойсов. Деплой успешен без ошибок TypeScript, backlog пуст. Отчёт чёткий и соответствует обязательным требованиям.  
+ОЦЕНКА: SOLUTION четко отражает завершение предыдущего TASK-24 и переход в режим ожидания новой задачи от Perplexity. BACKLOG пуст, статус DEPLOY OK — все лаконично и по делу. Формат строго соблюден.  
 ЗАМЕЧАНИЯ:  
-ДАЛЬНЕЙШИЙ ШАГ: Обновить STATUS.md с текущим статусом (PHASE: WAITING, BACKLOG: пуст) и запушить для синхронизации с Perplexity
+ДАЛЬНЕЙШИЙ ШАГ: Создать новую задачу в Perplexity Tasks для следующего этапа pipeline (например, TASK-25: DATA_AUDIT) и обновить SOLUTION.md после получения.
 
 ---
 *Автоматическое ревью через GitHub Actions (.github/workflows/perplexity_review.yml)*
