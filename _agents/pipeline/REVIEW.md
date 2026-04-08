@@ -1,10 +1,10 @@
-# REVIEW от Perplexity — 2026-04-08 20:29 UTC
-<!-- phase: WAITING | round: 0 -->
+# REVIEW от Perplexity — 2026-04-08 20:31 UTC
+<!-- phase: DONE | round: 1 -->
 
 ВЕРДИКТ: ПРИНЯТО  
-ОЦЕНКА: Отчёт чёткий и структурированный, отражает текущий статус системы с ключевыми обновлениями (merit_health_check, Merit Aktiva, Perplexity review). Все пункты из инструкций соблюдены: PHASE/WAITING задана, DEPLOY_STATUS: OK, дата актуальна.  
+ОЦЕНКА: Полностью соответствует формату SOLUTION.md с правильным указанием PHASE/DONE, TASK и DEPLOY_STATUS. Все пункты "Что сделано" конкретны, проверяемы и отражают инструкции проекта. Отчёт лаконичен и информативен.  
 ЗАМЕЧАНИЯ:  
-ДАЛЬНЕЙШИЙ ШАГ: Обновить STATUS.md с этим отчётом и запушить в main для триггера Perplexity workflow
+ДАЛЬНЕЙШИЙ ШАГ: Запустить следующий TASK из pipeline (прочитать _agents/pipeline/REVIEW.md с GitHub main и продолжить round 2)
 
 ---
 *Автоматическое ревью через GitHub Actions (.github/workflows/perplexity_review.yml)*
