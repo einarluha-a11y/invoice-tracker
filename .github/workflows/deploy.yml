@@ -3,6 +3,11 @@ name: Deploy React App to GitHub Pages
 on:
   push:
     branches: ["main"]
+    paths-ignore:
+      - '_agents/**'
+      - 'memory/**'
+      - '*.md'
+      - 'automation/**'
   workflow_dispatch:
 
 permissions:
