@@ -87,12 +87,14 @@ function App() {
         setSelectedCompanyId('');
     }, [currentAccountId]);
 
-    // Automatically select the first company when data loads
+    // При смене списка компаний — сбросить выбор на первую компанию
     useEffect(() => {
-        if (!selectedCompanyId && companies.length > 0) {
+        if (companies.length > 0) {
             setSelectedCompanyId(companies[0].id);
+        } else {
+            setSelectedCompanyId('');
         }
-    }, [companies, selectedCompanyId]);
+    }, [companies]);
 
     // Load all invoices — no pagination needed for <1000 records
     const [invoices, setInvoices] = useState<Invoice[]>([]);
