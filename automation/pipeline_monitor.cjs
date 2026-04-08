@@ -65,6 +65,14 @@ function runClaude(prompt) {
             { cwd: PROJECT, encoding: 'utf-8', timeout: 3600000, stdio: 'pipe' }
         );
         log('✅ Claude завершил');
+        // Deploy: pull latest code and restart services
+        try {
+            execSync('git pull origin main --rebase', { cwd: PROJECT, timeout: 15000, stdio: 'pipe' });
+            execSync('pm2 restart invoice-api invoice-imap', { timeout: 15000, stdio: 'pipe' });
+            log('🚀 Deploy: pulled + restarted invoice-api/imap');
+        } catch (e) {
+            log('⚠️ Deploy failed: ' + (e.message || '').slice(0, 100));
+        }
         return result;
     } catch (err) {
         log('❌ Claude ошибка: ' + (err.message || '').slice(0, 200));
