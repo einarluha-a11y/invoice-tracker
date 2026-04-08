@@ -35,3 +35,4 @@
 # Webhook test Wed Apr  8 13:09:10 EEST 2026
 - 2026-04-08 13:46 — ✅ Проверка: PHASE:WAITING, BACKLOG пуст, ожидаю новых задач
 webhook-test 17:10:00
+- 2026-04-08 — ✅ Проверка: TASK-22 DONE, BACKLOG пуст, node --check OK, TS OK — ожидаю новых задач
