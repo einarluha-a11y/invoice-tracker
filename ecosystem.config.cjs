@@ -27,12 +27,25 @@ module.exports = {
     {
       name: 'pipeline-monitor',
       script: './automation/pipeline_monitor.cjs',
-      watch: false,  // no file watch — polls git every 30s
+      watch: false,  // no file watch — polls git every 30s (kept as fallback)
       restart_delay: 10000,
       max_restarts: 50,
       max_memory_restart: '200M',
       error_file: './automation/logs/pipeline-monitor-error.log',
       out_file: './automation/logs/pipeline-monitor-out.log',
+    },
+    {
+      name: 'pipeline-webhook',
+      script: './automation/webhook_receiver.cjs',
+      watch: false,
+      restart_delay: 3000,
+      max_restarts: 10,
+      max_memory_restart: '200M',
+      env: {
+        WEBHOOK_PORT: 3001,
+      },
+      error_file: './automation/logs/pipeline-webhook-error.log',
+      out_file: './automation/logs/pipeline-webhook-out.log',
     },
     {
       name: 'watchdog',
