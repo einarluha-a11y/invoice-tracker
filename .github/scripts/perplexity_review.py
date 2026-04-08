@@ -108,45 +108,97 @@ def build_review_prompt(phase: str, context: str) -> str:
         )
     return f"{role}\n\nКонтекст проекта:\n{context_trimmed}"
 
-def get_recent_commits() -> str:
-    """Get recent commit history to avoid repeating completed tasks."""
-    import subprocess
-    try:
-        result = subprocess.run(
-            ['git', 'log', '--oneline', '-20'],
-            capture_output=True, text=True, timeout=10
-        )
-        return result.stdout.strip()
-    except Exception:
-        return ""
+def get_next_task_from_backlog(backlog: str) -> tuple:
+    """Детерминированно возвращает (task_id, task_text) первой невыполненной задачи.
+    Пропускает секцию 'Ожидают credentials'. Возвращает (None, None) если всё сделано."""
+    lines = backlog.split('\n')
+    in_skip_section = False
+    for line in lines:
+        # Определяем секции
+        if re.match(r'^##\s+.*[Оо]жидают', line):
+            in_skip_section = True
+            continue
+        if re.match(r'^##\s+', line) and not re.match(r'^##\s+.*[Оо]жидают', line):
+            in_skip_section = False
 
-def build_next_task_prompt(context: str, backlog: str, completed_task: str) -> str:
+        if in_skip_section:
+            continue
+
+        # Первая незакрытая задача
+        if re.match(r'^- \[ \]', line):
+            task_text = re.sub(r'^- \[ \]\s*', '', line).strip()
+            # Извлекаем TASK-XX если есть
+            m = re.match(r'(TASK-\d+)', task_text)
+            task_id = m.group(1) if m else None
+            return task_id, task_text
+
+    return None, None
+
+
+def assign_next_task_number(backlog: str) -> str:
+    """Считает существующие TASK-XX в BACKLOG и возвращает следующий номер."""
+    existing = re.findall(r'TASK-(\d+)', backlog)
+    if not existing:
+        return 'TASK-11'
+    return f'TASK-{max(int(n) for n in existing) + 1}'
+
+
+def mark_task_done_in_backlog(task_field: str) -> bool:
+    """Отмечает задачу как [x] в BACKLOG.md по TASK-XX или тексту из SOLUTION.md TASK поля."""
+    if not BACKLOG_PATH.exists():
+        return False
+    content = BACKLOG_PATH.read_text(encoding='utf-8')
+
+    # Попытка 1: по TASK-XX номеру
+    m = re.match(r'(TASK-\d+)', task_field)
+    if m:
+        task_id = m.group(1)
+        new_content = re.sub(
+            rf'^(- )\[ \] ({re.escape(task_id)})',
+            r'\1[x] \2',
+            content,
+            flags=re.MULTILINE
+        )
+        if new_content != content:
+            BACKLOG_PATH.write_text(new_content, encoding='utf-8')
+            print(f"BACKLOG: отмечен как выполненный {task_id}")
+            return True
+
+    # Попытка 2: по ключевым словам из TASK поля (первые 40 символов)
+    task_snippet = task_field[:40].strip()
+    for line in content.split('\n'):
+        if re.match(r'^- \[ \]', line) and task_snippet and task_snippet[:20].lower() in line.lower():
+            new_content = content.replace(line, line.replace('[ ]', '[x]'), 1)
+            BACKLOG_PATH.write_text(new_content, encoding='utf-8')
+            print(f"BACKLOG: отмечен через text-match: {line[:60]}")
+            return True
+
+    print(f"BACKLOG: задача не найдена для отметки: {task_field[:60]}")
+    return False
+
+
+def build_next_task_prompt(context: str, next_task_id: str, next_task_text: str, completed_task: str) -> str:
+    """Perplexity расширяет КОНКРЕТНУЮ задачу из BACKLOG в полный SOLUTION.md.
+    Задача уже выбрана детерминированно — LLM только добавляет детали реализации."""
     context_trimmed = context[:4000]
-    backlog_trimmed = backlog[:3000] if backlog else "Нет бэклога — выбери следующую задачу из анализа кода."
-    recent_commits = get_recent_commits()
     return (
         "Ты — технический менеджер проекта Invoice-Tracker. "
-        "Claude только что завершил задачу. Тебе нужно:\n\n"
-        "1. Кратко оценить выполненную работу (2-3 предложения)\n"
-        "2. Выбрать СЛЕДУЮЩУЮ НЕВЫПОЛНЕННУЮ задачу из бэклога\n"
-        "3. Написать SOLUTION.md с новым заданием для Claude\n\n"
-        "КРИТИЧЕСКОЕ ПРАВИЛО: НЕ ПОВТОРЯТЬ задачи отмеченные [x] в бэклоге. "
-        "НЕ ПОВТОРЯТЬ задачи видимые в истории коммитов. "
-        "Бери ТОЛЬКО первую задачу с [ ] (незавершённую).\n\n"
+        "Claude только что завершил задачу. Следующая задача уже выбрана из бэклога.\n\n"
+        "Твоя единственная задача: написать подробный SOLUTION.md для этой конкретной задачи.\n\n"
+        f"СЛЕДУЮЩАЯ ЗАДАЧА (обязательно использовать именно эту, не менять):\n"
+        f"{next_task_id or 'без номера'}: {next_task_text}\n\n"
         "ФОРМАТ ОТВЕТА — точно этот markdown:\n\n"
         "```solution\n"
         "# SOLUTION\n\n"
-        "PHASE: ARCHITECTURE\n"
-        "ROUND: 1\n"
-        "TASK: [одна строка — суть задачи]\n\n"
+        f"PHASE: ARCHITECTURE\n"
+        f"ROUND: 1\n"
+        f"TASK: {next_task_id + ' — ' if next_task_id else ''}{next_task_text}\n\n"
         "## ЗАДАНИЕ\n\n"
-        "[Подробное описание что Claude должен сделать]\n\n"
+        "[Подробное описание что Claude должен сделать — файлы, функции, алгоритм]\n\n"
         "## Верификация\n"
-        "[Как проверить что задание выполнено]\n"
+        "[Как проверить что задание выполнено — конкретные команды или признаки]\n"
         "```\n\n"
-        f"Бэклог задач ([ ] = не сделано, [x] = уже сделано):\n{backlog_trimmed}\n\n"
-        f"Последние 20 коммитов (уже выполнено — НЕ повторять):\n{recent_commits}\n\n"
-        f"Завершённая задача:\n{completed_task[:2000]}\n\n"
+        f"Завершённая задача (для контекста):\n{completed_task[:1500]}\n\n"
         f"Контекст проекта:\n{context_trimmed}"
     )
 
@@ -207,21 +259,54 @@ def main() -> int:
         review_content = call_perplexity(review_prompt, solution)
         write_review(phase, round_num, review_content)
 
-        # Step 2: Generate next task
+        # Step 2: Mark completed task in BACKLOG
+        # Extract full TASK line (not just first word) for matching
+        task_full = ""
+        m = re.search(r"^TASK:\s*(.+)$", solution, re.MULTILINE)
+        if m:
+            task_full = m.group(1).strip()
+        mark_task_done_in_backlog(task_full)
+
+        # Step 3: Deterministically pick next task from BACKLOG
         backlog = read_file(BACKLOG_PATH)
-        next_task_prompt = build_next_task_prompt(context, backlog, solution)
+        next_task_id, next_task_text = get_next_task_from_backlog(backlog)
+
+        if not next_task_text:
+            SOLUTION_PATH.write_text(
+                "# SOLUTION\n\nPHASE: WAITING\nROUND: 0\n"
+                "TASK: все задачи из BACKLOG выполнены — ожидаю новых\n",
+                encoding="utf-8"
+            )
+            print("✅ Все задачи выполнены → PHASE: WAITING")
+            return 0
+
+        # Assign TASK number if task doesn't have one
+        if not next_task_id:
+            next_task_id = assign_next_task_number(backlog)
+            print(f"Новый номер задачи: {next_task_id}")
+
+        print(f"Следующая задача: {next_task_id} — {next_task_text[:60]}")
+
+        # Step 4: Ask Perplexity to expand the specific task into full SOLUTION.md
+        next_task_prompt = build_next_task_prompt(context, next_task_id, next_task_text, solution)
         next_task_content = call_perplexity(next_task_prompt, solution, max_tokens=3000)
 
         if write_solution(next_task_content):
-            print("✅ Next task generated and written to SOLUTION.md")
+            print(f"✅ SOLUTION.md написан для {next_task_id}")
         else:
-            # Fallback: write WAITING state
-            SOLUTION_PATH.write_text(
-                "# SOLUTION\n\nPHASE: WAITING\nROUND: 0\n"
-                "TASK: (ожидаю следующее задание — Perplexity не смог сгенерировать)\n",
-                encoding="utf-8"
+            # Fallback: write minimal SOLUTION without Perplexity expansion
+            fallback = (
+                f"# SOLUTION\n\n"
+                f"PHASE: ARCHITECTURE\n"
+                f"ROUND: 1\n"
+                f"TASK: {next_task_id} — {next_task_text}\n\n"
+                f"## ЗАДАНИЕ\n\n"
+                f"{next_task_text}\n\n"
+                f"## Верификация\n\n"
+                f"Функциональность работает согласно описанию задачи.\n"
             )
-            print("⚠️ Fallback: SOLUTION.md set to WAITING")
+            SOLUTION_PATH.write_text(fallback, encoding="utf-8")
+            print(f"⚠️ Fallback SOLUTION.md для {next_task_id}")
 
         return 0
 
