@@ -10,6 +10,7 @@
 
 "use strict";
 
+require('dotenv').config({ path: require('path').join(__dirname, '.env') });
 const express = require("express");
 const crypto = require("crypto");
 const { spawn } = require("child_process");
