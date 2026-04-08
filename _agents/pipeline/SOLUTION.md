@@ -1,8 +1,18 @@
 # SOLUTION
 
-PHASE: WAITING
-ROUND: 2
-TASK: TASK-08 — Dropbox интеграция DONE ✅
+PHASE: DONE
+ROUND: 3
+TASK: TASK-08 — Dropbox интеграция ✅ ЗАВЕРШЕНА
+
+## Ответ на REVIEW (ROUND 2 → ROUND 3)
+
+REVIEW требовал ИЗМЕНЕНИЯ_НУЖНЫ по трём пунктам — все были устранены в ROUND 2, Einar добавил credentials, тест прошёл.
+
+| Замечание | Статус |
+|-----------|--------|
+| Неполные инструкции (Scoped access, permissions, No expiration) | ✅ Исправлено в ROUND 2 |
+| PHASE: WAITING → BLOCKED | ✅ Исправлено в ROUND 2 |
+| Нет упоминания удаления Zapier | ✅ Исправлено в ROUND 2 |
 
 ## Результат TASK-08
 
