@@ -135,6 +135,19 @@ const resources = {
                 deleteInvoice: "Ошибка при удалении инвойса"
             },
 
+            login: {
+                subtitle: "Безопасный доступ к инвойсам. Войдите через Google аккаунт.",
+                accountPlaceholder: "Название компании",
+                accountsLoading: "Загрузка...",
+                signInGoogle: "Войти через Google",
+                signingIn: "Вход...",
+                or: "или",
+                masterLogin: "Войти по паролю",
+                selectAccount: "Выберите компанию из списка.",
+                firebaseNotConfigured: "Firebase не настроен",
+                firebaseSetup: "Администратору: настройте ключи Firebase Auth.",
+            },
+
             loadingData: "Загрузка данных...",
             loadingCompanies: "Загрузка...",
             noCompanies: "Нет Компаний ⚙️",
@@ -275,6 +288,19 @@ const resources = {
                 deleteInvoice: "Error deleting invoice"
             },
 
+            login: {
+                subtitle: "Secure access to your invoice dashboard. Sign in with your Google account to continue.",
+                accountPlaceholder: "Company name",
+                accountsLoading: "Loading...",
+                signInGoogle: "Sign in with Google",
+                signingIn: "Signing in...",
+                or: "or",
+                masterLogin: "Sign in with password",
+                selectAccount: "Please select a company from the list.",
+                firebaseNotConfigured: "Firebase Not Configured",
+                firebaseSetup: "Admin: Please configure Firebase Auth keys in the environment.",
+            },
+
             loadingData: "Loading data...",
             loadingCompanies: "Loading...",
             noCompanies: "No Companies ⚙️",
@@ -413,6 +439,19 @@ const resources = {
                 loadingTitle: "Laadimise viga",
                 loadingDesc: "Andmete laadimine ebaõnnestus. Palun kontrollige ettevõtte linki.",
                 deleteInvoice: "Viga arve kustutamisel"
+            },
+
+            login: {
+                subtitle: "Turvaline juurdepääs arvetele. Logige sisse oma Google kontoga.",
+                accountPlaceholder: "Ettevõtte nimi",
+                accountsLoading: "Laadimine...",
+                signInGoogle: "Logi sisse Google'iga",
+                signingIn: "Sisselogimine...",
+                or: "või",
+                masterLogin: "Logi sisse parooliga",
+                selectAccount: "Valige ettevõte nimekirjast.",
+                firebaseNotConfigured: "Firebase pole seadistatud",
+                firebaseSetup: "Administraator: palun seadistage Firebase Auth võtmed.",
             },
 
             loadingData: "Andmete laadimine...",
