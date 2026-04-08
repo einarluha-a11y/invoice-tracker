@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { getAuth } from 'firebase/auth';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
@@ -24,16 +25,21 @@ export const InvoicePdfViewer: React.FC<InvoicePdfViewerProps> = ({ url }) => {
 
         const loadFile = async () => {
             try {
+                // Get Firebase Auth token for authenticated requests
+                const auth = getAuth();
+                const token = await auth.currentUser?.getIdToken();
+                const headers: HeadersInit = token ? { Authorization: `Bearer ${token}` } : {};
+
                 // Strategy: try direct Firebase URL first (instant), fall back to proxy if CORS blocks
                 let response: Response;
                 try {
-                    response = await fetch(url, { mode: 'cors' });
+                    response = await fetch(url, { mode: 'cors', headers });
                     if (!response.ok) throw new Error('direct-failed');
                 } catch {
                     // CORS or network error — use backend proxy
                     const apiBase = import.meta.env.VITE_API_URL || '';
                     const proxyUrl = `${apiBase}/api/pdf-proxy?url=${encodeURIComponent(url)}`;
-                    response = await fetch(proxyUrl);
+                    response = await fetch(proxyUrl, { headers });
                 }
 
                 if (!response.ok) throw new Error(`Failed to download file (${response.status}).`);
