@@ -95,7 +95,7 @@ async function main() {
         process.exit(0);
     } catch (err) {
         console.error('❌ Ошибка подключения:', err.message);
-        console.error('   Проверь MERIT_API_ID и MERIT_API_KEY — они должны быть скопированы точно из Merit портала');
+        console.error('   Проверь MERIT_API_ID и MERIT_API_KEY из Merit: Seaded → Välised ühendused → API');
         process.exit(1);
     }
 }
