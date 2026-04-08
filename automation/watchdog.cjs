@@ -18,7 +18,8 @@ const path = require('path');
 
 const PROJECT = '/Users/einarluha/Downloads/invoice-tracker';
 const CHECK_INTERVAL = 120000; // 2 min
-const HANG_TIMEOUT = 1800000; // 30 min — if pipeline-monitor shows same log for 30 min, it's hung
+const HANG_TIMEOUT = 600000;  // 10 min — if pipeline-monitor shows same log for 10 min, it's hung
+const PERPLEXITY_TIMEOUT = 600000; // 10 min — if DEPLOY_STATUS: OK sits without Perplexity response
 const STATE_FILE = '/tmp/.watchdog_state';
 const ERROR_COOLDOWN = 600000; // 10 min — don't spam bug reports
 
@@ -171,6 +172,38 @@ function check() {
                 state.lastPipelineCheck = now;
             }
         }
+    }
+
+    // 4. DEPLOY_STATUS: OK stuck — Perplexity didn't respond within 10 min
+    {
+        try {
+            execSync('git fetch origin main --quiet', { cwd: PROJECT, timeout: 10000, stdio: 'pipe' });
+            const solution = execSync('git show origin/main:_agents/pipeline/SOLUTION.md', {
+                cwd: PROJECT, encoding: 'utf-8', timeout: 10000
+            });
+            const isDeployed = /^DEPLOY_STATUS:\s*OK\s*$/m.test(solution);
+
+            if (isDeployed) {
+                if (!state.deployOkSince) {
+                    state.deployOkSince = now;
+                } else if (now - state.deployOkSince > PERPLEXITY_TIMEOUT) {
+                    log(`⚠️ DEPLOY_STATUS: OK висит ${Math.round((now - state.deployOkSince) / 60000)} мин — Perplexity не ответил`);
+                    log(`🔄 Сбрасываю SOLUTION.md → WAITING, перезапускаю pipeline-monitor`);
+
+                    const solutionPath = path.join(PROJECT, '_agents/pipeline/SOLUTION.md');
+                    fs.writeFileSync(solutionPath,
+                        '# SOLUTION\n\nPHASE: WAITING\nROUND: 0\nTASK: Perplexity не ответил в течение 10 мин — watchdog сбросил\n'
+                    );
+                    gitCommitAndPush('_agents/pipeline/SOLUTION.md', 'watchdog: reset stuck DEPLOY_STATUS OK — Perplexity timeout');
+                    execSync('echo "SOLUTION:OLD" > /tmp/.pipeline_solution_state', { stdio: 'pipe' });
+                    pm2Restart('pipeline-monitor');
+                    actions.push('Reset stuck DEPLOY_STATUS: OK (Perplexity timeout)');
+                    state.deployOkSince = 0;
+                }
+            } else {
+                state.deployOkSince = 0;
+            }
+        } catch { /* git fetch failed — skip */ }
     }
 
     // Submit bug report if errors found (with cooldown)
