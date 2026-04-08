@@ -111,25 +111,29 @@ def build_review_prompt(phase: str, context: str) -> str:
 def get_next_task_from_backlog(backlog: str) -> tuple:
     """Детерминированно возвращает (task_id, task_text) первой невыполненной задачи.
     Пропускает секцию 'Ожидают credentials'. Возвращает (None, None) если всё сделано."""
+    if not backlog.strip():
+        return None, None
     lines = backlog.split('\n')
     in_skip_section = False
     for line in lines:
-        # Определяем секции
-        if re.match(r'^##\s+.*[Оо]жидают', line):
+        # Определяем секции (гибкий паттерн: credentials|учётные|ожидают)
+        if re.match(r'^##\s+.*(credentials|учётные|[Оо]жидают)', line, re.IGNORECASE):
             in_skip_section = True
             continue
-        if re.match(r'^##\s+', line) and not re.match(r'^##\s+.*[Оо]жидают', line):
+        if re.match(r'^##\s+', line) and not re.match(r'^##\s+.*(credentials|учётные|[Оо]жидают)', line, re.IGNORECASE):
             in_skip_section = False
 
         if in_skip_section:
             continue
 
-        # Первая незакрытая задача
-        if re.match(r'^- \[ \]', line):
+        # Первая незакрытая задача — валидируем формат строго
+        if re.match(r'^- \[ \] TASK-\d+', line):
             task_text = re.sub(r'^- \[ \]\s*', '', line).strip()
-            # Извлекаем TASK-XX если есть
             m = re.match(r'(TASK-\d+)', task_text)
             task_id = m.group(1) if m else None
+            if task_id is None:
+                print(f"WARNING: не удалось извлечь TASK-XX из строки: {line[:60]}", file=sys.stderr)
+                continue
             return task_id, task_text
 
     return None, None
@@ -144,36 +148,30 @@ def assign_next_task_number(backlog: str) -> str:
 
 
 def mark_task_done_in_backlog(task_field: str) -> bool:
-    """Отмечает задачу как [x] в BACKLOG.md по TASK-XX или тексту из SOLUTION.md TASK поля."""
+    """Отмечает задачу как [x] в BACKLOG.md строго по TASK-XX номеру."""
     if not BACKLOG_PATH.exists():
+        print(f"WARNING: BACKLOG.md не найден: {BACKLOG_PATH}", file=sys.stderr)
         return False
     content = BACKLOG_PATH.read_text(encoding='utf-8')
 
-    # Попытка 1: по TASK-XX номеру
     m = re.match(r'(TASK-\d+)', task_field)
-    if m:
-        task_id = m.group(1)
-        new_content = re.sub(
-            rf'^(- )\[ \] ({re.escape(task_id)})',
-            r'\1[x] \2',
-            content,
-            flags=re.MULTILINE
-        )
-        if new_content != content:
-            BACKLOG_PATH.write_text(new_content, encoding='utf-8')
-            print(f"BACKLOG: отмечен как выполненный {task_id}")
-            return True
+    if not m:
+        print(f"WARNING: не найден TASK-XX в поле задачи: {task_field[:60]}", file=sys.stderr)
+        return False
 
-    # Попытка 2: по ключевым словам из TASK поля (первые 40 символов)
-    task_snippet = task_field[:40].strip()
-    for line in content.split('\n'):
-        if re.match(r'^- \[ \]', line) and task_snippet and task_snippet[:20].lower() in line.lower():
-            new_content = content.replace(line, line.replace('[ ]', '[x]'), 1)
-            BACKLOG_PATH.write_text(new_content, encoding='utf-8')
-            print(f"BACKLOG: отмечен через text-match: {line[:60]}")
-            return True
+    task_id = m.group(1)
+    new_content = re.sub(
+        rf'^(- )\[ \] ({re.escape(task_id)})',
+        r'\1[x] \2',
+        content,
+        flags=re.MULTILINE
+    )
+    if new_content != content:
+        BACKLOG_PATH.write_text(new_content, encoding='utf-8')
+        print(f"BACKLOG: отмечен как выполненный {task_id}")
+        return True
 
-    print(f"BACKLOG: задача не найдена для отметки: {task_field[:60]}")
+    print(f"WARNING: BACKLOG: {task_id} не найден или уже отмечен", file=sys.stderr)
     return False
 
 
@@ -259,15 +257,7 @@ def main() -> int:
         review_content = call_perplexity(review_prompt, solution)
         write_review(phase, round_num, review_content)
 
-        # Step 2: Mark completed task in BACKLOG
-        # Extract full TASK line (not just first word) for matching
-        task_full = ""
-        m = re.search(r"^TASK:\s*(.+)$", solution, re.MULTILINE)
-        if m:
-            task_full = m.group(1).strip()
-        mark_task_done_in_backlog(task_full)
-
-        # Step 3: Deterministically pick next task from BACKLOG
+        # Step 2: Deterministically pick next task from BACKLOG
         backlog = read_file(BACKLOG_PATH)
         next_task_id, next_task_text = get_next_task_from_backlog(backlog)
 
@@ -278,6 +268,12 @@ def main() -> int:
                 encoding="utf-8"
             )
             print("✅ Все задачи выполнены → PHASE: WAITING")
+            # Mark done only after writing SOLUTION
+            task_full = ""
+            m2 = re.search(r"^TASK:\s*(.+)$", solution, re.MULTILINE)
+            if m2:
+                task_full = m2.group(1).strip()
+            mark_task_done_in_backlog(task_full)
             return 0
 
         # Assign TASK number if task doesn't have one
@@ -287,11 +283,12 @@ def main() -> int:
 
         print(f"Следующая задача: {next_task_id} — {next_task_text[:60]}")
 
-        # Step 4: Ask Perplexity to expand the specific task into full SOLUTION.md
+        # Step 3: Ask Perplexity to expand the specific task into full SOLUTION.md
         next_task_prompt = build_next_task_prompt(context, next_task_id, next_task_text, solution)
         next_task_content = call_perplexity(next_task_prompt, solution, max_tokens=3000)
 
-        if write_solution(next_task_content):
+        solution_written = write_solution(next_task_content)
+        if solution_written:
             print(f"✅ SOLUTION.md написан для {next_task_id}")
         else:
             # Fallback: write minimal SOLUTION without Perplexity expansion
@@ -307,6 +304,13 @@ def main() -> int:
             )
             SOLUTION_PATH.write_text(fallback, encoding="utf-8")
             print(f"⚠️ Fallback SOLUTION.md для {next_task_id}")
+
+        # Step 4: Mark completed task in BACKLOG — only AFTER SOLUTION.md is written
+        task_full = ""
+        m2 = re.search(r"^TASK:\s*(.+)$", solution, re.MULTILINE)
+        if m2:
+            task_full = m2.group(1).strip()
+        mark_task_done_in_backlog(task_full)
 
         return 0
 
