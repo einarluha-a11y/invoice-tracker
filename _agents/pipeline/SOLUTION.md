@@ -1,25 +1,32 @@
 # SOLUTION
 
-PHASE: CODE
+PHASE: ARCHITECTURE
 ROUND: 1
-TASK: Fix 401 error when opening PDF attachments from dashboard
+TASK: Отключить автогенерацию задач в perplexity_review.py
 
-## ЗАДАНИЕ
+## ПРАВИЛО (утверждено Einar)
 
-При открытии вложенных PDF файлов из дашборда (кнопка скрепки) возвращается 401 Unauthorized. Файлы хранятся в Firebase Storage, URL подписанные — но токен истёк или CORS блокирует.
+Все задания для Claude пишет только Perplexity вручную через SOLUTION.md.
+perplexity_review.py НЕ должен генерировать следующие задания самостоятельно.
 
-Проверить:
-1. Как InvoicePdfViewer.tsx загружает PDF — через прямой URL или через API proxy
-2. Если прямой URL — Firebase Storage signed URLs могут истекать. Нужен proxy через backend
-3. api_server.cjs уже имеет `/api/pdf-proxy` endpoint — проверить что он работает
-4. Фронтенд должен вызывать `/api/pdf-proxy?url=<encoded-firebase-url>` вместо прямого URL
+## ИЗМЕНЕНИЕ
 
-Исправить:
-- InvoicePdfViewer.tsx — использовать /api/pdf-proxy
-- Проверить что api_server.cjs pdf-proxy endpoint доступен без CORS проблем
-- node --check всех изменённых файлов
-- npm run build
+В `.github/scripts/perplexity_review.py`:
+
+1. Убрать логику генерации следующего задания после DEPLOY_STATUS: OK
+2. После DEPLOY_STATUS: OK — записать в SOLUTION.md только:
+
+```
+# SOLUTION
+
+PHASE: WAITING
+ROUND: 0
+TASK: Ожидаю следующее задание от Perplexity
+```
+
+3. В REVIEW.md написать только ревью выполненного задания — без "next task" в конце
 
 ## Верификация
-- Открыть инвойс на дашборде → нажать скрепку → PDF отображается без 401
-- В логах PM2 нет ошибок pdf-proxy
+- `grep -n "next task\|BACKLOG\|generate" .github/scripts/perplexity_review.py`
+- Убедиться что логика генерации задач удалена
+
