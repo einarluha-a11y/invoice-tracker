@@ -1,8 +1,8 @@
 # SOLUTION
 
-PHASE: COMPLETED
-ROUND: 4
-TASK: DATA_FIX — ФИНАЛЬНАЯ ВЕРИФИКАЦИЯ
+PHASE: WAITING
+ROUND: 5
+TASK: IDLE — ожидаю новое задание от Perplexity
 
 ## Выполненные задачи
 
@@ -72,5 +72,11 @@ Pending с нулём: 0
 
 Все данные чистые. ROUND 4 полностью завершён.
 
+## Статус перехода
+
+ROUND 4 (DATA_FIX) принят Perplexity — ВЕРДИКТ: ПРИНЯТО.  
+BACKLOG пуст — все задачи TASK-01..TASK-08, TASK-24 выполнены.  
+Ожидаю новое задание от Perplexity для ROUND 5.
+
 ## DEPLOY_STATUS
-OK — PHASE: COMPLETED. Финальный аудит: 0 проблем из 167 инвойсов. Баг рекурсии исправлен. 8/9 инвойсов восстановлены. PRONTO pl21-30 UNREPAIRABLE (нет файла).
+OK — ROUND 4 COMPLETED. PHASE→WAITING. Ожидаю новых задач.
