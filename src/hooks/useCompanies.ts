@@ -47,18 +47,22 @@ export function useCompanies() {
 
         setCompaniesLoading(true);
         setCompaniesError(null);
+        setCompanies([]); // Clear stale data immediately so auto-select doesn't fire on old account's companies
 
         let unsubscribe: (() => void) | null = null;
+        let cancelled = false; // Guard against stale getDocs resolving after account switch
 
         const accountPath = `accounts/${currentAccountId}/companies`;
 
         // Check if account-specific companies exist; fallback to top-level if empty
         getDocs(collection(db, accountPath))
             .then(snap => {
+                if (cancelled) return;
                 const usePath = snap.empty ? 'companies' : accountPath;
                 activePathRef.current = usePath;
 
                 unsubscribe = onSnapshot(collection(db!, usePath), snapshot => {
+                    if (cancelled) return;
                     const fetched: Company[] = snapshot.docs.map(d => ({
                         id: d.id,
                         ...d.data(),
@@ -67,16 +71,19 @@ export function useCompanies() {
                     setCompaniesLoading(false);
                     setCompaniesError(null);
                 }, err => {
+                    if (cancelled) return;
                     console.error('Error fetching companies:', err);
                     setCompaniesError('Failed to load companies securely.');
                     setCompaniesLoading(false);
                 });
             })
             .catch(err => {
+                if (cancelled) return;
                 console.error('Error checking account companies:', err);
                 // Fallback to top-level on error
                 activePathRef.current = 'companies';
                 unsubscribe = onSnapshot(collection(db!, 'companies'), snapshot => {
+                    if (cancelled) return;
                     const fetched: Company[] = snapshot.docs.map(d => ({
                         id: d.id,
                         ...d.data(),
@@ -84,13 +91,17 @@ export function useCompanies() {
                     setCompanies(fetched);
                     setCompaniesLoading(false);
                 }, err2 => {
+                    if (cancelled) return;
                     console.error('Error fetching companies (fallback):', err2);
                     setCompaniesError('Failed to load companies securely.');
                     setCompaniesLoading(false);
                 });
             });
 
-        return () => { if (unsubscribe) unsubscribe(); };
+        return () => {
+            cancelled = true;
+            if (unsubscribe) unsubscribe();
+        };
     }, [user, currentAccountId]);
 
     const addCompany = async (company: Omit<Company, 'id'>) => {
