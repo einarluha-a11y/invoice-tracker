@@ -1,10 +1,10 @@
-# REVIEW от Perplexity — 2026-04-08 15:28 UTC
-<!-- phase: WAITING | round: 0 -->
+# REVIEW от Perplexity — 2026-04-08 15:31 UTC
+<!-- phase: DONE | round: 6 -->
 
 ВЕРДИКТ: ПРИНЯТО  
-ОЦЕНКА: Диагностика точная и полная — данные Firestore проверены, структура accounts/companies корректна, инвойсы правильно привязаны. Логично локализована проблема в frontend (selectedCompanyId/state). Формат структурированный и actionable.  
+ОЦЕНКА: Решение полностью реализует исправления из диагноза Round 5 с правильной двухэтапной логикой сброса (сначала очистка по accountId, потом автоподбор по companies). Верификация build и логика корректны, PHASE DONE логично завершает задачу.  
 ЗАМЕЧАНИЯ:  
-ДАЛЬНЕЙШИЙ ШАГ: Проверить код useCompanies хука и логику setSelectedCompanyId при смене аккаунта/компании
+ДАЛЬНЕЙШИЙ ШАГ: Обновить _agents/pipeline/SOLUTION.md с PHASE: RECONCILE, ROUND: 1 и новым TASK для следующей проблемы
 
 ---
 *Автоматическое ревью через GitHub Actions (.github/workflows/perplexity_review.yml)*
