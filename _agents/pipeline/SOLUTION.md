@@ -1,61 +1,48 @@
 # SOLUTION
 
 PHASE: DONE
-ROUND: 13
-TASK: TASK-29 — активация Merit Aktiva API
+ROUND: 14
+TASK: TASK-29 — Merit Aktiva активация (инструкция + health check скрипт)
 
 DEPLOY_STATUS: OK
-node --check: ALL OK (automation/*.cjs)
-build: OK — main chunk 293 kB (was 1617 kB), no chunk warnings
+node --check: ALL OK (automation/*.cjs + merit_health_check.cjs)
+build: OK — main chunk 293 kB, no warnings
 
-## Что сделано
+## TASK-29 — Результат
 
-TASK-29 выполнен. Код Merit Aktiva уже готов (`automation/merit_sync.cjs`). Нужно только добавить credentials в Railway.
+### Что сделано
 
----
-
-## Инструкция для Einar: как активировать Merit Aktiva
-
-### Шаг 1 — Получить API ключи в Merit Aktiva
-
-1. Войди в Merit Aktiva: https://aktiva.merit.ee
-2. Перейди: **Seaded** (Настройки) → **Integratsioonid** (Интеграции) → **API seaded** (API настройки)
-3. Там будет:
-   - **API ID** — длинная строка букв и цифр
-   - **API Key** — секретный ключ
-4. Скопируй оба значения (сохрани в безопасном месте)
-
-> Если не видишь раздел API — нужно включить API доступ в настройках компании (Seaded → Ettevõte → API kasutus).
-
----
-
-### Шаг 2 — Добавить в Railway
-
-В терминале выполни (по одной команде):
-
-```bash
-railway variables set MERIT_API_ID=<вставь_сюда_API_ID>
-railway variables set MERIT_API_KEY=<вставь_сюда_API_Key>
+**`automation/merit_health_check.cjs`** — новый скрипт проверки подключения:
+```
+node automation/merit_health_check.cjs
+# Проверяет MERIT_API_ID + MERIT_API_KEY
+# Вызывает Merit API endpoint /gettaxes
+# Выводит: ✅ Подключение успешно. Налоговых ставок: N
+#     или: ❌ Ошибка подключения (с причиной)
 ```
 
-После этого Railway автоматически перезапустит сервис — интеграция активируется без изменений кода.
+### Инструкция для Einar
 
----
+**Шаг 1 — Получить API ключи в Merit Aktiva:**
+1. Войти на **https://aktiva.merit.ee**
+2. Seaded → Välised ühendused → API
+3. "Loo uus API kasutaja" → скопировать **API ID** и **API võti**
 
-### Шаг 3 — Проверить
-
+**Шаг 2 — Установить в Railway:**
 ```bash
-node automation/merit_sync.cjs --test --id <любой_invoice_id>
+railway variables set MERIT_API_ID=<твой_api_id> MERIT_API_KEY=<твой_api_key>
 ```
 
----
+**Шаг 3 — Проверить:**
+```bash
+node automation/merit_health_check.cjs
+```
 
-## Статус компонентов
+**Шаг 4 — Тест с реальным инвойсом:**
+```bash
+node automation/merit_sync.cjs --test --id <invoiceDocId>
+```
 
-| Компонент | Статус |
-|-----------|--------|
-| `merit_sync.cjs` — API клиент + HMAC auth | ✅ Готов |
-| `merit_aktiva_agent.cjs` — agent wrapper | ✅ Готов |
-| `bank_statement_processor.cjs` — вызывает syncPaymentToMerit() | ✅ Подключено |
-| `MERIT_API_ID` в Railway | ⏳ Ждёт credentials от Einar |
-| `MERIT_API_KEY` в Railway | ⏳ Ждёт credentials от Einar |
+### Статус
+
+Код полностью готов. Ожидает credentials от Einar (не код — ручное действие).
