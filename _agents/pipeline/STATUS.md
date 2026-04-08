@@ -33,3 +33,4 @@
 - PM2 локальный деплой вместо Railway
 # Webhook test Wed Apr  8 13:09:10 EEST 2026
 - 2026-04-08 13:46 — ✅ Проверка: PHASE:WAITING, BACKLOG пуст, ожидаю новых задач
+webhook-test 17:10:00
