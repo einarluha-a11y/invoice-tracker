@@ -245,7 +245,7 @@ function App() {
                     <span>Invoice-<span className="header-accent">Tracker</span></span>
                 </h1>
                 <div className="header-controls" style={{ display: 'flex', gap: '1rem' }}>
-                    {isMaster && availableAccounts.length > 0 && (
+                    {isMaster && availableAccounts.length > 1 && (
                         <select
                             className="company-select"
                             value={currentAccountId || ''}
