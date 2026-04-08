@@ -3,6 +3,18 @@
  * Merit Aktiva — проверка подключения
  * Использование: node merit_health_check.cjs
  * Требует: MERIT_API_ID, MERIT_API_KEY в .env или Railway
+ *
+ * КАК ПОЛУЧИТЬ API КЛЮЧИ в Merit Aktiva:
+ *   1. Войти в Merit Aktiva как владелец компании (права администратора)
+ *   2. Seaded → Välised ühendused → API
+ *   3. Нажать "Lisa uus" (добавить новое подключение)
+ *   4. Поле Purpose / Eesmärk: "Invoice-Tracker"
+ *   5. Скопировать API ID и API Key → вставить в Railway:
+ *      railway variables set MERIT_API_ID=xxx MERIT_API_KEY=yyy
+ *   ВАЖНО: создать ключи может только пользователь с правами владельца/администратора.
+ *
+ * Endpoint /gettaxes используется как health check (GET, не требует тела запроса).
+ * /sendinvoice — это POST для отправки инвойсов, не подходит для проверки соединения.
  */
 'use strict';
 
