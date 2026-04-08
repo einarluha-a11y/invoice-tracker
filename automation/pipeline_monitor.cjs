@@ -58,19 +58,26 @@ function parsePhaseRound(text, type) {
 }
 
 let claudeRunning = false;
+let claudeStartedAt = 0;
 
 function runClaude(prompt) {
     if (claudeRunning) {
-        log('⏳ Claude CLI уже работает — пропускаю');
-        return 'BUSY';
+        // Safety: if flag stuck for >15 min, force reset
+        if (Date.now() - claudeStartedAt > 900000) {
+            log('⚠️ claudeRunning stuck >15 min — force reset');
+            claudeRunning = false;
+        } else {
+            return 'BUSY';
+        }
     }
     claudeRunning = true;
+    claudeStartedAt = Date.now();
     log('🤖 Запускаю Claude CLI...');
 
     const child = spawn('claude', [
         '--dangerously-skip-permissions',
         '-p', prompt,
-        '--max-turns', '50'
+        '--max-turns', '100'
     ], { cwd: PROJECT, stdio: 'pipe', env: { ...process.env, PATH: '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin' } });
 
     let output = '';
