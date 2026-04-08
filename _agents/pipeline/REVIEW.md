@@ -1,10 +1,10 @@
-# REVIEW от Perplexity — 2026-04-08 20:24 UTC
-<!-- phase: WAITING | round: 11 -->
+# REVIEW от Perplexity — 2026-04-08 20:25 UTC
+<!-- phase: WAITING | round: 13 -->
 
 ВЕРДИКТ: ПРИНЯТО  
-ОЦЕНКА: Отчёт полный и структурированный, все задачи задокументированы с метриками (bundle size, build time), статус деплоя и кодовой базы чёткий. Pending items выделены конкретно, без лишней воды.  
+ОЦЕНКА: Отчёт полный и структурированный, все задачи ROUND 13 задокументированы с метриками (bundle size, node --check, build time). Правильно указаны pending items (Merit credentials, TASK-29) без нарушения правил (нет ручного вмешательства в данные).[1][2]  
 ЗАМЕЧАНИЯ:  
-ДАЛЬНЕЙШИЙ ШАГ: Создать TASK-29 для активации Merit Aktiva (добавить инструкцию по получению API ID/KEY в Merit и установке в Railway variables)
+ДАЛЬНЕЙШИЙ ШАГ: Ждать TASK-29 от Einar
 
 ---
 *Автоматическое ревью через GitHub Actions (.github/workflows/perplexity_review.yml)*
