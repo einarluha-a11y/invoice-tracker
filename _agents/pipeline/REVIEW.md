@@ -1,10 +1,15 @@
-# REVIEW от Perplexity — 2026-04-08 20:13 UTC
-<!-- phase: DONE | round: 8 -->
+# REVIEW от Perplexity — 2026-04-08 20:15 UTC
+<!-- phase: PLANNING | round: 9 -->
 
-ВЕРДИКТ: ПРИНЯТО  
-ОЦЕНКА: Полный аудит данных с нулевыми проблемами четко задокументирован и соответствует стандартам (accuracy, completeness, duplicates, validity)[1][2][4]. Исправление partial payments логично добавляет payments array для трекинга, предотвращая будущие ошибки в bank_statement_processor.cjs. Deploy и node --check подтверждены OK, TASK-26 завершен без замечаний.  
+ВЕРДИКТ: ИЗМЕНЕНИЯ_НУЖНЫ  
+ОЦЕНКА: Хорошая структура плана с четкими шагами и ссылкой на предпосылки. Цель задачи логично вытекает из контекста TASK-26. Указаны верификационные шаги.  
 ЗАМЕЧАНИЯ:  
-ДАЛЬНЕЙШИЙ ШАГ: Обновить _agents/pipeline/SOLUTION.md с PHASE: PLANNING, ROUND: 9, TASK: TASK-27 и запушить для триггера следующего workflow
+1. Предпосылка "Merit Aktiva API интеграция (код готов)" не подтверждена поиском — документация описывает REST API (endpoints как `/api/v1/sendpayment`), но нет упоминания готового кода в `accountant_agent.cjs` без аудита.  
+2. Неправильная логика интеграции: цель "создавать платёжные документы в Merit когда инвойс помечается как Paid" подразумевает отправку исходящих платежей (POST /sendpayment), но упоминается `bank_statement_processor.cjs` для reconcile (импорт выписок, а не создание платежей)[1][3][9].  
+3. Отсутствует аутентификация API: документация требует ApiId, timestamp, signature (hash-based), ключи из настроек Merit Aktiva — план должен включить их настройку (gh secret set, .env)[3][7].  
+4. Нет обработки ошибок, rate limiter и статусов (meritSyncStatus требует полей как success/failure)[9].  
+5. Тестирование только dry-run недостаточно — добавить mock API или тестовые данные из Firestore.  
+ДАЛЬНЕЙШИЙ ШАГ: Выполнить Шаг 1 — прочитать и процитировать код из `automation/accountant_agent.cjs` для подтверждения готовности Merit логики.
 
 ---
 *Автоматическое ревью через GitHub Actions (.github/workflows/perplexity_review.yml)*
