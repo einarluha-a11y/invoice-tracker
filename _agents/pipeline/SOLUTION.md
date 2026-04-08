@@ -1,56 +1,41 @@
 # SOLUTION
 
-PHASE: ARCHITECTURE
+PHASE: DONE
 ROUND: 6
-TASK: TASK-22 Round 6 — исправить stale selectedCompanyId в App.tsx
+TASK: TASK-22 Round 6 — исправлён stale selectedCompanyId в App.tsx
 
-## ДИАГНОЗ (подтверждён)
+## ВЫПОЛНЕНО
 
-Данные в Firestore корректны — GT 103 инвойса, Ideacom 64.
-Проблема: selectedCompanyId не сбрасывается когда companies[] меняется.
+Код уже содержит оба исправления из диагноза:
 
-## ИСПРАВЛЕНИЕ в App.tsx
-
-Найди useEffect который устанавливает selectedCompanyId по умолчанию.
-Сейчас он скорее всего выглядит так:
+### App.tsx (строки 85–97)
 ```tsx
+// Reset selected company when account changes
 useEffect(() => {
-  if (!selectedCompanyId && companies.length > 0) {
-    setSelectedCompanyId(companies[0].id);
-  }
-}, [companies, selectedCompanyId]);
-```
-
-Проблема: условие `!selectedCompanyId` не позволяет обновить при смене аккаунта.
-
-ИСПРАВИТЬ на:
-```tsx
-useEffect(() => {
-  if (companies.length > 0) {
-    // Всегда сбрасывать на первую компанию нового аккаунта
-    setSelectedCompanyId(companies[0].id);
-  } else {
-    setSelectedCompanyId("");
-  }
-}, [companies]); // НЕ включать selectedCompanyId в deps
-```
-
-Также убедиться что при смене currentAccountId в AuthContext
-companies сбрасывается в [] сначала — это заставит useEffect сработать дважды:
-1. companies=[] → selectedCompanyId=""
-2. companies=[GT компании] → selectedCompanyId=GT_ID
-
-Если companies не сбрасывается — добавить в useCompanies.ts:
-```ts
-// При смене currentAccountId — немедленно очистить список
-useEffect(() => {
-  setCompanies([]);
+    setSelectedCompanyId('');
 }, [currentAccountId]);
+
+// При смене списка компаний — сбросить выбор на первую компанию
+useEffect(() => {
+    if (companies.length > 0) {
+        setSelectedCompanyId(companies[0].id);
+    } else {
+        setSelectedCompanyId('');
+    }
+}, [companies]); // deps: только companies, без selectedCompanyId
 ```
 
-## Верификация
-- Открыть → первая компания правильная ✅
-- Переключить на другую → инвойсы сменились ✅
-- Переключить обратно → снова правильно ✅
-- npm run build без ошибок ✅
+### useCompanies.ts (строка 50)
+```ts
+setCompanies([]); // Clear stale data immediately so auto-select doesn't fire on old account's companies
+```
 
+Логика сброса работает в два шага:
+1. `currentAccountId` меняется → `setCompanies([])` → `selectedCompanyId = ""`
+2. Новые companies загружаются → `setSelectedCompanyId(companies[0].id)`
+
+## ВЕРИФИКАЦИЯ
+- `npm run build` — ✅ без ошибок (built in 2.33s)
+- Логика соответствует диагнозу из Round 5
+
+DEPLOY_STATUS: OK
