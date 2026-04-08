@@ -12,6 +12,63 @@ import { InvoiceModal } from './components/InvoiceModal';
 import { AiChat } from './components/AiChat';
 import './App.css';
 
+function MasterPasswordGate({ verifyMasterPassword, logout }: { verifyMasterPassword: (p: string) => Promise<boolean>; logout: () => Promise<void> }) {
+    const { t } = useTranslation();
+    const [password, setPassword] = useState('');
+    const [error, setError] = useState('');
+    const [loading, setLoading] = useState(false);
+
+    const handleVerify = async () => {
+        setLoading(true);
+        setError('');
+        const ok = await verifyMasterPassword(password);
+        if (!ok) setError(t('master.invalidPassword'));
+        setLoading(false);
+    };
+
+    return (
+        <div className="login-container">
+            <div className="login-card">
+                <h1 className="login-title" style={{ fontSize: '1.4rem' }}>{t('master.step2')}</h1>
+                {error && <div className="login-error">{error}</div>}
+                <input
+                    className="login-input"
+                    type="password"
+                    placeholder={t('master.masterPasswordPlaceholder')}
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && handleVerify()}
+                    style={{ marginTop: '1rem' }}
+                />
+                <button
+                    className="btn-login-primary"
+                    onClick={handleVerify}
+                    disabled={loading}
+                    style={{ marginTop: '0.75rem' }}
+                >
+                    {loading ? t('master.verifying') : t('master.verifyBtn')}
+                </button>
+                <button
+                    onClick={logout}
+                    style={{
+                        marginTop: '1rem',
+                        padding: '0.6rem 1.2rem',
+                        borderRadius: 'var(--radius-md)',
+                        border: '1px solid var(--border-color)',
+                        background: 'transparent',
+                        color: 'var(--text-secondary)',
+                        cursor: 'pointer',
+                        fontSize: '0.9rem',
+                        width: '100%',
+                    }}
+                >
+                    {t('logout')}
+                </button>
+            </div>
+        </div>
+    );
+}
+
 function AccountSelector() {
     const { availableAccounts, selectAccount, logout } = useAuth();
     return (
@@ -66,7 +123,7 @@ function AccountSelector() {
 
 function App() {
     const { t, i18n } = useTranslation();
-    const { user, loading: authLoading, logout, isFirebaseConfigured, isMaster, currentAccountId, availableAccounts, selectAccount, userRole } = useAuth();
+    const { user, loading: authLoading, logout, isFirebaseConfigured, isMaster, masterPasswordVerified, verifyMasterPassword, currentAccountId, availableAccounts, selectAccount, userRole } = useAuth();
     const { companies, companiesLoading, companiesError } = useCompanies();
 
     const [selectedCompanyId, setSelectedCompanyId] = useState<string>('');
@@ -276,6 +333,11 @@ function App() {
     // Require Login if not logged in
     if (!user) {
         return <Login />;
+    }
+
+    // Master must verify password first
+    if (isMaster && !masterPasswordVerified) {
+        return <MasterPasswordGate verifyMasterPassword={verifyMasterPassword} logout={logout} />;
     }
 
     // Master must pick an account first
