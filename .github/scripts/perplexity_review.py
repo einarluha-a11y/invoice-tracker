@@ -25,6 +25,7 @@ ROOT = Path(".")
 SOLUTION_PATH = ROOT / "_agents/pipeline/SOLUTION.md"
 REVIEW_PATH = ROOT / "_agents/pipeline/REVIEW.md"
 BACKLOG_PATH = ROOT / "_agents/tasks/BACKLOG.md"
+STATUS_PATH = ROOT / "_agents/pipeline/STATUS.md"
 CHARTER_PATH = ROOT / "_agents/workflows/chief_accountant.md"
 CLAUDE_MD_PATH = ROOT / "CLAUDE.md"
 
@@ -197,6 +198,7 @@ def build_next_task_prompt(context: str, next_task_id: str, next_task_text: str,
         "[Как проверить что задание выполнено — конкретные команды или признаки]\n"
         "```\n\n"
         f"Завершённая задача (для контекста):\n{completed_task[:1500]}\n\n"
+        f"Последние изменения в системе (STATUS.md):\n{read_file(STATUS_PATH)[:2000]}\n\n"
         f"Контекст проекта:\n{context_trimmed}"
     )
 
@@ -246,7 +248,8 @@ def main() -> int:
 
     charter = read_file(CHARTER_PATH)
     claude_md = read_file(CLAUDE_MD_PATH)
-    context = f"{claude_md}\n\n{charter}"
+    status_log = read_file(STATUS_PATH)
+    context = f"{claude_md}\n\n{charter}\n\nПоследние изменения:\n{status_log[:2000]}"
 
     # ── DEPLOY_STATUS: OK → review completed task + generate next task ──
     if "DEPLOY_STATUS: OK" in solution:
