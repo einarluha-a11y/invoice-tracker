@@ -1,21 +1,47 @@
 # SOLUTION
 
-PHASE: WAITING
+PHASE: ARCHITECTURE
 ROUND: 1
-TASK: TASK-24 — CSV экспорт инвойсов (уже завершён, восстановлен статус)
+TASK: TASK-24 — ### TASK-24 ⏳ IN PROGRESS
+**CSV экспорт инвойсов**
 
-## Что было сделано (TASK-24, коммит 610ef84)
-- `src/App.tsx` — функция `handleExportCsv()` + кнопка "⬇ CSV" в filters-bar
-- Экспортирует текущий отфильтрованный вид (searchTerm, statusFilter, startDate, endDate, dateFilterType, showArchived)
-- RFC 4180 экранирование, BOM (\uFEFF) для Excel
+Добавить кнопку "Export CSV" в интерфейс — выгрузка текущего отфильтрованного списка инвойсов.
+
+**Что экспортировать:**
+- Все поля текущего отфильтрованного вида: vendorName, invoiceNumber, dateCreated, dueDate, amount, currency, status
+- Только видимые (отфильтрованные) инвойсы, а не все
 - Имя файла: `invoices_YYYY-MM-DD.csv`
-- `npm run build` — ✅ без ошибок
 
-## Почему SOLUTION.md был сброшен
-Watchdog сбросил файл в WAITING (коммит 278d693) — Perplexity не ответил в 10 мин.
-TASK-24 был реально завершён до сброса.
+**Где разместить:**
+- Кнопка "⬇ CSV" рядом с фильтрами в `src/App.tsx`
+- Функция `exportToCsv(invoices)` в `src/data/utils.ts` или прямо в App.tsx
 
-## Статус
-TASK-24 ✅ DONE. BACKLOG пуст. Жду новых задач от Perplexity.
+**Требования:**
+- Без внешних зависимостей (только browser Blob API)
+- Корректная обработка запятых и кавычек в полях (RFC 4180)
+- `npm run build` без ошибок TypeScript
 
-DEPLOY_STATUS: OK
+## ЗАДАНИЕ
+
+### TASK-24 ⏳ IN PROGRESS
+**CSV экспорт инвойсов**
+
+Добавить кнопку "Export CSV" в интерфейс — выгрузка текущего отфильтрованного списка инвойсов.
+
+**Что экспортировать:**
+- Все поля текущего отфильтрованного вида: vendorName, invoiceNumber, dateCreated, dueDate, amount, currency, status
+- Только видимые (отфильтрованные) инвойсы, а не все
+- Имя файла: `invoices_YYYY-MM-DD.csv`
+
+**Где разместить:**
+- Кнопка "⬇ CSV" рядом с фильтрами в `src/App.tsx`
+- Функция `exportToCsv(invoices)` в `src/data/utils.ts` или прямо в App.tsx
+
+**Требования:**
+- Без внешних зависимостей (только browser Blob API)
+- Корректная обработка запятых и кавычек в полях (RFC 4180)
+- `npm run build` без ошибок TypeScript
+
+## Верификация
+
+Функциональность работает согласно описанию задачи.
