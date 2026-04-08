@@ -43,6 +43,8 @@ module.exports = {
       max_memory_restart: '200M',
       env: {
         WEBHOOK_PORT: 3001,
+        WEBHOOK_SECRET: process.env.WEBHOOK_SECRET || '',
+        PROJECT_DIR: '/Users/einarluha/Downloads/invoice-tracker',
       },
       error_file: './automation/logs/pipeline-webhook-error.log',
       out_file: './automation/logs/pipeline-webhook-out.log',
