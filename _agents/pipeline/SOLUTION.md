@@ -1,5 +1,5 @@
 # SOLUTION
 
-PHASE: READY
-ROUND: 1
-TASK: ревью ПРИНЯТО — GitHub Actions работает корректно (5/5 runs success). DEPLOY_STATUS: OK
+PHASE: WAITING
+ROUND: 0
+TASK: все задачи из BACKLOG выполнены — ожидаю новых
