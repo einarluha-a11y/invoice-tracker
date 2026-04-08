@@ -1,7 +1,7 @@
 # SOLUTION
 
-PHASE: WAITING
-ROUND: 1
+PHASE: BLOCKED
+ROUND: 2
 TASK: TASK-08 — Dropbox интеграция (ждём credentials от Einar)
 
 ## Результат аудита TASK-08
@@ -22,20 +22,28 @@ TASK: TASK-08 — Dropbox интеграция (ждём credentials от Einar)
 **3. Логирование dropboxPath в Firestore** ✅
 invoice_processor.cjs:353 — db.collection('invoices').doc(id).update({ dropboxPath })
 
-**4. Zapier outbound webhook убран** ✅
-invoice_processor.cjs — Dropbox upload активируется через env:
-const dropboxEnabled = process.env.DROPBOX_REFRESH_TOKEN || process.env.DROPBOX_ACCESS_TOKEN;
+**4. Zapier outbound webhook** — убирается автоматически при добавлении Dropbox credentials (нет нужды вручную)
 
-### Что нужно от Einar
+### Что нужно от Einar: создать Dropbox токен
 
-Добавить в Railway env vars:
-- DROPBOX_APP_KEY
-- DROPBOX_APP_SECRET
-- DROPBOX_REFRESH_TOKEN
+1. Зайди на https://www.dropbox.com/developers/apps
+2. Нажми **Create app**
+3. Выбери **Scoped access** → **Full Dropbox**
+4. Назови приложение (например: `invoice-tracker`)
+5. В разделе **Permissions** включи:
+   - `files.content.read`
+   - `files.content.write`
+   - `files.metadata.read`
+   - `files.metadata.write`
+6. В разделе **Settings** → **OAuth 2** → **Access token expiration** выбери **No expiration**
+7. Нажми **Generate** под "Generated access token" — скопируй токен
+8. В Railway добавь переменную: `DROPBOX_ACCESS_TOKEN = <скопированный токен>`
 
-Или проще: DROPBOX_ACCESS_TOKEN (долгоживущий токен из Dropbox Apps).
+После добавления токена — запустить проверку: `node automation/dropbox_service.cjs --test`
 
-Проверка: node automation/dropbox_service.cjs --test
+### После успешной проверки
+- Удалить любые оставшиеся Zapier webhook references из кода (если есть)
+- Задеплоить Railway
 
 ## Верификация
 
