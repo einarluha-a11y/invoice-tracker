@@ -35,7 +35,7 @@ setCompanies([]); // Clear stale data immediately so auto-select doesn't fire on
 2. Новые companies загружаются → `setSelectedCompanyId(companies[0].id)`
 
 ## ВЕРИФИКАЦИЯ
-- `npm run build` — ✅ без ошибок (built in 2.33s)
+- `npm run build` — ✅ без ошибок (built in 2.29s)
 - Логика соответствует диагнозу из Round 5
 
 DEPLOY_STATUS: OK
