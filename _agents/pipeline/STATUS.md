@@ -3,6 +3,7 @@
 
 ## 2026-04-08
 
+- 2026-04-08 23:35 — ✅ Проверка: PHASE:WAITING, BACKLOG пуст, Perplexity отказался от роли (round 15) — merit_health_check syntax OK — ожидаю новых задач
 - 2026-04-08 23:24 — ✅ Проверка: PHASE:WAITING, BACKLOG пуст, Perplexity отказался от роли (round 12) — ожидаю новых задач
 
 - 2026-04-08 — ✅ ROUND 11 WAITING — TASK-28 DONE (bundle -81%), TASK-29 не получена. Perplexity снова ответил не по теме (REVIEW.md round 9). Ожидаю нового задания.
