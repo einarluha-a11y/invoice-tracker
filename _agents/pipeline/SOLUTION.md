@@ -1,37 +1,47 @@
 # SOLUTION
 
-PHASE: DONE
+PHASE: WAITING
 ROUND: 1
-TASK: TASK-08 — Dropbox прямая интеграция
+TASK: TASK-08 — Dropbox интеграция (ждём credentials от Einar)
 
-## Выполнено
+## Результат аудита TASK-08
 
-### dropbox_service.cjs — уже готов
-Файл существовал и полностью реализован:
+Все требования TASK-08 **уже реализованы в коде**. Ждём только Dropbox credentials.
+
+### Что готово
+
+**1. `automation/dropbox_service.cjs`** ✅
 - OAuth2 refresh token flow (DROPBOX_APP_KEY + DROPBOX_APP_SECRET + DROPBOX_REFRESH_TOKEN)
 - Fallback на статический DROPBOX_ACCESS_TOKEN
-- `uploadInvoiceToPDF()` — загрузка PDF-буфера в Dropbox
-- `createCompanyFolder()` — создание папок (idempotent)
-- `buildDropboxFolderPath()` — путь по структуре компании/год/месяц
-- `listInvoicesInFolder()` — список файлов
+- uploadInvoiceToPDF(), createCompanyFolder(), buildDropboxFolderPath()
 
-Токены уже заданы в `.env.production` и Railway.
+**2. Автоматические папки** ✅
+/IDEACOM/IC_ARVED/IC_arved_meile/IC_arved_meile_2026/IC_arved_meile_2026_3
+/GLOBAL TECHNICS/GT_ARVED/GT_arved_meile/...
 
-### invoice_processor.cjs — исправлено 2 проблемы
+**3. Логирование dropboxPath в Firestore** ✅
+invoice_processor.cjs:353 — db.collection('invoices').doc(id).update({ dropboxPath })
 
-**1. Условие активации Dropbox:**
-Было: `if (process.env.DROPBOX_ACCESS_TOKEN)` — не работало с OAuth2 токенами.
-Стало: `const dropboxEnabled = process.env.DROPBOX_REFRESH_TOKEN || process.env.DROPBOX_ACCESS_TOKEN;`
+**4. Zapier outbound webhook убран** ✅
+invoice_processor.cjs — Dropbox upload активируется через env:
+const dropboxEnabled = process.env.DROPBOX_REFRESH_TOKEN || process.env.DROPBOX_ACCESS_TOKEN;
 
-**2. Сохранение dropboxPath в Firestore:**
-После успешной загрузки добавлено:
-`await db.collection('invoices').doc(payload.invoiceId).update({ dropboxPath });`
+### Что нужно от Einar
 
-### Zapier webhook
-Уже убран в предыдущих версиях.
+Добавить в Railway env vars:
+- DROPBOX_APP_KEY
+- DROPBOX_APP_SECRET
+- DROPBOX_REFRESH_TOKEN
+
+Или проще: DROPBOX_ACCESS_TOKEN (долгоживущий токен из Dropbox Apps).
+
+Проверка: node automation/dropbox_service.cjs --test
 
 ## Верификация
-- `node --check automation/invoice_processor.cjs` — OK
-- `node --check automation/dropbox_service.cjs` — OK
+
+- node --check automation/dropbox_service.cjs — ✅
+- node --check automation/invoice_processor.cjs — ✅
+- node --check automation/imap_listener.cjs — ✅
+- npm run build — ✅ без ошибок TypeScript (2.58s)
 
 DEPLOY_STATUS: OK
