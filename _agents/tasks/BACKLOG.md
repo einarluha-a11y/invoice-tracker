@@ -52,3 +52,11 @@
 - Оставить только один — переключатель компании (useCompanies)
 - Аккаунт-switcher показывать только мастер-пользователю когда у него несколько аккаунтов
 - Для обычного пользователя с одним аккаунтом — убрать аккаунт-switcher полностью
+### TASK-16 — СЛЕДУЮЩИЙ
+Добавить concurrency group в perplexity_review.yml — навсегда закрыть race condition
+Добавить после строки permissions:
+```yaml
+concurrency:
+  group: perplexity-review
+  cancel-in-progress: false
+```
