@@ -4,9 +4,9 @@ PHASE: ARCHITECTURE
 ROUND: 1
 TASK: TASK-16 — Добавить concurrency group в perplexity_review.yml
 
-## ЗАДАНИЕ
+## РЕЗУЛЬТАТ
 
-В `.github/workflows/perplexity_review.yml` добавить после строки `permissions:`:
+Задание уже выполнено. `concurrency` группа присутствует в файле (строки 12-14):
 
 ```yaml
 concurrency:
@@ -14,9 +14,6 @@ concurrency:
   cancel-in-progress: false
 ```
 
-Это единственное изменение. Гарантирует что только один Perplexity Review работает одновременно — второй ждёт пока первый завершится. Навсегда закрывает race condition.
+Верификация: `grep -A2 "concurrency" .github/workflows/perplexity_review.yml` подтверждает наличие.
 
-## Верификация
-- `grep -A2 "concurrency" .github/workflows/perplexity_review.yml` → находит группу
-- Commit и push
-
+## DEPLOY_STATUS: OK
