@@ -1,26 +1,29 @@
 # SOLUTION
 
-PHASE: ARCHITECTURE
-ROUND: 2
-TASK: TASK-23 Round 3 — кнопка Tühista: светло-серая надпись + рамка
+PHASE: WAITING
+ROUND: 3
+TASK: TASK-23 Round 3 — кнопка Tühista серая
 
-## ТОЧНЫЙ СТИЛЬ
+## ВЫПОЛНЕНО
 
-```tsx
-<button
-  onClick={onCancel}
-  className="px-6 py-2 rounded-full border border-gray-400 text-gray-300 hover:border-gray-200 hover:text-gray-100 transition-colors font-medium"
->
-  Tühista
-</button>
-```
+Кнопка "Tühista" в диалоге архивации:
+- Текст: светло-серый (`#d1d5db` = gray-300)
+- Рамка: серая (`#9ca3af` = gray-400)
+- Фон: прозрачный
+- Форма: rounded-full (50px)
+- "Arhiiви" — осталась как есть (белый фон, тёмный текст)
 
-- Текст: светло-серый (text-gray-300)
-- Рамка: серая (border-gray-400)
-- При hover: чуть светлее
-- Форма: rounded-full как у кнопки Arhiiви
+## АУДИТ App.tsx
 
-## Верификация
-- Диалог открыт — "Tühista" серая с рамкой, "Arhiiви" белая и жирная
-- npm run build OK
+- Изменён только inline-style атрибут одной кнопки (строка 486)
+- Импорты не затронуты
+- Логика компонента не изменена
+- Edge cases: нет
 
+## РЕЗУЛЬТАТ
+
+- `npm run build` — OK, ошибок нет
+- Коммит: `fix: TASK-23 Round 3 — Tuhista button gray border + gray text`
+- Push в main — OK
+
+DEPLOY_STATUS: OK
