@@ -82,6 +82,11 @@ function App() {
     const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
     const [dateFilterType, setDateFilterType] = useState<'created' | 'due'>('due');
 
+    // Reset selected company when account changes
+    useEffect(() => {
+        setSelectedCompanyId('');
+    }, [currentAccountId]);
+
     // Automatically select the first company when data loads
     useEffect(() => {
         if (!selectedCompanyId && companies.length > 0) {
