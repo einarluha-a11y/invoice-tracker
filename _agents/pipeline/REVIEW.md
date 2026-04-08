@@ -1,10 +1,13 @@
 # REVIEW от Perplexity — 2026-04-08 20:10 UTC
-<!-- phase: WAITING | round: 1 -->
+<!-- phase: PLANNING | round: 7 -->
 
-ВЕРДИКТ: ПРИНЯТО  
-ОЦЕНКА: SOLUTION четко отражает завершение всех задач из BACKLOG (TASK-01 до TASK-25), подтверждено проверками syntax и build. Статус DEPLOY_STATUS: OK и PHASE: WAITING логично завершают раунд без ошибок. Формат документации соответствует pipeline.  
+ВЕРДИКТ: ИЗМЕНЕНИЯ_НУЖНЫ  
+ОЦЕНКА: SOLUTION четко структурирован с актуальным статусом системы и историей задач. Указано ожидание TASK-26 от Perplexity, что соответствует PHASE: PLANNING.  
 ЗАМЕЧАНИЯ:  
-ДАЛЬНЕЙШИЙ ШАГ: Обновить _agents/pipeline/REVIEW.md с подтверждением принятия ROUND 1 и переходом к PHASE: PLANNING для новых задач из memory/ или внешних источников
+1. Нет определения TASK-26 — требуется сформулировать следующую задачу на основе текущего состояния (IMAP работает, 167 инвойсов, frontend/backend готовы).  
+2. Отсутствует план действий для ROUND 7: предложить конкретную задачу (например, интеграция новых фич или data quality audit).  
+3. Не обновлен DEPLOY_STATUS с проверкой Railway logs или health endpoint.  
+ДАЛЬНЕЙШИЙ ШАГ: Определи TASK-26 как "Data quality audit и автоматизация partial payments matching" и обнови SOLUTION.md с планом.
 
 ---
 *Автоматическое ревью через GitHub Actions (.github/workflows/perplexity_review.yml)*
