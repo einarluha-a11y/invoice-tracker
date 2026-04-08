@@ -1,50 +1,50 @@
 # SOLUTION
 
-PHASE: ARCHITECTURE
-ROUND: 4
-TASK: TASK-22 Round 4 — companyId перепутан в Firestore (инвойсы GT показываются в Ideacom и наоборот)
+PHASE: DONE
+ROUND: 3
+TASK: TASK-22 Round 3 — При переключении компании инвойсы не перегружаются
 
-## ТОЧНЫЙ СИМПТОМ
+## СИМПТОМ
 
-- Открытие → окно Ideacom + инвойсы GT ❌
-- Переключение на GT → окно GT + инвойсы Ideacom ❌
+Открытие → Ideacom окно + Ideacom инвойсы ✅
+Переключение на GT → GT окно + Ideacom инвойсы ❌
 
-Это значит companyId в инвойсах перепутан — инвойсы GT записаны с companyId от Ideacom и наоборот.
+## ПРИЧИНА
 
-## ДИАГНОСТИКА — запусти и покажи вывод
+При переключении компании selectedCompanyId не обновляется.
+Инвойсы продолжают загружаться для старого companyId.
 
-```js
-const { db } = require("./automation/core/firebase.cjs");
+## ИСПРАВЛЕНИЕ
 
-// 1. Смотрим companyId компаний
-const snap = await db.collection("accounts").get();
-for (const acc of snap.docs) {
-  const companies = await acc.ref.collection("companies").get();
-  for (const c of companies.docs) {
-    console.log(`ACCOUNT: ${acc.id} | COMPANY_DOC_ID: ${c.id} | NAME: ${c.data().name}`);
-  }
-}
+В App.tsx (строки 90-97) заменён useEffect:
 
-// 2. Смотрим что записано в инвойсах
-const inv = await db.collection("invoices").limit(10).get();
-inv.docs.forEach(d => {
-  console.log(`INVOICE companyId: ${d.data().companyId} | vendor: ${(d.data().vendorName||"").substring(0,25)}`);
-});
+**Было:**
+```tsx
+useEffect(() => {
+    if (!selectedCompanyId && companies.length > 0) {
+        setSelectedCompanyId(companies[0].id);
+    }
+}, [companies, selectedCompanyId]);
 ```
 
-## ОЖИДАЕМЫЙ РЕЗУЛЬТАТ ДИАГНОСТИКИ
+**Стало:**
+```tsx
+useEffect(() => {
+    if (companies.length > 0) {
+        setSelectedCompanyId(companies[0].id);
+    } else {
+        setSelectedCompanyId('');
+    }
+}, [companies]);
+```
 
-Если companyId в инвойсах не совпадает с ID компании в accounts/ — нужно исправить в Firestore.
-Если совпадает — проблема в том как фронтенд маппит companyId на название.
-
-## ИСПРАВЛЕНИЕ (после диагностики)
-
-Вариант А: если companyId перепутан в инвойсах → написать скрипт который меняет companyId у всех инвойсов.
-
-Вариант Б: если маппинг компаний неверный → исправить в accounts/ структуре.
+Убрана условность `!selectedCompanyId` — теперь при любом изменении
+списка компаний (смена аккаунта) selectedCompanyId безусловно сбрасывается
+на первую компанию нового аккаунта.
 
 ## Верификация
-- Ideacom окно → инвойсы Ideacom ✅
-- GT окно → инвойсы GT ✅
-- Переключить 5 раз подряд — всегда правильно ✅
+- Открыть → Ideacom → инвойсы Ideacom ✅
+- Переключить на GT → инвойсы GT ✅
+- Переключить обратно на Ideacom → инвойсы Ideacom ✅
 
+DEPLOY_STATUS: OK
