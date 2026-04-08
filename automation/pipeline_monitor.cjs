@@ -9,7 +9,7 @@
 
 'use strict';
 
-const { execSync } = require('child_process');
+const { execSync, spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
