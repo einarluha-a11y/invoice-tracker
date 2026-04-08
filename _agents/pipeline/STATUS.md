@@ -3,6 +3,7 @@
 
 ## 2026-04-08
 
+- 2026-04-08 16:31 — ✅ Завершено: 3:TASK-23 Round 3 — кнопка Tühista серая (Tailwind к
 - 2026-04-08 — ✅ Проверка: PHASE:WAITING, BACKLOG пуст, TASK-23 APPROVED — ожидаю новых задач от Perplexity
 
 ### TASK-22 Round 5 — Диагностика companyId
