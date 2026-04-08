@@ -48,4 +48,14 @@ export default defineConfig({
     })
   ],
   base: './',
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'pdf-viewer': ['react-pdf', 'pdfjs-dist'],
+          'vendor-react': ['react', 'react-dom'],
+        },
+      },
+    },
+  },
 })

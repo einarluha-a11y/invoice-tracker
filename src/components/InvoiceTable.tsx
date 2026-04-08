@@ -1,9 +1,12 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, Suspense } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Invoice, InvoiceStatus } from '../data/types';
 import { generateInvoicesPDF } from '../lib/pdfExport';
-import { InvoicePdfViewer } from './InvoicePdfViewer';
 import { authHeaders } from '../data/api';
+
+const InvoicePdfViewer = React.lazy(() =>
+    import('./InvoicePdfViewer').then(m => ({ default: m.InvoicePdfViewer }))
+);
 import './InvoiceTable.css';
 
 interface InvoiceTableProps {
@@ -514,7 +517,9 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                         </button>
                     </div>
                     <div style={{ width: '90%', height: '85vh', background: '#fff', borderRadius: 'var(--radius-lg)', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden' }}>
-                        <InvoicePdfViewer url={viewingPdfUrl} />
+                        <Suspense fallback={<div style={{ color: '#888' }}>Loading PDF…</div>}>
+                            <InvoicePdfViewer url={viewingPdfUrl} />
+                        </Suspense>
                     </div>
                 </div>
             )}
