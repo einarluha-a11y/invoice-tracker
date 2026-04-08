@@ -3,8 +3,7 @@ module.exports = {
     {
       name: 'invoice-api',
       script: './automation/api_server.cjs',
-      watch: true,
-      ignore_watch: ['node_modules', 'automation/logs', 'automation/dlq', 'dist', 'src', '.claude', '_agents', '*.json', '*.flag', '*.log', '*.md'],
+      watch: false,  // watch off — watchdog handles restarts, pm2 restart all for deploys
       restart_delay: 5000,
       max_restarts: 10,
       exp_backoff_restart_delay: 100,
@@ -15,8 +14,7 @@ module.exports = {
     {
       name: 'invoice-imap',
       script: './automation/imap_daemon.cjs',
-      watch: true,
-      ignore_watch: ['node_modules', 'automation/logs', 'automation/dlq', 'dist', 'src', '.claude', '_agents', '*.json', '*.flag', '*.log', '*.md'],
+      watch: false,  // watch off — watchdog handles restarts, pm2 restart all for deploys
       restart_delay: 5000,
       max_restarts: 10,
       exp_backoff_restart_delay: 100,
