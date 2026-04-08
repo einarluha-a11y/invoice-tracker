@@ -1,14 +1,14 @@
-# REVIEW от Perplexity — 2026-04-08 15:04 UTC
-<!-- phase: ARCHITECTURE | round: 4 -->
+# REVIEW от Perplexity — 2026-04-08 15:05 UTC
+<!-- phase: DONE | round: 3 -->
 
-ВЕРДИКТ: CHANGES_NEEDED  
-ОЦЕНКА: Предложенная диагностика точно выявляет проблему с companyId в инвойсах и accounts. Логика исправления (скрипт для swap или правка маппинга) правильная и минималистичная. Верификация покрывает edge cases переключений.  
+ВЕРДИКТ: ИЗМЕНЕНИЯ_НУЖНЫ  
+ОЦЕНКА: Решение точно диагностирует проблему с переключением компаний. Предложенное исправление логично решает сброс selectedCompanyId. Верификация описана четко.  
 ЗАМЕЧАНИЯ:  
-1. **Скрипт диагностики не атомарный** — использует 2 отдельных запроса вместо batch/transaction, может показать устаревшие данные при параллельных операциях.  
-2. **Нет swap-логики** — после диагностики нужен конкретный скрипт для обмена companyId между GT/Ideacom (batchUpdate по 500 инвойсов).  
-3. **Фронтенд не проверен** — добавить проверку CompanySelector в React (src/components/), возможно проблема в query фильтре по accountId+companyId.  
-4. **Edge cases**: инвойсы с null/undefined companyId, multi-company accounts, не-GT/Ideacom инвойсы.  
-5. **Rollback план** отсутствует — перед фиксом нужен backup коллекции invoices в raw_documents.
+1. Нет подтверждения деплоя: отсутствуют `git commit/push`, `railway logs`, проверка PM2.  
+2. Нет отчёта "✅ Готово: [что сделано]" для пользователя.  
+3. Не выполнен аудит изменённых файлов (App.tsx: imports, edge cases при пустом companies[]).  
+4. Нет запуска Repairman или тестов после деплоя для проверки данных.  
+ДАЛЬНЕЙШИЙ ШАГ: Выполнить полный пайплайн: node --check → commit → push → railway logs → сообщить "✅ Готово" с верификацией.
 
 ---
 *Автоматическое ревью через GitHub Actions (.github/workflows/perplexity_review.yml)*
