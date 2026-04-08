@@ -1,34 +1,26 @@
 # SOLUTION
 
 PHASE: ARCHITECTURE
-ROUND: 1
-TASK: TASK-23 Round 2 — кнопка Tühista должна выглядеть как кнопка (рамка, hover)
+ROUND: 2
+TASK: TASK-23 Round 3 — кнопка Tühista: светло-серая надпись + рамка
 
-## ПРОБЛЕМА
-
-Кнопка "Tühista" выглядит как просто текст — нет рамки, нет hover эффекта.
-Пользователь не понимает что это кликабельный элемент.
-
-## ИСПРАВЛЕНИЕ
-
-Найди кнопку "Tühista" в диалоге архивации и замени стиль:
+## ТОЧНЫЙ СТИЛЬ
 
 ```tsx
 <button
   onClick={onCancel}
-  className="px-6 py-2 rounded-full border border-white text-white hover:bg-white hover:text-gray-900 transition-colors font-medium"
+  className="px-6 py-2 rounded-full border border-gray-400 text-gray-300 hover:border-gray-200 hover:text-gray-100 transition-colors font-medium"
 >
   Tühista
 </button>
 ```
 
-Кнопка "Arhiiви" для сравнения должна остаться как есть (белый фон, тёмный текст, bold).
-
-Результат: два чётко видимых варианта — одна с белым фоном, другая с белой рамкой.
+- Текст: светло-серый (text-gray-300)
+- Рамка: серая (border-gray-400)
+- При hover: чуть светлее
+- Форма: rounded-full как у кнопки Arhiiви
 
 ## Верификация
-- Открыть диалог архивации
-- "Tühista" — прозрачная с белой рамкой, при hover становится белой
-- "Arhiiви" — белая кнопка, жирный текст
-- npm run build без ошибок
+- Диалог открыт — "Tühista" серая с рамкой, "Arhiiви" белая и жирная
+- npm run build OK
 
