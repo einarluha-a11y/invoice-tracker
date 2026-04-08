@@ -106,11 +106,11 @@
 
 ---
 
-### TASK-08 ⏳ WAITING
-**Dropbox прямая интеграция** (выполнять только после получения токенов от Einar)
+### TASK-08 ✅ DONE
+**Dropbox прямая интеграция**
 
 Заменить Zapier на прямой Dropbox API:
-- `automation/dropbox_service.cjs` — загрузка PDF в Dropbox
-- Автоматическое создание папок по структуре компании
-- Логирование dropboxPath в Firestore
-- Убрать Zapier webhook из imap_daemon.cjs
+- `automation/dropbox_service.cjs` — ✅ создан, OAuth2 refresh token flow
+- Автоматическое создание папок по структуре компании — ✅ `buildDropboxFolderPath()`
+- Логирование dropboxPath в Firestore — ✅ `invoice_processor.cjs:353`
+- Убрать Zapier webhook — ✅ Zapier webhook вызовов не осталось
