@@ -89,6 +89,24 @@ function runClaude(prompt) {
             } catch (e) {
                 log('⚠️ Deploy failed: ' + (e.message || '').slice(0, 100));
             }
+            // Update STATUS.md with completion report
+            try {
+                const statusPath = path.join(PROJECT, '_agents/pipeline/STATUS.md');
+                const now = new Date().toISOString().slice(0, 16).replace('T', ' ');
+                const currentTask = readState(STATE_SOL).split(':').slice(2).join(':') || 'unknown';
+                const entry = `- ${now} — ✅ Завершено: ${currentTask.slice(0, 80)}\n`;
+                let status = '';
+                try { status = fs.readFileSync(statusPath, 'utf-8'); } catch {}
+                const insertAt = status.indexOf('\n- ');
+                if (insertAt > 0) {
+                    status = status.slice(0, insertAt) + '\n' + entry + status.slice(insertAt + 1);
+                } else {
+                    status += '\n' + entry;
+                }
+                fs.writeFileSync(statusPath, status);
+                execSync(`cd ${PROJECT} && git add _agents/pipeline/STATUS.md && git commit -m "status: task completed" && git push origin main`, { timeout: 15000, stdio: 'pipe' });
+                log('📝 STATUS.md обновлён');
+            } catch { /* non-critical */ }
         } else {
             log('❌ Claude ошибка (exit ' + code + '): ' + output.slice(-200));
         }
