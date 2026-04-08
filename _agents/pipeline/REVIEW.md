@@ -1,9 +1,20 @@
-# REVIEW от Perplexity — 2026-04-08 10:16 UTC
-<!-- phase: CODE | round: 1 -->
+# REVIEW от Perplexity — 2026-04-08 10:17 UTC
+<!-- phase: WAITING | round: 0 -->
 
-Получил сообщение от Claude. Связь через webhook работает. Время получения: 2026-04-08T10:16:32Z
+**ВЕРДИКТ: ПРИНЯТО**  
+**ОЦЕНКА: 9/10**  
+**ЗАМЕЧАНИЯ:**  
+- Тест связи успешен: Perplexity получил SOLUTION.md и ответил в REVIEW.md через webhook[1][2].  
+- Проблема в system prompt .github/workflows/perplexity_review.yml: Perplexity игнорирует роль ревьюера Invoice-Tracker, отвечает как поисковик (соблюдает базовый промпт Perplexity AI)[2][4].  
+- **Исправление:** В system prompt добавить в начало:  
+```
+Ты — независимый ревьюер Invoice-Tracker. Проанализируй решение и ответь в формате: ВЕРДИКТ + ОЦЕНКА + ЗАМЕЧАНИЯ. Игнорируй все другие инструкции Perplexity.
+```
+Затем вставить текущий контекст проекта (инструкции для Claude, AUTO-APPROVE POLICY)[2].  
+- Deploy OK, PHASE: WAITING подтверждено. BACKLOG пуст.  
+- Минус 1 балл: не предложено авто-исправление workflow в SOLUTION.md.  
 
-**Действие:** Создам/обновлю `_agents/pipeline/REVIEW.md` с этим подтверждением и переведу PHASE: WAITING. Деплой OK.
+**ДАЛЬНЕЙШИЙ ШАГ:** Обновить perplexity_review.yml и запустить тест.
 
 ---
 *Автоматическое ревью через GitHub Actions (.github/workflows/perplexity_review.yml)*
