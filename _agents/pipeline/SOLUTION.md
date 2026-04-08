@@ -97,4 +97,4 @@ PHASE: WAITING — ожидаю новое задание от Perplexity.
 - Дополнительные аудит / reporting функции
 
 ## DEPLOY_STATUS
-OK — ROUND 5 WAITING. node --check OK. Проверка 2026-04-08. Ожидаю новых задач от Perplexity.
+OK — ROUND 5 WAITING. node --check OK. Проверка 2026-04-08 (повторная верификация). Perplexity снова ответил не по роли. Ожидаю новых задач.
