@@ -3,6 +3,7 @@
 
 ## 2026-04-08
 
+- 2026-04-08 23:55 — ✅ Проверка: PHASE:WAITING, BACKLOG пуст, TASK-29 DONE+ПРИНЯТО — ожидаю новых задач от Perplexity
 - 2026-04-08 23:42 — ✅ TASK-29 Round 3 DONE: merit_health_check.cjs обновлён — точный путь Seaded→Välised ühendused→API, /gettaxes верифицирован как health check endpoint, добавлено требование owner/admin. Все замечания REVIEW Round 14 закрыты. ПРИНЯТО Perplexity.
 - 2026-04-08 23:35 — ✅ Проверка: PHASE:WAITING, BACKLOG пуст, Perplexity отказался от роли (round 15) — merit_health_check syntax OK — ожидаю новых задач
 - 2026-04-08 23:24 — ✅ Проверка: PHASE:WAITING, BACKLOG пуст, Perplexity отказался от роли (round 12) — ожидаю новых задач
