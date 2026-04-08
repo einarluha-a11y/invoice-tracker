@@ -25,3 +25,4 @@
 - Merit Aktiva API интеграция (код готов)
 - Pipeline monitor как PM2 процесс
 - PM2 локальный деплой вместо Railway
+# Webhook test Wed Apr  8 13:09:10 EEST 2026
