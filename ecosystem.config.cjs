@@ -35,6 +35,16 @@ module.exports = {
       max_memory_restart: '200M',
       error_file: './automation/logs/pipeline-monitor-error.log',
       out_file: './automation/logs/pipeline-monitor-out.log',
+    },
+    {
+      name: 'watchdog',
+      script: './automation/watchdog.cjs',
+      watch: false,
+      restart_delay: 30000,
+      max_restarts: 100,
+      max_memory_restart: '100M',
+      error_file: './automation/logs/watchdog-error.log',
+      out_file: './automation/logs/watchdog-out.log',
     }
   ]
 };
