@@ -1,8 +1,22 @@
-# Pipeline Status — 2026-04-05 12:16
+# STATUS — Pipeline Activity Log
 
-**Статус:** WAITING_FOR_ARCHITECTURE
+Обновляется автоматически. Perplexity читает при генерации задач.
 
-**Детали:** Жду первое решение от Claude
+## 2026-04-08
 
-## Что происходит
-⏳ Ожидаю архитектурное решение от Claude
+- 07:16 — pipeline_monitor переведён на spawn (неблокирующий) — monitor отзывчив пока Claude CLI работает
+- 07:04 — watchdog: hang detection 30→10 мин, Perplexity timeout 10 мин
+- 05:00 — watchdog.cjs создан как PM2 процесс — независимый супервизор
+- 04:30 — watch отключен для invoice-api/imap — устранён crash loop
+- 04:22 — pipeline_monitor: auto-deploy после Claude CLI (git pull + pm2 restart)
+- 04:13 — perplexity_review.py: детерминированный выбор из BACKLOG, git log в промпте
+
+## 2026-04-07
+
+- Аудит кода: cleanVendorName, parseFloat→cleanNum, getVendorAliases→utils
+- Anti-hallucination: Teacher не подменяет vendorName
+- Partial payment protection в Repairman
+- Health check система
+- Merit Aktiva API интеграция (код готов)
+- Pipeline monitor как PM2 процесс
+- PM2 локальный деплой вместо Railway
