@@ -24,6 +24,7 @@ companyId:vlhvA6i8d3Hry8rtrA3Z (Ideacom) → 64 invoices
 ВЫВОД: Данные в Firestore КОРРЕКТНЫ. Subcollection IDs == top-level company IDs.
 Инвойсы распределены правильно. Проблема в FRONTEND логике, не в данных.
 
+- 2026-04-08 15:30 — ✅ Завершено: 6:TASK-22 Round 6 — исправить stale selectedCompanyI
 - 2026-04-08 15:26 — ✅ Завершено: 0:TASK-22 Round 5 — диагностика завершена
 - 2026-04-08 18:25 — ✅ Завершено: 5:TASK-22 Round 5 — диагностика companyId выполнена (данные корректны)
 - 2026-04-08 15:04 — ✅ Завершено: 4:TASK-22 Round 4 — companyId перепутан в Firestore
