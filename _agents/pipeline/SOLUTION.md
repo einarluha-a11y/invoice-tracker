@@ -1,6 +1,5 @@
 # SOLUTION
 
-PHASE: READY
-ROUND: 2
-TASK: BACKLOG выполнен, ревью ПРИНЯТО (Round 1). Ожидаю новые задачи.
-DEPLOY_STATUS: OK
+PHASE: WAITING
+ROUND: 0
+TASK: все задачи из BACKLOG выполнены — ожидаю новых
