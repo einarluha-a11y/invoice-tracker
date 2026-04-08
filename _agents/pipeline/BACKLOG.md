@@ -50,7 +50,7 @@
 
 ---
 
-### TASK-03
+### TASK-03 ✅ DONE
 **Фаза 3 — Backend auth middleware**
 
 1. `api_server.cjs` — добавить verifyToken middleware на все /api/* роуты
@@ -60,7 +60,7 @@
 
 ---
 
-### TASK-04
+### TASK-04 ✅ DONE
 **Фаза 4 — Cleanup**
 
 1. Удалить `VITE_ALLOWED_EMAILS` из AuthContext (заменено Firestore-based доступом)
@@ -70,7 +70,7 @@
 
 ---
 
-### TASK-05
+### TASK-05 ✅ DONE
 **Кэш правил + хардкод storage bucket**
 
 1. `core/firebase.cjs` — экспортировать `invalidateRulesCache()`

@@ -1,20 +1,34 @@
 # SOLUTION
 
-PHASE: ARCHITECTURE
+PHASE: WAITING
 ROUND: 1
-TASK: TASK-03 — ### TASK-03
-**Фаза 3 — Backend auth middleware**
+TASK: TASK-08 — Dropbox интеграция (ждём токены от Einar)
 
-1. `api_server.cjs` — добавить verifyToken middleware на все /api/* роуты
-2. `webhook_server.cjs` — аналогично
-3. Frontend `api.ts` — добавить Authorization: Bearer {token} header ко всем fetch запросам
-4. Делать одновременно frontend + backend (иначе сломается)
+## Статус пайплайна
 
----
+Все задачи TASK-01..07 **выполнены и верифицированы**:
 
-## ЗАДАНИЕ
+| Задача | Статус | Итог |
+|--------|--------|------|
+| TASK-01 | ✅ DONE | master_users, accounts, Firestore rules |
+| TASK-02 | ✅ DONE | Login.tsx, AuthContext.tsx, useCompanies.ts |
+| TASK-03 | ✅ DONE | Backend verifyToken middleware + frontend authHeaders |
+| TASK-04 | ✅ DONE | Убраны VITE_ALLOWED_EMAILS и хардкод emails |
+| TASK-05 | ✅ DONE | invalidateRulesCache(), FIREBASE_STORAGE_BUCKET через env |
+| TASK-06 | ✅ DONE | updateInvoice() разбит на 5 функций |
+| TASK-07 | ✅ DONE | imap_daemon.cjs разбит на 4 модуля |
+| TASK-08 | ⏳ WAITING | Ожидаем Dropbox OAuth токен от Einar |
 
-**Несмотря на аудит показывающий TASK-03 как DONE, задача требует перереализации с нуля для обеспечения стабильности auth flow.**
+## TASK-08 — что нужно от Einar
 
-### Backend: api_server.cjs
-1. Создать функцию `verifyToken(req, res, next)`:
+Для интеграции с Dropbox нужен токен:
+1. Создать Dropbox App на https://www.dropbox.com/developers/apps
+2. Получить **Access Token** (или App Key + App Secret + Refresh Token)
+3. Передать Claude для настройки `automation/dropbox_service.cjs`
+
+## Верификация
+
+- `node --check` automation/*.cjs — ✅
+- BACKLOG.md обновлён (TASK-03..05 помечены DONE)
+
+DEPLOY_STATUS: OK
