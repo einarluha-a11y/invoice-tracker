@@ -66,7 +66,7 @@ function AccountSelector() {
 
 function App() {
     const { t, i18n } = useTranslation();
-    const { user, loading: authLoading, logout, isFirebaseConfigured, isMaster, currentAccountId, userRole } = useAuth();
+    const { user, loading: authLoading, logout, isFirebaseConfigured, isMaster, currentAccountId, availableAccounts, selectAccount, userRole } = useAuth();
     const { companies, companiesLoading, companiesError } = useCompanies();
 
     const [selectedCompanyId, setSelectedCompanyId] = useState<string>('');
@@ -245,6 +245,17 @@ function App() {
                     <span>Invoice-<span className="header-accent">Tracker</span></span>
                 </h1>
                 <div className="header-controls" style={{ display: 'flex', gap: '1rem' }}>
+                    {isMaster && availableAccounts.length > 1 && (
+                        <select
+                            className="company-select"
+                            value={currentAccountId || ''}
+                            onChange={e => { selectAccount(e.target.value); setSelectedCompanyId(''); }}
+                        >
+                            {availableAccounts.map(acc => (
+                                <option key={acc.id} value={acc.id}>{acc.name}</option>
+                            ))}
+                        </select>
+                    )}
                     <select
                         className="company-select"
                         value={selectedCompanyId}

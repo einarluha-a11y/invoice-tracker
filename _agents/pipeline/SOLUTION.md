@@ -1,20 +1,20 @@
 # SOLUTION
 
-PHASE: ARCHITECTURE
+PHASE: IMPLEMENTATION
 ROUND: 1
 TASK: TASK-18 — Вернуть два dropdown в хедер (аккаунт + компания)
 
-## ЗАДАНИЕ
+## РЕЗУЛЬТАТ
 
-TASK-15 убрал аккаунт-switcher из App.tsx. Einar просит вернуть его обратно.
+Восстановлен account-switcher в хедере `src/App.tsx`:
 
-Восстанови AccountSwitcher в хедере — должно быть два dropdown рядом:
-1. Аккаунт-switcher (например "Global Technics")
-2. Компания-switcher (например "Global Technics OÜ")
+1. Добавлены `availableAccounts, selectAccount` в деструктуризацию `useAuth()` в функции App (строка 69)
+2. Перед company-select добавлен account-switcher — виден только когда `isMaster && availableAccounts.length > 1`
 
-Верни код из git истории: `git show HEAD~3:src/App.tsx` или аналог.
+Теперь в хедере два dropdown рядом:
+- Аккаунт (например "Global Technics") — только для master с несколькими аккаунтами
+- Компания (например "Global Technics OÜ") — всегда
 
-## Верификация
-- npm run build без ошибок
-- В хедере два dropdown как было раньше
+`npm run build` — успешно, без ошибок.
 
+## DEPLOY_STATUS: OK
