@@ -1,26 +1,17 @@
 # SOLUTION
 
-PHASE: ARCHITECTURE
-ROUND: 1
-TASK: TASK-24 — ### TASK-24 ⏳ IN PROGRESS
-**CSV экспорт инвойсов**
+PHASE: WAITING
+ROUND: 3
+TASK: STATUS_SYNC
 
-Добавить кнопку "Export CSV" в интерфейс — выгрузка текущего отфильтрованного списка инвойсов.
+## СТАТУС
 
-**Что экспортировать:**
-- Все поля текущего отфильтрованного вида: vendorName, invoiceNumber, dateCreated, dueDate, amount, currency, status
-- Только видимые (отфильтрованные) инвойсы, а не все
-- Имя файла: `invoices_YYYY-MM-DD.csv`
+TASK-24 (CSV экспорт) выполнена и одобрена Perplexity (2026-04-08 17:04 UTC).
 
-**Где разместить:**
-- Кнопка "⬇ CSV" рядом с фильтрами в `src/App.tsx`
-- Функция `exportToCsv(invoices)` в `src/data/utils.ts` или прямо в App.tsx
+SOLUTION.md был сброшен к старому состоянию Perplexity workflow — исправлено.
 
-**Требования:**
-- Без внешних зависимостей (только browser Blob API)
-- Корректная обработка запятых и кавычек в полях (RFC 4180)
-- `npm run build` без ошибок TypeScript
+BACKLOG: пуст — TASK-24 ✅ DONE, новых задач нет.
 
-## ЗАДАНИЕ
+Жду следующего задания от Perplexity (рекомендовано: TASK-25: DATA_AUDIT).
 
-**1. Создать функцию экспорта CSV в `src/data/utils.ts`**
+DEPLOY_STATUS: OK
