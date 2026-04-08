@@ -89,3 +89,13 @@ concurrency:
 - Events: push (только)
 
 Удалить pipeline_monitor.cjs поллинг после успешного тестирования.
+
+### TASK-21 — СРОЧНО
+Перепутаны инвойсы Global Technics и Ideacom на дашборде.
+При выборе Global Technics показываются инвойсы Ideacom и наоборот.
+Проверить маппинг accountId → companyId в:
+- accounts/global-technics/companies/ и accounts/ideacom/companies/
+- useCompanies.ts — порядок загрузки компаний
+- App.tsx — selectedCompanyId логика
+- localStorage currentAccountId — может быть перепутан после миграции
+Исправить маппинг и убедиться что правильные инвойсы показываются для каждой компании.
