@@ -242,6 +242,10 @@ async function reconcilePayment(reference, description, paidAmount, totalBankDra
                     t.update(docRef, globalPayload);
                 });
                 console.log(`  -> Marked as Paid!`);
+                // Merit Aktiva sync for cross-currency match (priority matrix already handled FX/normal above)
+                if (isCrossCurrencyMatch) {
+                    try { await syncPaymentToMerit(data, { amount: paidAmount, reference }, matchedDoc.id); } catch(e) { console.warn('[Merit] Payment sync (cross-currency):', e.message); }
+                }
 
                 // --- PRO FORMA / PREPAYMENT CASCADE DUPLICATE RESOLUTION --- //
                 // If this is a prepayment/pro forma that got paid, or if the real one got paid, mark the pair.
