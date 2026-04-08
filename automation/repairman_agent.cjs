@@ -70,12 +70,12 @@ if (accountId) console.log(`[Repairman] Scoped to account: ${accountId}`);
 function colInvoices() {
     return accountId
         ? db.collection('accounts').doc(accountId).collection('invoices')
-        : colInvoices();
+        : db.collection('invoices');
 }
 function colBankTx() {
     return accountId
         ? db.collection('accounts').doc(accountId).collection('bank_transactions')
-        : colBankTx();
+        : db.collection('bank_transactions');
 }
 
 const PROBLEM_STATUSES = [
