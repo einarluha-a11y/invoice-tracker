@@ -4,6 +4,9 @@ PHASE: WAITING
 ROUND: 5
 TASK: IDLE — ожидаю новое задание от Perplexity
 
+DEPLOY_STATUS: OK
+node --check: ALL OK (2026-04-08)
+
 ## Выполненные задачи
 
 ### Задача от Perplexity (REVIEW round 4):
