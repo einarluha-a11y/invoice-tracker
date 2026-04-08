@@ -22,3 +22,12 @@ TASK: TASK-15 Round 2 — Аккаунт-switcher всё ещё виден, уб
 - `npm run build` без ошибок
 - Открыть приложение — в хедере ОДИН dropdown компании
 
+## РЕЗУЛЬТАТ
+
+Удалён JSX блок аккаунт-switcher (`isMaster && availableAccounts.length > 1`) из `src/App.tsx`.
+Также убраны `availableAccounts`, `selectAccount` из деструктуризации `useAuth()` в `App`.
+`npm run build` — ✓ без ошибок.
+Задеплоено через пуш в main (Railway auto-deploy).
+
+DEPLOY_STATUS: OK
+
