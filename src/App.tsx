@@ -71,13 +71,14 @@ function MasterPasswordGate({ verifyMasterPassword, logout }: { verifyMasterPass
 
 function AccountSelector() {
     const { availableAccounts, selectAccount, logout } = useAuth();
+    const { t } = useTranslation();
     return (
         <div className="login-container">
             <div className="login-card">
-                <h1 className="login-title" style={{ fontSize: '1.4rem' }}>Выберите аккаунт</h1>
+                <h1 className="login-title" style={{ fontSize: '1.4rem' }}>{t('accountSelector.title')}</h1>
                 {availableAccounts.length === 0 ? (
                     <div style={{ marginTop: '1rem', color: 'var(--text-secondary)', textAlign: 'center', fontSize: '0.95rem' }}>
-                        <p>Нет доступных аккаунтов. Обратитесь к администратору.</p>
+                        <p>{t('accountSelector.noAccounts')}</p>
                         <button
                             onClick={logout}
                             style={{
@@ -91,7 +92,7 @@ function AccountSelector() {
                                 fontSize: '0.9rem',
                             }}
                         >
-                            Выйти
+                            {t('logout')}
                         </button>
                     </div>
                 ) : (
@@ -325,7 +326,7 @@ function App() {
     if (authLoading) {
         return (
             <div className="login-container">
-                <div className="loader">Loading application...</div>
+                <div className="loader">{t('loadingData')}</div>
             </div>
         );
     }

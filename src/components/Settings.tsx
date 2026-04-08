@@ -61,14 +61,14 @@ export function Settings({ onBack }: SettingsProps) {
                 });
                 const data = await r.json();
                 if (data.ok) {
-                    setRoleMsg(`Роль обновлена: ${uid}`);
+                    setRoleMsg(`${t('settingsPage.roleUpdated')}: ${uid}`);
                     setUsers(prev => prev.map(u => u.uid === uid ? { ...u, role } : u));
                 } else {
-                    setRoleMsg(data.error || 'Ошибка');
+                    setRoleMsg(data.error || t('settingsPage.errorPrefix'));
                 }
             } else if (currentRole === 'admin' && currentAccountId && db) {
                 await updateDoc(doc(db, 'accounts', currentAccountId, 'users', uid), { role });
-                setRoleMsg(`Роль обновлена: ${uid}`);
+                setRoleMsg(`${t('settingsPage.roleUpdated')}: ${uid}`);
                 setUsers(prev => prev.map(u => u.uid === uid ? { ...u, role } : u));
             }
         } catch (e: any) { setRoleMsg(e.message); }
@@ -253,9 +253,9 @@ export function Settings({ onBack }: SettingsProps) {
             <div className="table-container" style={{ padding: '2rem', marginBottom: '2rem' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
-                        <h3>Роли пользователей</h3>
+                        <h3>{t('settingsPage.rolesTitle')}</h3>
                         <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', margin: '0.3rem 0 0 0' }}>
-                            Ваша роль: <strong>{currentRole}</strong>
+                            {t('settingsPage.yourRole')} <strong>{currentRole}</strong>
                         </p>
                     </div>
                     {(currentRole === 'master' || currentRole === 'admin') && (
@@ -264,7 +264,7 @@ export function Settings({ onBack }: SettingsProps) {
                             color: 'var(--primary-color)', padding: '0.4rem 0.8rem',
                             borderRadius: '4px', cursor: 'pointer'
                         }}>
-                            {usersLoading ? 'Загрузка...' : 'Управление пользователями'}
+                            {usersLoading ? t('settingsPage.loading') : t('settingsPage.manageUsers')}
                         </button>
                     )}
                 </div>
@@ -275,7 +275,7 @@ export function Settings({ onBack }: SettingsProps) {
                             <thead>
                                 <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
                                     <th style={{ textAlign: 'left', padding: '0.5rem', color: 'var(--text-secondary)' }}>Email</th>
-                                    <th style={{ textAlign: 'left', padding: '0.5rem', color: 'var(--text-secondary)' }}>Роль</th>
+                                    <th style={{ textAlign: 'left', padding: '0.5rem', color: 'var(--text-secondary)' }}>{t('settingsPage.roleCol')}</th>
                                     <th style={{ padding: '0.5rem' }}></th>
                                 </tr>
                             </thead>
@@ -297,7 +297,7 @@ export function Settings({ onBack }: SettingsProps) {
                                             <button onClick={() => handleSetRole(u.uid, u.role)} style={{
                                                 background: 'var(--header-accent)', color: 'white', border: 'none',
                                                 padding: '0.3rem 0.7rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.85rem'
-                                            }}>Сохранить</button>
+                                            }}>{t('settingsPage.roleSaveBtn')}</button>
                                         </td>
                                     </tr>
                                 ))}

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { getAuth } from 'firebase/auth';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
@@ -14,6 +15,7 @@ interface InvoicePdfViewerProps {
 }
 
 export const InvoicePdfViewer: React.FC<InvoicePdfViewerProps> = ({ url }) => {
+    const { t } = useTranslation();
     const [numPages, setNumPages] = useState<number>();
     const [pageNumber, setPageNumber] = useState<number>(1);
     const [error, setError] = useState<string | null>(null);
@@ -89,13 +91,13 @@ export const InvoicePdfViewer: React.FC<InvoicePdfViewerProps> = ({ url }) => {
         <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', background: '#f5f5f5', overflow: 'auto', padding: '20px', borderRadius: 'var(--radius-lg)' }}>
             {error ? (
                 <div style={{ color: 'red', padding: '20px', textAlign: 'center' }}>
-                    <p>Failed to load file: {error}</p>
+                    <p>{t('pdfViewer.failedToLoad')}: {error}</p>
                     <a href={url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-color)', textDecoration: 'underline' }}>
-                        Click here to open the file directly
+                        {t('pdfViewer.openDirectly')}
                     </a>
                 </div>
             ) : !fileData ? (
-                spinner('Downloading Secure File...')
+                spinner(t('pdfViewer.downloading'))
             ) : fileData.isImage ? (
                 imageSrc ? (
                     <img
@@ -104,7 +106,7 @@ export const InvoicePdfViewer: React.FC<InvoicePdfViewerProps> = ({ url }) => {
                         style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: 'var(--radius-lg)' }}
                     />
                 ) : (
-                    spinner('Rendering Image...')
+                    spinner(t('pdfViewer.renderingImage'))
                 )
             ) : (
                 <>
@@ -112,7 +114,7 @@ export const InvoicePdfViewer: React.FC<InvoicePdfViewerProps> = ({ url }) => {
                         file={fileData.blob}
                         onLoadSuccess={onDocumentLoadSuccess}
                         onLoadError={onDocumentLoadError}
-                        loading={spinner('Loading PDF Document...')}
+                        loading={spinner(t('pdfViewer.loadingPdf'))}
                     >
                         <Page
                             pageNumber={pageNumber}
@@ -129,15 +131,15 @@ export const InvoicePdfViewer: React.FC<InvoicePdfViewerProps> = ({ url }) => {
                                 disabled={pageNumber <= 1}
                                 style={{ padding: '5px 10px', cursor: pageNumber <= 1 ? 'not-allowed' : 'pointer', borderRadius: '4px', border: '1px solid #ccc', background: pageNumber <= 1 ? '#eee' : '#fff' }}
                             >
-                                Previous
+                                {t('pdfViewer.previous')}
                             </button>
-                            <span>Page {pageNumber} of {numPages}</span>
+                            <span>{t('pdfViewer.pageOf', { current: pageNumber, total: numPages })}</span>
                             <button
                                 onClick={() => setPageNumber(prev => Math.min(prev + 1, numPages))}
                                 disabled={pageNumber >= numPages}
                                 style={{ padding: '5px 10px', cursor: pageNumber >= numPages ? 'not-allowed' : 'pointer', borderRadius: '4px', border: '1px solid #ccc', background: pageNumber >= numPages ? '#eee' : '#fff' }}
                             >
-                                Next
+                                {t('pdfViewer.next')}
                             </button>
                         </div>
                     )}

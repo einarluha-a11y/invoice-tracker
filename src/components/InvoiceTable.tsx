@@ -277,7 +277,7 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                                 <div className="th-content">{t('table.status')} <span>{renderSortIcon('status')}</span></div>
                             </th>
                             <th style={{ width: '8%', minWidth: '80px', textAlign: 'center' }}>
-                                <div className="th-content">Merit</div>
+                                <div className="th-content">{t('invoiceDetails.merit')}</div>
                             </th>
                             <th style={{ width: '12%', minWidth: '120px' }}>
                                 <div className="th-content">{t('table.actions')}</div>
@@ -293,7 +293,7 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                                             <button 
                                                 onClick={(e) => { e.stopPropagation(); toggleRow(invoice.id); }} 
                                                 className="btn-expand"
-                                                title="Expand details"
+                                                title={t('invoiceDetails.expandDetails')}
                                             >
                                                 {expandedRows.has(invoice.id) ? '▼' : '▶'}
                                             </button>
@@ -301,10 +301,10 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                                                 <span>{invoice.vendor}</span>
                                                 {(invoice.supplierVat || invoice.supplierRegistration) && (
                                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', fontSize: '0.75rem', fontWeight: 400, color: 'var(--text-secondary)', marginTop: '4px' }}>
-                                                        {invoice.supplierVat && <span style={{ whiteSpace: 'nowrap' }}>VAT: {invoice.supplierVat}</span>}
-                                                        {invoice.supplierRegistration && <span style={{ wordBreak: 'break-word', lineHeight: '1.2' }}>Reg No: {invoice.supplierRegistration}</span>}
+                                                        {invoice.supplierVat && <span style={{ whiteSpace: 'nowrap' }}>{t('invoiceDetails.vatLabel')} {invoice.supplierVat}</span>}
+                                                        {invoice.supplierRegistration && <span style={{ wordBreak: 'break-word', lineHeight: '1.2' }}>{t('invoiceDetails.regNo')} {invoice.supplierRegistration}</span>}
                                                         {invoice.enrichmentSource && (
-                                                            <span style={{ color: '#28a745', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px', marginTop: '2px' }} title={`Verified via: ${invoice.enrichmentSource}`}>🛡️ <span style={{fontSize: '0.7rem'}}>Gov. Verified</span></span>
+                                                            <span style={{ color: '#28a745', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px', marginTop: '2px' }} title={`Verified via: ${invoice.enrichmentSource}`}>🛡️ <span style={{fontSize: '0.7rem'}}>{t('invoiceDetails.govVerified')}</span></span>
                                                         )}
                                                     </div>
                                                 )}
@@ -329,17 +329,17 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                                             <span style={{ fontWeight: 600 }}>{formatCurrency(invoice.amount, invoice.currency)}</span>
                                             {(invoice as any).mathMismatch && (
                                                 <span
-                                                    title="Subtotal + Tax ≠ Amount — требует ручной проверки"
+                                                    title={`Subtotal + Tax ≠ Amount — ${t('invoiceDetails.needsReview')}`}
                                                     style={{ fontSize: '0.65rem', fontWeight: 700, padding: '2px 5px', borderRadius: '3px', background: '#fff3cd', color: '#856404', border: '1px solid #ffc107', cursor: 'help' }}
                                                 >
-                                                    ⚠ MATH
+                                                    ⚠ {t('invoiceDetails.mathError')}
                                                 </span>
                                             )}
                                         </div>
                                         {invoice.subtotalAmount !== undefined && (
                                             <div style={{ display: 'flex', flexDirection: 'column', fontSize: '0.7rem', fontWeight: 400, color: 'var(--text-secondary)', marginTop: '2px' }}>
-                                                <span>Sub: {formatCurrency(invoice.subtotalAmount, invoice.originalForeignCurrency || invoice.currency)}</span>
-                                                {invoice.taxAmount !== undefined && <span>Tax: {formatCurrency(invoice.taxAmount, invoice.originalForeignCurrency || invoice.currency)}</span>}
+                                                <span>{t('invoiceDetails.subtotal')} {formatCurrency(invoice.subtotalAmount, invoice.originalForeignCurrency || invoice.currency)}</span>
+                                                {invoice.taxAmount !== undefined && <span>{t('invoiceDetails.tax')} {formatCurrency(invoice.taxAmount, invoice.originalForeignCurrency || invoice.currency)}</span>}
                                             </div>
                                         )}
                                     </div>
@@ -353,7 +353,7 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                                         </span>
                                     )}
                                 </td>
-                                <td data-label="Merit" style={{ textAlign: 'center', fontSize: '0.8rem' }}>
+                                <td data-label={t('invoiceDetails.merit')} style={{ textAlign: 'center', fontSize: '0.8rem' }}>
                                     {invoice.meritSyncedAt ? (
                                         <span title={`Synced: ${invoice.meritInvoiceId || '—'}`} style={{ color: '#4caf50', fontWeight: 700 }}>✓</span>
                                     ) : invoice.meritSyncError ? (
@@ -367,7 +367,7 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                                         {canEdit && <button
                                             onClick={() => onEdit(invoice)}
                                             style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', padding: '4px', fontSize: '1.2rem', opacity: 0.9, display: 'flex' }}
-                                            title="Edit"
+                                            title={t('invoiceDetails.edit')}
                                         >✎</button>}
                                         {canEdit && !showArchived && (
                                             <button
@@ -387,7 +387,7 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                                             <button
                                                 onClick={() => setViewingPdfUrl(invoice.fileUrl!)}
                                                 style={{ background: 'transparent', border: 'none', color: 'var(--text-primary)', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center', opacity: 0.9 }}
-                                                title="View Document"
+                                                title={t('invoiceDetails.viewDocument')}
                                             >
                                                 <svg width="1.2em" height="1.2em" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                                     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
@@ -403,9 +403,9 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                                     <td colSpan={8} style={{ padding: 0, borderTop: 'none' }}>
                                         <div className="expanded-content">
                                             <div className="financial-summary">
-                                                <span><strong>Subtotal:</strong> {formatCurrency(invoice.subtotalAmount || 0, invoice.originalForeignCurrency || invoice.currency)}</span>
-                                                <span><strong>Tax (VAT):</strong> {formatCurrency(invoice.taxAmount || 0, invoice.originalForeignCurrency || invoice.currency)}</span>
-                                                <span className="total-highlight"><strong>Total:</strong> {formatCurrency(invoice.amount, invoice.currency)}</span>
+                                                <span><strong>{t('invoiceDetails.subtotal')}</strong> {formatCurrency(invoice.subtotalAmount || 0, invoice.originalForeignCurrency || invoice.currency)}</span>
+                                                <span><strong>{t('invoiceDetails.taxVat')}</strong> {formatCurrency(invoice.taxAmount || 0, invoice.originalForeignCurrency || invoice.currency)}</span>
+                                                <span className="total-highlight"><strong>{t('invoiceDetails.total')}</strong> {formatCurrency(invoice.amount, invoice.currency)}</span>
                                             </div>
                                             {invoice.description && (
                                                 <div style={{ padding: '8px 12px', marginBottom: '10px', color: 'var(--text-secondary)', fontSize: '0.9em', lineHeight: '1.4' }}>
@@ -416,8 +416,8 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                                                 <table className="line-items-table">
                                                     <thead>
                                                         <tr>
-                                                            <th>Item Description</th>
-                                                            <th style={{ textAlign: 'right' }}>Amount</th>
+                                                            <th>{t('invoiceDetails.itemDescription')}</th>
+                                                            <th style={{ textAlign: 'right' }}>{t('invoiceDetails.itemAmount')}</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody>
@@ -430,32 +430,32 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                                                     </tbody>
                                                 </table>
                                             ) : (
-                                                <div className="no-line-items">No line items extracted.</div>
+                                                <div className="no-line-items">{t('invoiceDetails.noLineItems')}</div>
                                             )}
                                             { (invoice.supplierVat || invoice.supplierRegistration || invoice.viesValidation) && (
                                                 <div className="compliance-audit" style={{ marginTop: '15px', padding: '15px', background: 'var(--bg-secondary)', borderRadius: '8px', borderLeft: '4px solid #1a73e8' }}>
                                                     <h4 style={{ margin: '0 0 10px 0', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-primary)' }}>
-                                                        <span>🛡️</span> Compliance & Identity Audit
+                                                        <span>🛡️</span> {t('invoiceDetails.complianceTitle')}
                                                     </h4>
                                                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', fontSize: '0.95rem', color: 'var(--text-secondary)' }}>
                                                         {invoice.supplierVat && (
-                                                            <div><strong style={{ color: 'var(--text-primary)' }}>Supplier VAT:</strong> {invoice.supplierVat}
+                                                            <div><strong style={{ color: 'var(--text-primary)' }}>{t('invoiceDetails.supplierVat')}</strong> {invoice.supplierVat}
                                                                 {invoice.viesValidation && (
                                                                     <span style={{ marginLeft: '10px', padding: '2px 6px', borderRadius: '4px', fontSize: '0.8rem', background: invoice.viesValidation.isValid ? 'rgba(40,167,69,0.1)' : 'rgba(220,53,69,0.1)', color: invoice.viesValidation.isValid ? '#28a745' : '#dc3545', fontWeight: 600 }}>
-                                                                        {invoice.viesValidation.isValid ? 'VIES VERIFIED ✅' : 'VIES INVALID ❌'}
+                                                                        {invoice.viesValidation.isValid ? `${t('invoiceDetails.viesVerified')} ✅` : `${t('invoiceDetails.viesInvalid')} ❌`}
                                                                     </span>
                                                                 )}
                                                                 {invoice.enrichmentSource && (
                                                                     <span style={{ marginLeft: '10px', padding: '2px 6px', borderRadius: '4px', fontSize: '0.8rem', background: 'rgba(40,167,69,0.1)', color: '#28a745', fontWeight: 600 }}>
-                                                                        Gov Verified 🛡️ ({invoice.enrichmentSource})
+                                                                        {t('invoiceDetails.govVerified')} 🛡️ ({invoice.enrichmentSource})
                                                                     </span>
                                                                 )}
                                                             </div>
                                                         )}
                                                         {invoice.supplierRegistration && <div><strong style={{ color: 'var(--text-primary)' }}>Supplier Reg:</strong> {invoice.supplierRegistration}</div>}
-                                                        {invoice.paymentTerms && <div><strong style={{ color: 'var(--text-primary)' }}>Bank Details:</strong> {invoice.paymentTerms}</div>}
+                                                        {invoice.paymentTerms && <div><strong style={{ color: 'var(--text-primary)' }}>{t('invoiceDetails.bankDetails')}</strong> {invoice.paymentTerms}</div>}
                                                         {invoice.viesValidation && invoice.viesValidation.name && (
-                                                            <div style={{ gridColumn: '1 / -1' }}><strong style={{ color: 'var(--text-primary)' }}>Registered EU Entity:</strong> {invoice.viesValidation.name}</div>
+                                                            <div style={{ gridColumn: '1 / -1' }}><strong style={{ color: 'var(--text-primary)' }}>{t('invoiceDetails.registeredEU')}</strong> {invoice.viesValidation.name}</div>
                                                         )}
                                                     </div>
                                                 </div>
@@ -508,7 +508,7 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                         <button
                             onClick={() => setViewingPdfUrl(null)}
                             style={{ background: 'var(--bg-card)', border: '1px solid rgba(255,255,255,0.2)', color: '#fff', borderRadius: '50%', width: '40px', height: '40px', fontSize: '1.5rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', marginLeft: '1rem' }}
-                            title="Close Viewer"
+                            title={t('pdfViewer.closeViewer')}
                         >
                             &times;
                         </button>
