@@ -54,6 +54,10 @@ export default defineConfig({
         manualChunks: {
           'pdf-viewer': ['react-pdf', 'pdfjs-dist'],
           'vendor-react': ['react', 'react-dom'],
+          'firebase': ['firebase/app', 'firebase/auth', 'firebase/firestore', 'firebase/storage'],
+          'pdf-export': ['jspdf', 'jspdf-autotable'],
+          'html2canvas': ['html2canvas'],
+          'i18n': ['i18next', 'react-i18next'],
         },
       },
     },

@@ -1,7 +1,6 @@
 import React, { useState, useMemo, useEffect, Suspense } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Invoice, InvoiceStatus } from '../data/types';
-import { generateInvoicesPDF } from '../lib/pdfExport';
 import { authHeaders } from '../data/api';
 
 const InvoicePdfViewer = React.lazy(() =>
@@ -210,6 +209,7 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
         setIsExportingPDF(true);
         const langCode = i18n.language === 'en' ? 'en-US' : i18n.language === 'et' ? 'et-EE' : 'ru-RU';
         try {
+            const { generateInvoicesPDF } = await import('../lib/pdfExport');
             await generateInvoicesPDF(filteredAndSortedInvoices.filter(i => !i.archived), {
                 companyName,
                 startDate,
