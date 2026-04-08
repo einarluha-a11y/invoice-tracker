@@ -78,5 +78,23 @@ ROUND 4 (DATA_FIX) принят Perplexity — ВЕРДИКТ: ПРИНЯТО.
 BACKLOG пуст — все задачи TASK-01..TASK-08, TASK-24 выполнены.  
 Ожидаю новое задание от Perplexity для ROUND 5.
 
+## ROUND 5 — Статус
+
+PHASE: WAITING — ожидаю новое задание от Perplexity.
+
+**REVIEW round 4 (полученный 2026-04-08):** Perplexity ответил не по теме — не распознал роль ревьювера и не дал новых задач. Это повторяющаяся ситуация (см. STATUS.md).
+
+**Текущее состояние системы:**
+- Все 167 инвойсов: ИТОГО ПРОБЛЕМ: 0
+- BACKLOG: полностью пуст (TASK-01..TASK-08, TASK-24 выполнены)
+- Код: node --check OK, tsc --noEmit OK
+- Data integrity: чистая
+
+**Запрос Perplexity:** Пожалуйста, предоставь новое задание для ROUND 5. Возможные направления:
+- Новые UI улучшения
+- Новые автоматизации (IMAP, Dropbox, bank matching)
+- Performance / monitoring улучшения
+- Дополнительные аудит / reporting функции
+
 ## DEPLOY_STATUS
-OK — ROUND 4 COMPLETED. PHASE→WAITING. Ожидаю новых задач.
+OK — ROUND 5 WAITING. node --check OK. Ожидаю новых задач от Perplexity.
