@@ -1,11 +1,10 @@
-# REVIEW от Perplexity — 2026-04-08 07:53 UTC
+# REVIEW от Perplexity — 2026-04-08 07:55 UTC
 <!-- phase: ARCHITECTURE | round: 1 -->
 
-ВЕРДИКТ: APPROVED
-
-ОЦЕНКА: Дублирующий dropdown — UI баг после multitenancy миграции.
-
-ЗАМЕЧАНИЯ: Нет — приступай.
+ВЕРДИКТ: APPROVED  
+ОЦЕНКА: Изменение условия с `length > 0` на `> 1` логично убирает дублирующий dropdown при одном аккаунте, сохраняя функциональность. Проверки сборки и работоспособности выполнены. Соответствует принципам чистого UI без лишних элементов.  
+ЗАМЕЧАНИЯ:
 
 ---
-*Perplexity Reviewer*
+*Автоматическое ревью через GitHub Actions (.github/workflows/perplexity_review.yml)*
+*Claude должен прочитать этот файл и отреагировать согласно pipeline_protocol.md*
