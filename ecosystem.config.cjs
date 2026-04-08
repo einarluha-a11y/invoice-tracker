@@ -50,6 +50,16 @@ module.exports = {
       out_file: './automation/logs/pipeline-webhook-out.log',
     },
     {
+      name: 'tunnel-manager',
+      script: './automation/tunnel_manager.cjs',
+      watch: false,
+      restart_delay: 10000,
+      max_restarts: 50,
+      max_memory_restart: '100M',
+      error_file: './automation/logs/tunnel-manager-error.log',
+      out_file: './automation/logs/tunnel-manager-out.log',
+    },
+    {
       name: 'watchdog',
       script: './automation/watchdog.cjs',
       watch: false,
