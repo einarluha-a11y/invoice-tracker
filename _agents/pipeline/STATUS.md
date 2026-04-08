@@ -4,6 +4,7 @@
 
 ## 2026-04-08
 
+- 2026-04-08 08:32 — ✅ Завершено: 1:TASK-16 — Добавить concurrency group в perplexity_
 - 07:16 — pipeline_monitor переведён на spawn (неблокирующий) — monitor отзывчив пока Claude CLI работает
 - 07:04 — watchdog: hang detection 30→10 мин, Perplexity timeout 10 мин
 - 05:00 — watchdog.cjs создан как PM2 процесс — независимый супервизор
