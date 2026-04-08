@@ -48,7 +48,8 @@ async function main() {
   for (const inv of invoices) {
     const cName = companyNames[inv.companyId] || inv.companyId;
 
-    // Missing required fields
+    // Missing required fields (skip UNREPAIRABLE — can't be auto-fixed)
+    if (inv.status === 'UNREPAIRABLE') continue;
     const missing = REQUIRED_FIELDS.filter(f => {
       const v = inv[f];
       return v === undefined || v === null || v === '';
