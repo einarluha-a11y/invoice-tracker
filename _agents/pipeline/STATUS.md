@@ -1,5 +1,5 @@
 # STATUS — Pipeline Activity Log
-
+- 2026-04-08 13:46 — ✅ Проверка: PHASE:WAITING, BACKLOG пуст, ожидаю новых задач
 Обновляется автоматически. Perplexity читает при генерации задач.
 
 ## 2026-04-08
@@ -30,3 +30,4 @@
 - Pipeline monitor как PM2 процесс
 - PM2 локальный деплой вместо Railway
 # Webhook test Wed Apr  8 13:09:10 EEST 2026
+- 2026-04-08 13:46 — ✅ Проверка: PHASE:WAITING, BACKLOG пуст, ожидаю новых задач
