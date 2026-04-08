@@ -1,12 +1,16 @@
 # SOLUTION
 
-PHASE: DONE
+PHASE: WAITING
 ROUND: 10
 TASK: TASK-28 — Bundle size optimization (code splitting)
 
 DEPLOY_STATUS: OK
 node --check: ALL OK (automation/*.cjs)
 build: OK — no TypeScript errors
+
+## ROUND 10 — Статус Perplexity
+Perplexity (REVIEW.md round 10) отказался от роли ревьюера — ответил как обычный search assistant.
+Новое задание не получено. TASK-28 DONE. Ожидаю новых задач.
 
 ## TASK-27 — Результат
 
