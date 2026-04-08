@@ -6,6 +6,7 @@ const { admin, db } = require('./core/firebase.cjs');
 const { enrichCompanyData } = require('./company_enrichment.cjs');
 const { cleanNum } = require('./core/utils.cjs');
 const { saveBankTransaction } = require('./core/bank_dedup.cjs');
+const { syncInvoiceToMerit, syncPaymentToMerit } = require('./merit_sync.cjs');
 const debug = (...a) => process.env.DEBUG && console.log(...a);
 
 // ── Companies cache (TTL 5 min) — avoids re-reading all companies per invoice ──
@@ -75,6 +76,15 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
                                 }),
                             });
                         });
+                        // Merit Aktiva sync: send invoice then payment
+                        try {
+                            const freshInv = await doc.ref.get();
+                            const payment = { amount: payAmt, date: docAiPayload.dateCreated || new Date().toISOString().split('T')[0], reference: docAiPayload.paymentReference || '' };
+                            if (!freshInv.data().meritSyncedAt) await syncInvoiceToMerit(freshInv.data(), doc.id);
+                            await syncPaymentToMerit(freshInv.data(), payment, doc.id);
+                        } catch (meritErr) {
+                            console.warn('[Accountant] Merit sync failed (full payment):', meritErr.message);
+                        }
                         matched = true;
                         break;
                     }
@@ -102,6 +112,15 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
                                     }),
                                 });
                             });
+                            // Merit Aktiva sync: partial payment — sync invoice if not yet done
+                            try {
+                                const freshInv = await doc.ref.get();
+                                const payment = { amount: payAmt, date: docAiPayload.dateCreated || new Date().toISOString().split('T')[0], reference: docAiPayload.paymentReference || '' };
+                                if (!freshInv.data().meritSyncedAt) await syncInvoiceToMerit(freshInv.data(), doc.id);
+                                await syncPaymentToMerit(freshInv.data(), payment, doc.id);
+                            } catch (meritErr) {
+                                console.warn('[Accountant] Merit sync failed (partial payment):', meritErr.message);
+                            }
                             matched = true;
                             break;
                         }
