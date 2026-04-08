@@ -329,7 +329,8 @@ async function writeToFirestore(dataArray) {
         debug(`[Firestore] ${dataArray.length} invoice(s) successfully written via Transaction!`);
 
         // --- DROPBOX UPLOAD ---
-        if (process.env.DROPBOX_ACCESS_TOKEN) {
+        const dropboxEnabled = process.env.DROPBOX_REFRESH_TOKEN || process.env.DROPBOX_ACCESS_TOKEN;
+        if (dropboxEnabled) {
             for (const payload of webhooksToSend) {
                 try {
                     if (!payload.fileUrl) continue;
@@ -346,14 +347,17 @@ async function writeToFirestore(dataArray) {
                     const pdfBuffer = Buffer.from(await pdfRes.arrayBuffer());
 
                     const dropboxPath = await uploadInvoiceToPDF(payload.invoiceId, pdfBuffer, folderPath);
-                    debug(`[Dropbox] ✅ Uploaded ${payload.invoiceId} → ${dropboxPath}`);
+                    console.log(`[Dropbox] ✅ Uploaded ${payload.invoiceId} → ${dropboxPath}`);
+
+                    // Сохранить dropboxPath в Firestore
+                    await db.collection('invoices').doc(payload.invoiceId).update({ dropboxPath });
                 } catch (dbxErr) {
                     console.error(`[Dropbox] ❌ Upload failed for ${payload.invoiceId}:`, dbxErr.message);
                 }
             }
         } else {
             if (webhooksToSend.length > 0) {
-                console.warn(`[Dropbox] ⚠️  DROPBOX_ACCESS_TOKEN not set — skipping upload for ${webhooksToSend.length} invoice(s)`);
+                console.warn(`[Dropbox] ⚠️  Dropbox credentials not set — skipping upload for ${webhooksToSend.length} invoice(s)`);
             }
         }
 
