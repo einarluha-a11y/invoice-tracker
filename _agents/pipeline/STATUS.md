@@ -2,6 +2,7 @@
 Обновляется автоматически. Perplexity читает при генерации задач.
 
 ## 2026-04-09
+- 2026-04-09 18:38 UTC — ✅ REVIEW BUGFIX ROUND 1 ПРИНЯТО (раунд 1): imap crash loop fix принят Perplexity. STATUS.md обновлён. PHASE: WAITING. BACKLOG пуст. Ожидаю новых задач.
 
 - 2026-04-09 18:50 UTC — ✅ REVIEW BUGFIX ROUND 1 ПРИНЯТО (повторная синхронизация): imap crash loop fix верифицирован. STATUS.md обновлён. PHASE: WAITING. BACKLOG пуст. DEPLOY_STATUS: OK. Ожидаю новых задач от Perplexity.
 - 2026-04-09 — ✅ REVIEW BUGFIX ROUND 1 ПРИНЯТО: imap rate-limit crash loop исправлен (error handler + per-account rate-limit tracking). DEPLOY_STATUS: OK. BACKLOG пуст. PHASE→WAITING. Ожидаю новых задач от Perplexity.
