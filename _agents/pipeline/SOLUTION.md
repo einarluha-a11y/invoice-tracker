@@ -1,5 +1,6 @@
 # SOLUTION
 
+<<<<<<< Updated upstream
 PHASE: BUGFIX
 ROUND: 1
 TASK: Watchdog автоматический баг-репорт
@@ -15,3 +16,8 @@ TASK: Watchdog автоматический баг-репорт
 Проанализируй ошибки. Найди причину в коде, исправь, node --check, коммит, пуш.
 
 DEPLOY_STATUS: pending
+=======
+PHASE: WAITING
+ROUND: 0
+TASK: все задачи из BACKLOG выполнены — ожидаю новых
+>>>>>>> Stashed changes
