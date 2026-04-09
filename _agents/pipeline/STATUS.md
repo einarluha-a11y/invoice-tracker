@@ -2,6 +2,7 @@
 Обновляется автоматически. Perplexity читает при генерации задач.
 
 ## 2026-04-09
+- 2026-04-09 — ✅ SYNC: агент запущен (2026-04-09). REVIEW раунд 0 ПРИНЯТО — BUGFIX crash loop imap завершён (.catch() + rate limits persist). PHASE: WAITING. BACKLOG пуст. DEPLOY_STATUS: OK. Ожидаю новых задач от Einar/Perplexity.
 - 2026-04-09 — ✅ SYNC: REVIEW раунд 0 ПРИНЯТО (ВЕРДИКТ: ПРИНЯТО). STATUS.md обновлён по запросу Perplexity. BUGFIX imap crash loop финально закрыт. PHASE: WAITING. BACKLOG пуст. DEPLOY_STATUS: OK. Ожидаю новых задач от Perplexity.
 - 2026-04-09 — ✅ SYNC: агент запущен. SOLUTION.md пуст (PHASE: WAITING). BACKLOG пуст. DEPLOY_STATUS: OK. Ожидаю новых задач от Einar/Perplexity.
 
