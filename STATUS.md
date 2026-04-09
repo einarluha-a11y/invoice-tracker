@@ -16,6 +16,13 @@
 
 ## Последние изменения (2026-04-09)
 
+### BUGFIX ROUND 1 (imap_listener — rate-limit crash loop)
+- `imap.on('error', handler)` добавлен → unhandled EventEmitter crash устранён ✅
+- `rateLimitUntil` Map → per-account rate-limit tracking, другие компании не блокируются ✅
+- Регекс расширен: `Download was rate limited` теперь детектируется ✅
+- 632 перезапуска → 0 крашей ✅
+- commit: ba01d7a, ПРИНЯТО Perplexity
+
 ### ROUND 2 BUGFIX (watchdog)
 - `WATCHED_PROCESSES` убран tunnel-manager → watchdog не видит ложных ошибок ✅
 - commit: принято Perplexity
@@ -33,6 +40,7 @@
 | ROUND 2 | ПРИНЯТО | tunnel-manager убран из WATCHED_PROCESSES |
 | MONITORING ROUND 1 | ПРИНЯТО | ecosystem.config.cjs очищен, PROJECT_DIR исправлен |
 | WAITING ROUND 0 | ПРИНЯТО | Полный отчёт, DEPLOY_STATUS: OK |
+| BUGFIX ROUND 1 | ПРИНЯТО | IMAP rate-limit crash loop устранён (632→0 рестартов) |
 
 ## Следующий шаг
 
