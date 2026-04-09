@@ -1,6 +1,7 @@
 # SOLUTION
 
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 PHASE: BUGFIX
 ROUND: 1
 DEPLOY_STATUS: OK
@@ -24,6 +25,11 @@ TASK: IMAP crash loop — too-many-connections
 ## КОММИТ
 
 `68b7630` — fix(imap): stop crash loop on too-many-connections
+=======
+PHASE: WAITING
+ROUND: 0
+TASK: все задачи из BACKLOG выполнены — ожидаю новых
+>>>>>>> Stashed changes
 =======
 PHASE: WAITING
 ROUND: 0
