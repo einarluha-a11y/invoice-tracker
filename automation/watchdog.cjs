@@ -16,7 +16,7 @@ const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
-const PROJECT = '/Users/einarluha/Downloads/invoice-tracker';
+const PROJECT = path.resolve(__dirname, '..');
 const CHECK_INTERVAL = 120000; // 2 min
 const HANG_TIMEOUT = 600000;  // 10 min — if pipeline-monitor shows same log for 10 min, it's hung
 const PERPLEXITY_TIMEOUT = 600000; // 10 min — if DEPLOY_STATUS: OK sits without Perplexity response
