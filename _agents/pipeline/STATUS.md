@@ -2,6 +2,8 @@
 Обновляется автоматически. Perplexity читает при генерации задач.
 
 ## 2026-04-09
+- 2026-04-09 — ✅ SYNC: агент запущен. PHASE: WAITING. BACKLOG пуст. imap_listener.cjs: улучшено отображение времени бана (минуты/<1ч). DEPLOY_STATUS: OK. Ожидаю новых задач от Einar/Perplexity.
+
 - 2026-04-09 — ✅ audit-paid --fix: 142 инвойса проверено, 22 reverted (ложные совпадения), 68 Paid без банк. ссылки. PHASE: WAITING. DEPLOY_STATUS: OK.
 - 2026-04-09 — ✅ SYNC: агент запущен. PHASE: WAITING. BACKLOG пуст. Новых задач нет. Ожидаю задания от Einar/Perplexity.
 - 2026-04-09 — ✅ SYNC: агент запущен. REVIEW ROUND 1 ПРИНЯТО (IMAP crash loop + rate limits persist в Firestore). PHASE: WAITING. DEPLOY_STATUS: OK. Ожидаю новых задач от Einar.
