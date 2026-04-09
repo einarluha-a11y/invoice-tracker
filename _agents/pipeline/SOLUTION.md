@@ -2,6 +2,7 @@
 
 PHASE: WAITING
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 <<<<<<< HEAD
 ROUND: 2
 =======
@@ -58,6 +59,10 @@ ROUND: 0
 TASK: все задачи из BACKLOG выполнены — ожидаю новых
 >>>>>>> Stashed changes
 >>>>>>> 40111f1cbe8817eda74653da4465b0aa8ddda964
+>>>>>>> Stashed changes
+=======
+ROUND: 0
+TASK: все задачи из BACKLOG выполнены — ожидаю новых
 >>>>>>> Stashed changes
 =======
 ROUND: 0
