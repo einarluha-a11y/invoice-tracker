@@ -2,10 +2,15 @@ require('dotenv').config({ path: __dirname + '/.env' });
 
 // Global error handlers — prevent crashes from unhandled rejections / protocol error events
 process.on('unhandledRejection', (reason, promise) => {
-    console.error('[imap-daemon] ⚠️  Unhandled rejection (not crashing):', reason);
+    const msg = (reason instanceof Error) ? reason.message : String(reason ?? 'unknown');
+    console.error('[imap-daemon] ⚠️  Unhandled rejection (not crashing):', msg);
 });
 process.on('uncaughtException', (err) => {
-    console.error('[imap-daemon] ⚠️  Uncaught exception (not crashing):', err.message);
+    const msg = (err instanceof Error) ? err.message : String(err ?? 'unknown');
+    console.error('[imap-daemon] ⚠️  Uncaught exception (not crashing):', msg);
+});
+process.on('exit', (code) => {
+    if (code !== 0) console.error('[imap-daemon] 🔴 Process exiting with code', code);
 });
 
 // Modules
