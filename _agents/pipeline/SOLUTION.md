@@ -1,5 +1,17 @@
 # SOLUTION
 
-PHASE: WAITING
-ROUND: 0
-TASK: все задачи из BACKLOG выполнены — ожидаю новых
+PHASE: BUGFIX
+ROUND: 1
+TASK: Watchdog автоматический баг-репорт
+
+## ОШИБКИ
+
+- **invoice-imap**: Not found and failed to start
+- **pipeline-monitor**: Not found and failed to start
+- **pipeline-webhook**: Not found and failed to start
+
+## ЗАДАНИЕ
+
+Проанализируй ошибки. Найди причину в коде, исправь, node --check, коммит, пуш.
+
+DEPLOY_STATUS: pending
