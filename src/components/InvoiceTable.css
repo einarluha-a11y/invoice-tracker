@@ -71,6 +71,14 @@ td.amount {
     text-overflow: unset;
 }
 
+/* === Column widths: even distribution === */
+/* Left anchor: vendor gets more space for company name + KMKR + Rg-kood */
+.col-vendor { width: 18%; }
+/* Middle 6 columns: equal width, evenly spaced */
+.col-mid { width: 11.5%; }
+/* Right anchor: actions get remaining space */
+.col-actions { width: 13%; }
+
 tr:last-child td {
     border-bottom: none;
 }

@@ -7,10 +7,11 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'prompt', // Stop aggressive background reloads. Wait for the user to naturally refresh the tab.
+      registerType: 'autoUpdate',
       workbox: {
         cleanupOutdatedCaches: true,
-        // Removed skipWaiting and clientsClaim so that the old app runs peacefully until the user manually refreshes
+        skipWaiting: true,
+        clientsClaim: true,
       },
       includeAssets: ['favicon.ico', 'apple-touch-icon-180x180.png', 'maskable-icon-512x512.png'],
       manifest: {
