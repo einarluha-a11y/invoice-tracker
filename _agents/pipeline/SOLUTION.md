@@ -1,18 +1,33 @@
 # SOLUTION
 
-PHASE: BUGFIX
+PHASE: WAITING
 ROUND: 1
-TASK: Watchdog автоматический баг-репорт
+TASK: Watchdog автоматический баг-репорт — ВЫПОЛНЕНО, ПРИНЯТО
 
-## ОШИБКИ
+## ЧТО БЫЛО
 
-- **invoice-imap**: Crash loop: 632 restarts. Last error: AIL',
-[31m0|invoice- | [39m  source: 'protocol'
-[31m0|invoice- | [39m}
-[31m0|invoice- | [39m[ErrorReporter] 🚨 IMAP_ERROR: invoices@ideacom.ee — Download was rate limited. Try again in 15 hours.
+- **invoice-imap**: Crash loop: 632 рестартов.
+- Причина: `rateLimitUntil` — Map в памяти. При рестарте PM2 обнулялась.
+  Процесс снова пытался подключиться → rate limit → краш → рестарт → 632 раза.
 
-## ЗАДАНИЕ
+## ЧТО СДЕЛАНО
 
-Проанализируй ошибки. Найди причину в коде, исправь, node --check, коммит, пуш.
+Файл: `automation/imap_listener.cjs`
 
-DEPLOY_STATUS: pending
+Добавил персистентность rate limit через файл `.rate_limits.json`:
+1. При запуске — загружаем сохранённые баны из файла
+2. При каждом `rateLimitUntil.set(...)` — сохраняем в файл
+3. Баны теперь переживают PM2 restart → crash loop невозможен
+
+Коммит: `b703a72` — `fix: persist IMAP rate limits to disk — prevent crash loop on PM2 restart`
+
+## РЕВЬЮ PERPLEXITY
+
+ВЕРДИКТ: ПРИНЯТО  
+Решение точно диагностирует и устраняет корень проблемы. Реализация через файл простая и надёжная.
+
+## СИНХРОНИЗАЦИЯ
+
+STATUS.md обновлён: WAITING ROUND 1 → ПРИНЯТО
+
+DEPLOY_STATUS: OK
