@@ -53,6 +53,11 @@
 | WAITING ROUND 1 | ПРИНЯТО | "Too many connections" ban 5min, no retry — корректно |
 | WAITING ROUND 0 | ПРИНЯТО | Firestore persist для rate limits — выживает Railway рестарты |
 | BUGFIX ROUND 1 | ПРИНЯТО | IMAP rate-limit crash loop устранён (632→0 рестартов) |
+| WAITING ROUND 1 | ПРИНЯТО | rateLimitUntil персистентность через .rate_limits.json — crash loop невозможен |
+| WAITING ROUND 1 (триггер) | ПРИНЯТО | STATUS.md обновлён, DEPLOY_STATUS: OK, ждём следующего задания |
+| WAITING ROUND 2 | ПРИНЯТО | .rate_limits.json персистентность подтверждена, crash loop невозможен |
+| WAITING ROUND 1 (финал) | ПРИНЯТО | Perplexity подтвердил: in-memory→JSON персистентность и таймауты корректны. Ждём новых задач. |
+| WAITING ROUND 2 (финал) | ПРИНЯТО | Firestore persist для rate limits — выживает Railway рестарты. 0 крашей. Ждём новых задач. |
 
 ## Известные проблемы
 
