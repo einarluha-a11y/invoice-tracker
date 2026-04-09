@@ -13,4 +13,4 @@ TASK: BUGFIX crash loop imap — завершено
 - **REVIEW:** ПРИНЯТО (ВЕРДИКТ: ПРИНЯТО)
 
 DEPLOY_STATUS: OK
-AGENT_SYNC: 2026-04-09 — pipeline idle, система стабильна
+AGENT_SYNC: 2026-04-09 — pipeline idle, ожидаю новых задач
