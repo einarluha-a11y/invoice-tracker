@@ -257,32 +257,32 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                     {isExportingPDF ? t('loadingData') : t('table.exportPdf')}
                 </button>
             </div>
-            <div style={{ width: '100%', overflowX: 'auto' }}>
+            <div style={{ width: '100%', overflowX: 'hidden' }}>
                 <table>
                     <thead>
                         <tr>
-                            <th onClick={() => handleSort('vendor')} style={{ width: '18%' }}>
+                            <th onClick={() => handleSort('vendor')} style={{ width: '17%' }}>
                                 <div className="th-content">{t('table.vendor')} <span>{renderSortIcon('vendor')}</span></div>
                             </th>
-                            <th onClick={() => handleSort('invoiceId')} style={{ width: '22%' }}>
+                            <th onClick={() => handleSort('invoiceId')} style={{ width: '18%' }}>
                                 <div className="th-content">{t('table.invoice_no')} <span>{renderSortIcon('invoiceId')}</span></div>
                             </th>
-                            <th onClick={() => handleSort('dateCreated')} style={{ width: '12%' }}>
+                            <th onClick={() => handleSort('dateCreated')} style={{ width: '11%' }}>
                                 <div className="th-content">{t('table.created')} <span>{renderSortIcon('dateCreated')}</span></div>
                             </th>
-                            <th onClick={() => handleSort('dueDate')} style={{ width: '12%' }}>
+                            <th onClick={() => handleSort('dueDate')} style={{ width: '11%' }}>
                                 <div className="th-content">{t('table.dueDate')} <span>{renderSortIcon('dueDate')}</span></div>
                             </th>
                             <th onClick={() => handleSort('amount')} style={{ width: '12%' }}>
                                 <div className="th-content">{t('table.amount')} <span>{renderSortIcon('amount')}</span></div>
                             </th>
-                            <th onClick={() => handleSort('status')} style={{ width: '10%' }}>
+                            <th onClick={() => handleSort('status')} style={{ width: '9%' }}>
                                 <div className="th-content">{t('table.status')} <span>{renderSortIcon('status')}</span></div>
                             </th>
-                            <th style={{ width: '8%', minWidth: '80px', textAlign: 'center' }}>
+                            <th style={{ width: '7%', textAlign: 'center' }}>
                                 <div className="th-content">{t('invoiceDetails.merit')}</div>
                             </th>
-                            <th style={{ width: '12%', minWidth: '120px' }}>
+                            <th style={{ width: '15%' }}>
                                 <div className="th-content">{t('table.actions')}</div>
                             </th>
                         </tr>
@@ -291,7 +291,7 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                         {filteredAndSortedInvoices.slice(0, visibleLimit).map((invoice) => (
                             <React.Fragment key={invoice.id}>
                                 <tr className={expandedRows.has(invoice.id) ? 'expanded-parent-row' : ''} style={invoice.archived ? { opacity: 0.6 } : undefined}>
-                                    <td data-label={t('table.vendor')} className="vendor-name" style={{ fontWeight: 600, maxWidth: '200px', whiteSpace: 'normal', wordBreak: 'break-word' }}>
+                                    <td data-label={t('table.vendor')} className="vendor-name" style={{ fontWeight: 600 }}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                             <button 
                                                 onClick={(e) => { e.stopPropagation(); toggleRow(invoice.id); }} 
@@ -314,7 +314,7 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                                             </div>
                                         </div>
                                     </td>
-                                <td data-label={t('table.invoice_no')} style={{ lineHeight: '1.4', maxWidth: '200px', whiteSpace: 'normal', wordBreak: 'break-word' }}>
+                                <td data-label={t('table.invoice_no')} style={{ lineHeight: '1.4' }}>
                                     {invoice.invoiceId
                                         ? <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.9rem', wordBreak: 'break-all' }}>{invoice.invoiceId}</span>
                                         : <span style={{ opacity: 0.4 }}>—</span>

@@ -10,14 +10,14 @@ table {
     width: 100%;
     border-collapse: collapse;
     text-align: left;
-    table-layout: auto;
+    table-layout: fixed;
 }
 
 th {
-    padding: 1rem;
+    padding: 0.75rem;
     background-color: rgba(22, 27, 34, 0.6);
     color: var(--text-secondary);
-    font-size: 0.85rem;
+    font-size: 0.8rem;
     text-transform: uppercase;
     letter-spacing: 0.05em;
     font-weight: 600;
@@ -49,11 +49,19 @@ th:hover {
 }
 
 td {
-    padding: 1rem;
+    padding: 0.75rem;
     border-bottom: 1px solid var(--border-color);
-    font-size: 0.95rem;
+    font-size: 0.9rem;
     color: var(--text-primary);
     vertical-align: middle;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+th {
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 tr:last-child td {
