@@ -3,7 +3,7 @@
 PHASE: WAITING
 ROUND: 0
 DEPLOY_STATUS: OK
-TASK: все задачи выполнены — ожидаю новых заданий от Perplexity
+TASK: все задачи из BACKLOG выполнены — ожидаю новых заданий от Perplexity
 
 ## ПОСЛЕДНЕЕ ИСПРАВЛЕНИЕ (ROUND 2)
 
