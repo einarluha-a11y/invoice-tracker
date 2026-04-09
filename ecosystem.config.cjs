@@ -44,21 +44,12 @@ module.exports = {
       env: {
         WEBHOOK_PORT: 3001,
         WEBHOOK_SECRET: process.env.WEBHOOK_SECRET || '',
-        PROJECT_DIR: '/Users/einarluha/Downloads/invoice-tracker',
+        PROJECT_DIR: process.env.PROJECT_DIR || require('path').resolve(__dirname),
       },
       error_file: './automation/logs/pipeline-webhook-error.log',
       out_file: './automation/logs/pipeline-webhook-out.log',
     },
-    {
-      name: 'tunnel-manager',
-      script: './automation/tunnel_manager.cjs',
-      watch: false,
-      restart_delay: 10000,
-      max_restarts: 50,
-      max_memory_restart: '100M',
-      error_file: './automation/logs/tunnel-manager-error.log',
-      out_file: './automation/logs/tunnel-manager-out.log',
-    },
+    // tunnel-manager removed from Railway — cloudflared is local dev only
     {
       name: 'watchdog',
       script: './automation/watchdog.cjs',
