@@ -1,10 +1,10 @@
 # STATUS — Invoice Tracker Pipeline
 
-**Дата:** 2026-04-09 (обновлено 22:00 UTC)
+**Дата:** 2026-04-09 (обновлено 23:00 UTC)
 **Ветка:** main
 **DEPLOY_STATUS:** OK
 **PHASE:** WAITING
-**LAST_TASK:** Merge conflicts в SOLUTION.md/REVIEW.md устранены — ПРИНЯТО
+**LAST_TASK:** BUGFIX — crash loop imap_daemon (.catch() fix) — ПРИНЯТО
 
 ## Текущее состояние системы
 
@@ -15,7 +15,13 @@
 - `pipeline-webhook` — online ✅
 - `watchdog` — online, мониторинг активен ✅
 
-## Последние изменения (2026-04-09)
+## Последние изменения (2026-04-09 23:00 UTC)
+
+### BUGFIX (imap_daemon — crash loop 685 рестартов)
+- `.catch()` добавлен между `checkAndRunFlagTasks()` и `.then()` ✅
+- `pollLoop`/`auditLoop` теперь запускаются всегда, даже при ошибке flag tasks ✅
+- node --check: OK ✅
+- commit: c4bfc34, DEPLOY_STATUS: OK ✅
 
 ### CLEANUP (merge conflicts)
 - Устранены merge conflicts в SOLUTION.md ✅
