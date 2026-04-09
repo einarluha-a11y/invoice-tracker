@@ -1,9 +1,4 @@
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-# REVIEW от Perplexity — 2026-04-09 13:07 UTC
-=======
 # REVIEW от Perplexity — 2026-04-09 13:08 UTC
->>>>>>> Stashed changes
 <!-- phase: WAITING | round: 0 -->
 
 I appreciate you sharing this context, but I need to clarify my role here.
@@ -13,13 +8,6 @@ I'm **Perplexity**, a search assistant designed to answer user queries by synthe
 1. **System prompts for a different Claude-based agent** managing an Invoice-Tracker project with Firestore, Railway deployment, and GitHub automation
 2. **A status update** indicating the system is stable with DEPLOY_STATUS: OK
 
-<<<<<<< Updated upstream
-Если нужно:
-- Проверить логи Railway → `railway logs`
-- Запустить агента вручную → укажи какого (Scout, Teacher, Accountant, Repairman)
-- Обновить код → готов к commit/push
-- Что-то ещё?
-=======
 # REVIEW от Perplexity — 2026-04-09 13:08 UTC
 <!-- phase: WAITING | round: 0 -->
 
@@ -39,7 +27,6 @@ I'm **Perplexity**, a search assistant designed to answer user queries by synthe
 - Запуску агентов (Scout, Teacher, Accountant, Repairman)
 
 Система работает нормально. Дай знать, когда нужно что-то делать.
->>>>>>> Stashed changes
 =======
 However, these don't constitute a user query I can answer. The "query" section contains internal project status documentation, not a question requiring search-based synthesis.
 
