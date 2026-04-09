@@ -14,7 +14,7 @@ table {
 }
 
 th {
-    padding: 0.75rem;
+    padding: 0.6rem 0.5rem;
     background-color: rgba(22, 27, 34, 0.6);
     color: var(--text-secondary);
     font-size: 0.8rem;
@@ -49,19 +49,26 @@ th:hover {
 }
 
 td {
-    padding: 0.75rem;
+    padding: 0.6rem 0.5rem;
     border-bottom: 1px solid var(--border-color);
-    font-size: 0.9rem;
+    font-size: 0.85rem;
     color: var(--text-primary);
     vertical-align: middle;
     overflow: hidden;
     text-overflow: ellipsis;
-    white-space: nowrap;
 }
 
 th {
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+/* Allow vendor and amount cells to wrap (they have sub-lines) */
+td.vendor-name,
+td.amount {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: unset;
 }
 
 tr:last-child td {
