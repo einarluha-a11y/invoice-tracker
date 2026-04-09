@@ -44,6 +44,40 @@ function _saveRateLimits() {
     }
 }
 
+// Firestore-based rate limit persistence — survives Railway container restarts
+// (local file is ephemeral on Railway; Firestore is permanent)
+async function _saveRateLimitsFirestore() {
+    try {
+        const obj = {};
+        for (const [k, v] of rateLimitUntil.entries()) obj[k] = v;
+        await db.collection('config').doc('imap_rate_limits').set(obj);
+    } catch (e) {
+        console.warn(`[RateLimit] Firestore persist failed: ${e.message}`);
+    }
+}
+
+async function loadRateLimitsFromFirestore() {
+    try {
+        const doc = await db.collection('config').doc('imap_rate_limits').get();
+        if (doc.exists) {
+            const data = doc.data();
+            const now = Date.now();
+            let loaded = 0;
+            for (const [key, ts] of Object.entries(data)) {
+                if (typeof ts === 'number' && ts > now) {
+                    rateLimitUntil.set(key, ts);
+                    loaded++;
+                }
+            }
+            if (loaded > 0) {
+                console.warn(`[RateLimit] ⏳ Restored ${loaded} active IMAP ban(s) from Firestore on startup.`);
+            }
+        }
+    } catch (e) {
+        console.warn(`[RateLimit] Could not load rate limits from Firestore: ${e.message}`);
+    }
+}
+
 // Load persisted bans on startup so we honour bans that survived a PM2 restart
 _loadRateLimits();
 
@@ -118,6 +152,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                     const hrs = m ? parseInt(m[1], 10) + 1 : 17;
                     rateLimitUntil.set(accountKey, Date.now() + hrs * 3600 * 1000);
                     _saveRateLimits();
+                    _saveRateLimitsFirestore().catch(() => {}); // persist to Firestore (survives Railway restarts)
                     console.warn(`[Email] ⏳ Rate limited via event (${companyName}). Backoff ${hrs}h set.`);
                 }
             });
@@ -526,6 +561,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
             const banExpiry = Date.now() + banHours * 60 * 60 * 1000;
             rateLimitUntil.set(accountKey, banExpiry);
             _saveRateLimits();
+            _saveRateLimitsFirestore().catch(() => {}); // persist to Firestore (survives Railway restarts)
             console.warn(`[Email] ⏳ Rate limited for ${companyName}. Will skip until ${new Date(banExpiry).toISOString()} (~${banHours}h).`);
         }
     } finally {
@@ -646,4 +682,4 @@ async function pollLoop() {
     }
 }
 
-module.exports = { checkEmailForInvoices, pollAllCompanyInboxes, checkAndRunFlagTasks, pollLoop };
+module.exports = { checkEmailForInvoices, pollAllCompanyInboxes, checkAndRunFlagTasks, pollLoop, loadRateLimitsFromFirestore };

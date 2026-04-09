@@ -32,7 +32,7 @@ function log(msg) {
 
 function readState() {
     try { return JSON.parse(fs.readFileSync(STATE_FILE, 'utf-8')); }
-    catch { return { lastPipelineLog: '', lastPipelineCheck: 0, lastBugReport: 0 }; }
+    catch { return { lastPipelineLog: '', lastPipelineCheck: 0, lastBugReport: 0, restartCounts: {} }; }
 }
 
 function writeState(state) {
@@ -159,12 +159,21 @@ function check() {
             continue;
         }
 
-        // 2. Crash loop — too many restarts
-        if (restarts > 50 && name !== 'pipeline-monitor') {
-            const errLog = getErrorLog(name, 5);
-            log(`⚠️ ${name} crash loop: ${restarts} restarts`);
-            errors.push({ process: name, error: `Crash loop: ${restarts} restarts. Last error: ${errLog.slice(-200)}` });
-            continue;
+        // 2. Crash loop — detect by restart count INCREASE since last check, not absolute value.
+        // The pm2 restart_time counter is cumulative (never resets unless pm2 delete/start).
+        // A process that crashed 600 times weeks ago and is now stable should not trigger alarms.
+        if (name !== 'pipeline-monitor') {
+            if (!state.restartCounts) state.restartCounts = {};
+            const prevRestarts = state.restartCounts[name] ?? restarts; // first run: seed with current
+            const delta = restarts - prevRestarts;
+            state.restartCounts[name] = restarts;
+            // Alert only if we saw ≥3 new restarts since the last check (avoids one-off flaps)
+            if (delta >= 3) {
+                const errLog = getErrorLog(name, 5);
+                log(`⚠️ ${name} crash loop: +${delta} restarts (total ${restarts})`);
+                errors.push({ process: name, error: `Crash loop: ${restarts} restarts (+${delta} since last check). Last error: ${errLog.slice(-200)}` });
+                continue;
+            }
         }
 
         // 3. pipeline-monitor hung detection
