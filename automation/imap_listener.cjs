@@ -80,7 +80,16 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
         // this handles synchronous event-emitter errors that bypass try/catch.
         if (connection.imap) {
             connection.imap.on('error', (err) => {
-                console.error(`[Email] IMAP connection error (${companyName}): ${err.message}`);
+                const msg = (err && err.message) || '';
+                console.error(`[Email] IMAP connection error (${companyName}): ${msg}`);
+                // Also set rate-limit backoff here — errors from event emitter bypass outer catch
+                const isRL = /rate.limit|Download was rate limited|try again in/i.test(msg);
+                if (isRL) {
+                    const m = /try again in (\d+)\s*hour/i.exec(msg);
+                    const hrs = m ? parseInt(m[1], 10) + 1 : 17;
+                    rateLimitUntil.set(accountKey, Date.now() + hrs * 3600 * 1000);
+                    console.warn(`[Email] ⏳ Rate limited via event (${companyName}). Backoff ${hrs}h set.`);
+                }
             });
         }
 
