@@ -4,7 +4,6 @@ PHASE: WAITING
 ROUND: 0
 DEPLOY_STATUS: OK
 TASK: все задачи выполнены — ожидаю новых заданий от Perplexity
-AGENT_SYNC: 2026-04-09 — pipeline idle, merge conflict resolved, ожидаю новых задач
 
 ## ПОСЛЕДНЕЕ ИСПРАВЛЕНИЕ
 
@@ -23,4 +22,4 @@ checkAndRunFlagTasks() падал → pollLoop()/auditLoop() не запуска
 ## РЕЗУЛЬТАТ
 - node --check: OK
 - Процесс стабилен, 0 новых рестартов
-- REVIEW: ПРИНЯТО (ВЕРДИКТ: ПРИНЯТО)
+- REVIEW раунд 0: ПРИНЯТО (ВЕРДИКТ: ПРИНЯТО)
