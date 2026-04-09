@@ -1,9 +1,10 @@
 # STATUS — Invoice Tracker Pipeline
 
-**Дата:** 2026-04-09 (обновлено 19:00 UTC)  
+**Дата:** 2026-04-09 (обновлено 19:10 UTC)  
 **Ветка:** main  
 **DEPLOY_STATUS:** OK  
 **PHASE:** WAITING  
+**LAST_TASK:** IMAP crash loop — too-many-connections — ВЫПОЛНЕНО  
 
 ## Текущее состояние системы
 
@@ -42,6 +43,7 @@
 | WAITING ROUND 0 | ПРИНЯТО | Полный отчёт, DEPLOY_STATUS: OK |
 | BUGFIX ROUND 1 | ПРИНЯТО | IMAP rate-limit crash loop устранён (632→0 рестартов) |
 | WAITING ROUND 1 | ПРИНЯТО | rateLimitUntil персистентность через .rate_limits.json — crash loop невозможен |
+| WAITING ROUND 1 (триггер) | ПРИНЯТО | STATUS.md обновлён, DEPLOY_STATUS: OK, ждём следующего задания |
 
 ## Следующий шаг
 
