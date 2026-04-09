@@ -2,6 +2,8 @@
 Обновляется автоматически. Perplexity читает при генерации задач.
 
 ## 2026-04-09
+- 2026-04-09 — ✅ SYNC: SOLUTION.md исправлен (conflict markers удалены из HEAD). REVIEW ROUND 2 ПРИНЯТО. IMAP crash loop закрыт. PHASE: WAITING, DEPLOY_STATUS: OK. Ожидаю новых задач от Einar.
+- 2026-04-09 — ✅ fix(imap): rate limits теперь персистированы в Firestore — выживают после Railway container restart. PHASE: WAITING, DEPLOY_STATUS: OK.
 - 2026-04-09 23:59 UTC — ✅ SYNC: агент запущен, REVIEW.md конфликт разрешён (раунд 1 ПРИНЯТО). PHASE: WAITING. DEPLOY_STATUS: OK. Ожидаю новых задач от Einar/Perplexity.
 - 2026-04-09 — ✅ SYNC: агент запущен, REVIEW раунд 2 ПРИНЯТО. PHASE: WAITING. BACKLOG пуст. DEPLOY_STATUS: OK. Ожидаю новых задач.
 
