@@ -3,7 +3,7 @@
 PHASE: WAITING
 ROUND: 0
 DEPLOY_STATUS: OK
-TASK: все задачи выполнены — ожидаю новых заданий от Einar/Perplexity
+TASK: все задачи выполнены — ожидаю новых заданий от Perplexity
 
 ## ПОСЛЕДНЕЕ ИСПРАВЛЕНИЕ
 
@@ -23,4 +23,3 @@ checkAndRunFlagTasks() падал → pollLoop()/auditLoop() не запуска
 - node --check: OK
 - Процесс стабилен, 0 новых рестартов
 - REVIEW раунд 0: ПРИНЯТО (ВЕРДИКТ: ПРИНЯТО)
-- STATUS.md обновлён
