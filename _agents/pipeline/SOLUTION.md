@@ -1,7 +1,6 @@
 # SOLUTION
 
 PHASE: WAITING
-<<<<<<< Updated upstream
 ROUND: 1
 DEPLOY_STATUS: OK
 TASK: IMAP crash loop — "Too many simultaneous connections" — ВЫПОЛНЕНО
@@ -21,18 +20,8 @@ TASK: IMAP crash loop — "Too many simultaneous connections" — ВЫПОЛНЕ
 - Skip-сообщение показывает минуты для коротких банов (не часы)
 - В retry-loop: "too many connections" → немедленный throw (не ждёт 60+120с)
 
-## ПРЕДЫДУЩИЕ КОММИТЫ (контекст)
-
-<<<<<<< Updated upstream
 ## КОММИТЫ
 
 - `95b32c2` — Firestore persist в imap_listener.cjs
 - `8e7d422` — await loadRateLimitsFromFirestore() в imap_daemon.cjs перед pollLoop
-=======
-ROUND: 0
-TASK: все задачи из BACKLOG выполнены — ожидаю новых
->>>>>>> Stashed changes
-=======
-- `95b32c2` — Firestore persist rate limits (выживают Railway restarts)
-- `8e7d422` — await loadRateLimitsFromFirestore() перед pollLoop
->>>>>>> Stashed changes
+- `5530272` — ban timer: показывает минуты когда <1ч (UX fix)
