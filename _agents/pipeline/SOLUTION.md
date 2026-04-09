@@ -2,6 +2,7 @@
 
 PHASE: WAITING
 ROUND: 0
+<<<<<<< Updated upstream
 TASK: агент запущен, задач нет, DEPLOY_STATUS: OK
 
 ## MONITORING ROUND 2 (2026-04-09)
@@ -17,3 +18,6 @@ TASK: агент запущен, задач нет, DEPLOY_STATUS: OK
 - Последняя проверка: 2026-04-09 17:35 EEST
 
 DEPLOY_STATUS: OK
+=======
+TASK: все задачи из BACKLOG выполнены — ожидаю новых
+>>>>>>> Stashed changes
