@@ -1,30 +1,60 @@
 # SOLUTION
 
 PHASE: WAITING
+<<<<<<< HEAD
 ROUND: 2
+=======
+<<<<<<< Updated upstream
+<<<<<<< Updated upstream
+<<<<<<< Updated upstream
+ROUND: 1
+>>>>>>> 40111f1cbe8817eda74653da4465b0aa8ddda964
 DEPLOY_STATUS: OK
-TASK: IMAP crash loop — too-many-connections — ВЫПОЛНЕНО
+TASK: audit-paid + IMAP crash loop — ВЫПОЛНЕНО
 
-## ПРИЧИНА
+## РЕЗУЛЬТАТ АУДИТА (audit-paid)
 
-- `invoice-imap`: 632 рестарта. "Too many simultaneous connections" + "Download was rate limited"
-- Корень 1: `rateLimitUntil` Map in-memory → сбрасывался при PM2 restart → daemon сразу снова пытался подключиться
-- Корень 2: "Too many connections" не попадал в rate-limit ветку → бан не ставился → каждые 2 мин новая попытка
+`node repairman_agent.cjs --audit-paid --fix`
 
-## ИСПРАВЛЕНИЕ
+- **Checked**: 142 инвойса со статусом Paid
+- **OK**: 52 — корректно совпадают (ref + vendor)
+- **Reverted**: 22 — ложные совпадения, возвращены в прежний статус
+- **No bank link**: 68 — Paid без банковской привязки (ручные оплаты)
+
+## BUGFIX: IMAP crash loop
 
 `automation/imap_listener.cjs`:
-1. Rate limits персистированы (выживают restart)
-2. "Too many connections" → немедленный throw без retry + 2h бан
-3. "Rate limited" → 17h бан (default)
-4. Ban timer показывает минуты если <1h осталось
+- "Too many connections" → ban 5 минут (не 2 часа)
+- `isTooManyConns` выведен отдельно от `isRateLimit` в outer catch
+- Skip-сообщение показывает минуты для коротких банов
+- В retry-loop: "too many connections" → немедленный throw
+
+`automation/imap_daemon.cjs`:
+- `await loadRateLimitsFromFirestore()` ПЕРЕД стартом pollLoop()
+- Rate limits персистированы в Firestore — выживают Railway container restarts
 
 ## КОММИТЫ
 
-- `95b32c2` — persist rate limits (Firestore)
-- `68b7630` — stop crash loop on too-many-connections
-- `5530272` — fix ban timer display (minutes when <1h)
-
-## REVIEW ROUND 2
-
-ВЕРДИКТ: ПРИНЯТО. Crash loop устранён. DEPLOY_STATUS: OK. Ожидаю новых задач от Einar.
+- `41b73d0` — fix: "Too many connections" ban 5min instead of 2h, no retry
+- `95b32c2` — Firestore persist в imap_listener.cjs
+- `8e7d422` — await loadRateLimitsFromFirestore() в imap_daemon.cjs перед pollLoop
+<<<<<<< Updated upstream
+- `489b6a4` — audit: --audit-paid --fix (22 reverted, 68 no-bank-link)
+=======
+<<<<<<< HEAD
+- `5530272` — ban timer: показывает минуты когда <1ч (UX fix)
+=======
+=======
+ROUND: 0
+TASK: все задачи из BACKLOG выполнены — ожидаю новых
+>>>>>>> Stashed changes
+=======
+ROUND: 0
+TASK: все задачи из BACKLOG выполнены — ожидаю новых
+>>>>>>> Stashed changes
+=======
+ROUND: 0
+TASK: все задачи из BACKLOG выполнены — ожидаю новых
+>>>>>>> Stashed changes
+>>>>>>> 40111f1cbe8817eda74653da4465b0aa8ddda964
+>>>>>>> Stashed changes

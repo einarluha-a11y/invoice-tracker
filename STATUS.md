@@ -1,6 +1,6 @@
 # STATUS — Invoice Tracker Pipeline
 
-**Дата:** 2026-04-09 (обновлено 19:30 UTC)  
+**Дата:** 2026-04-09 (обновлено 22:00 UTC)  
 **Ветка:** main  
 **DEPLOY_STATUS:** OK  
 **PHASE:** WAITING  
