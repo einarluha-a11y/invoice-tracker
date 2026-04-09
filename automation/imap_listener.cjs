@@ -454,6 +454,13 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
     } catch (error) {
         console.error(`[Email Error] IMAP Failure for ${companyName} (${config.imap.user}):`, error);
         await reportError('IMAP_ERROR', config.imap.user || companyId, error).catch(() => {});
+        // If server says "Try again in X hours", wait before returning to avoid crash-loop
+        const rateLimitMatch = /try again in (\d+)\s*hour/i.exec(error?.message || '');
+        if (rateLimitMatch) {
+            const waitHours = parseInt(rateLimitMatch[1], 10) + 1; // +1 for safety margin
+            console.warn(`[Email] ⏳ Rate limited for ${companyName}. Sleeping ${waitHours}h before next attempt.`);
+            await new Promise(r => setTimeout(r, waitHours * 60 * 60 * 1000));
+        }
     } finally {
         // Always close IMAP connection to avoid "Too many simultaneous connections"
         if (connection) {

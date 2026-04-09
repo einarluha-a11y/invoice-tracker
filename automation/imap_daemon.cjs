@@ -1,5 +1,13 @@
 require('dotenv').config({ path: __dirname + '/.env' });
 
+// Global error handlers — prevent crashes from unhandled rejections / protocol error events
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('[imap-daemon] ⚠️  Unhandled rejection (not crashing):', reason);
+});
+process.on('uncaughtException', (err) => {
+    console.error('[imap-daemon] ⚠️  Uncaught exception (not crashing):', err.message);
+});
+
 // Modules
 const { checkEmailForInvoices, pollAllCompanyInboxes, checkAndRunFlagTasks, pollLoop } = require('./imap_listener.cjs');
 const { writeToFirestore, parseInvoiceDataWithAI, scoutTeacherPipeline } = require('./invoice_processor.cjs');
