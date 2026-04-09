@@ -39,11 +39,11 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
         }
     };
 
+    let connection;
     try {
         if (DEBUG) console.log(`[Email] Connecting to IMAP server ${config.imap.host} for ${companyName} (${config.imap.user})...`);
 
         // Retry with backoff on rate-limit errors (some IMAP servers throttle rapid reconnects)
-        let connection;
         const MAX_IMAP_ATTEMPTS = 3;
         for (let attempt = 1; attempt <= MAX_IMAP_ATTEMPTS; attempt++) {
             try {
@@ -451,10 +451,15 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
             }
         } // end for each email
 
-        if (DEBUG) console.log(`[System] IMAP connection closed for ${companyName}.`);
     } catch (error) {
         console.error(`[Email Error] IMAP Failure for ${companyName} (${config.imap.user}):`, error);
         await reportError('IMAP_ERROR', config.imap.user || companyId, error).catch(() => {});
+    } finally {
+        // Always close IMAP connection to avoid "Too many simultaneous connections"
+        if (connection) {
+            try { connection.end(); } catch (_) {}
+        }
+        if (DEBUG) console.log(`[System] IMAP connection closed for ${companyName}.`);
     }
 }
 
