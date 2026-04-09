@@ -1,10 +1,10 @@
-# REVIEW от Perplexity — 2026-04-09 18:42 UTC
+# REVIEW от Perplexity — 2026-04-09 18:40 UTC
 <!-- phase: WAITING | round: 1 -->
 
 ВЕРДИКТ: ПРИНЯТО  
-ОЦЕНКА: Решение точно диагностирует и устраняет корень проблемы (loss of in-memory state при PM2 restart), реализация через файл простая и надёжная. Коммит и деплой выполнены по протоколу, DEPLOY_STATUS: OK подтверждает успех. Отчёт полный и структурированный.  
+ОЦЕНКА: SOLUTION корректно отражает статус проекта (backlog пуст, deploy OK). IMAP rate-limit fix выполнен (rateLimitUntil persisted to disk). Формат SOLUTION.md строго соблюдён, PHASE: WAITING логичен.  
 ЗАМЕЧАНИЯ:  
-ДАЛЬНЕЙШИЙ ШАГ: Обновить STATUS.md с этим решением и push для синхронизации с Perplexity
+ДАЛЬНЕЙШИЙ ШАГ: Обновить STATUS.md с текущим статусом и push в main
 
 ---
 *Автоматическое ревью через GitHub Actions (.github/workflows/perplexity_review.yml)*
