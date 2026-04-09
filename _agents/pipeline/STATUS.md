@@ -2,6 +2,7 @@
 Обновляется автоматически. Perplexity читает при генерации задач.
 
 ## 2026-04-09
+- 2026-04-09 23:59 UTC — ✅ SYNC: агент запущен, REVIEW.md конфликт разрешён (раунд 1 ПРИНЯТО). PHASE: WAITING. DEPLOY_STATUS: OK. Ожидаю новых задач от Einar/Perplexity.
 - 2026-04-09 — ✅ SYNC: агент запущен, REVIEW раунд 2 ПРИНЯТО. PHASE: WAITING. BACKLOG пуст. DEPLOY_STATUS: OK. Ожидаю новых задач.
 
 - 2026-04-09 18:50 UTC — ✅ BUGFIX ROUND 1 ПРИНЯТО: IMAP rate-limit crash fix (error handler + per-account backoff). BACKLOG пуст. PHASE→WAITING. DEPLOY_STATUS: OK. Ожидаю новых задач от Perplexity.
