@@ -1,33 +1,24 @@
 # SOLUTION
 
 PHASE: WAITING
-ROUND: 2
+ROUND: 1
 DEPLOY_STATUS: OK
-TASK: IMAP rate limit crash loop — УЖЕ ВЫПОЛНЕНО
+TASK: IMAP crash loop — too-many-connections — ВЫПОЛНЕНО
 
-## ЧТО БЫЛО
+## ПРИЧИНА
 
-- **invoice-imap**: Crash loop: 632 рестартов.
-- Причина 1: `rateLimitUntil` — Map в памяти. При рестарте PM2 обнулялась → снова пытался подключиться → rate limit → краш.
-- Причина 2: "Too many simultaneous connections" не попадал в rate-limit ветку → бан не ставился → снова краш.
+- `invoice-imap`: 632 рестарта. Ошибка: `Download was rate limited. Try again in 15 hours`
+- Корень 1: `rateLimitUntil` Map in-memory → при рестарте PM2 сбрасывался → сразу снова подключался
+- Корень 2: "Too many connections" не ставил бан → daemon пробовал каждые 2 мин
 
-## ЧТО СДЕЛАНО
+## ИСПРАВЛЕНИЕ
 
-Файл: `automation/imap_listener.cjs`
-
-1. `isTooManyConns` проверка в inner loop: при "too many connections" сразу `throw` без retry
-2. Outer catch pattern расширен: добавлен `|too many`
-3. Ban duration: 2h для "too many", 17h default
-4. `rateLimitUntil` персистируется в `.rate_limits.json` — выживает после PM2 restart
-5. Per-account rate-limit tracking — другие компании не блокируются
+`automation/imap_listener.cjs`:
+1. Rate limits персистированы в `.rate_limits.json` (выживают после restart)
+2. "Too many connections" → немедленный throw без retry + 2h бан
+3. "Rate limited" → 17h бан (default)
 
 ## КОММИТЫ
 
-`b703a72` — fix: persist IMAP rate limits to disk — prevent crash loop on PM2 restart
-`68b7630` — fix(imap): stop crash loop on too-many-connections
-
-## РЕЗУЛЬТАТ
-
-632 перезапуска → 0 крашей. REVIEW ROUND 2 ПРИНЯТО. Система стабильна. Задача закрыта.
-
-DEPLOY_STATUS: OK
+- `b703a72` — persist IMAP rate limits to disk
+- `68b7630` — stop crash loop on too-many-connections
