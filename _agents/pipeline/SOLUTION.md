@@ -2,6 +2,7 @@
 
 PHASE: WAITING
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 ROUND: 1
 DEPLOY_STATUS: OK
 TASK: IMAP crash loop — "Too many simultaneous connections" — ВЫПОЛНЕНО
@@ -33,6 +34,6 @@ ROUND: 0
 TASK: все задачи из BACKLOG выполнены — ожидаю новых
 >>>>>>> Stashed changes
 =======
-- `95b32c2` — Firestore persist rate limits (выживают Railway restarts)
-- `8e7d422` — await loadRateLimitsFromFirestore() перед pollLoop
+ROUND: 0
+TASK: все задачи из BACKLOG выполнены — ожидаю новых
 >>>>>>> Stashed changes
