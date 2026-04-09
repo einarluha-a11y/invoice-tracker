@@ -29,5 +29,6 @@ TASK: Ожидаю новых задач от Perplexity
 - ROUND 1: watchdog hardcoded path → path.resolve(__dirname, '..') — ПРИНЯТО
 - ROUND 2: tunnel-manager убран из WATCHED_PROCESSES — ПРИНЯТО
 - MONITORING: ecosystem.config.cjs очищен, PROJECT_DIR исправлен
+- REVIEW MONITORING ROUND 1: ПРИНЯТО → PHASE: WAITING
 
 DEPLOY_STATUS: OK

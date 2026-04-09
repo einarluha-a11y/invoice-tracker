@@ -3,6 +3,7 @@
 
 ## 2026-04-09
 
+- 2026-04-09 13:05 UTC — ✅ MONITORING ФИНАЛ: все процессы стабильны (invoice-api, invoice-imap, pipeline-monitor, pipeline-webhook, watchdog). tunnel-manager изолирован. Ложных алертов нет. PHASE→WAITING. DEPLOY_STATUS: OK.
 - 2026-04-09 — ✅ REVIEW MONITORING ROUND 1 ПРИНЯТО: watchdog стабилен, tunnel-manager изолирован. BACKLOG пуст. PHASE→WAITING. DEPLOY_STATUS: OK.
 
 - 2026-04-09 — ✅ MONITORING ROUND 1 ПРИНЯТО: watchdog стабилен, ложных срабатываний нет, tunnel-manager изолирован. BACKLOG пуст. PHASE→WAITING. Ожидаю новых задач от Perplexity.
