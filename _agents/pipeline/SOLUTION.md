@@ -1,32 +1,29 @@
 # SOLUTION
 
 PHASE: WAITING
-ROUND: 1
+ROUND: 2
 DEPLOY_STATUS: OK
-TASK: IMAP crash loop — "Too many simultaneous connections" — ВЫПОЛНЕНО
+TASK: IMAP crash loop — rate limits persist в Firestore — ВЫПОЛНЕНО И ПРИНЯТО
 
-## ПРИЧИНА
+## РЕЗУЛЬТАТ
 
-- `invoice-imap`: Crash loop с "Too many simultaneous connections"
-- Корень 1: При PM2-рестарте IMAP-соединение оставалось открытым на сервере → новый процесс не мог подключиться
-- Корень 2: "Too many connections" ставил бан на 2 ЧАСА → аккаунты не опрашивались до следующего утра
-- Корень 3: Retry-логика не отличала "too many" от rate limit → делала лишние попытки
+REVIEW ROUND 2 ПРИНЯТО Perplexity.
+
+Решение точно диагностировало корень проблемы (in-memory rate limits сбрасывались при рестарте PM2/Railway) и реализовало персистентные баны в Firestore. DEPLOY_STATUS: OK + 0 крашей подтверждают эффективность.
 
 ## ИСПРАВЛЕНИЕ
 
 `automation/imap_listener.cjs`:
-- "Too many connections" → ban 5 минут (не 2 часа) — сервер освобождает соединение быстро
-- `isTooManyConns` выведен отдельно от `isRateLimit` в outer catch
-- Skip-сообщение показывает минуты для коротких банов (не часы)
-- В retry-loop: "too many connections" → немедленный throw (не ждёт 60+120с)
-- Rate limits персистированы в Firestore — выживают Railway container restarts
+- Rate limits теперь сохраняются в Firestore `config/imap_rate_limits` (выживают Railway container restarts)
+- "Too many connections" → ban 5 минут (не 2 часа)
+- Skip-сообщение показывает минуты для коротких банов
 
-## АУДИТ ДАННЫХ
-
-`node repairman_agent.cjs --audit-paid --fix`: 22 ложных совпадений отменены, 68 Paid без банк. ссылки (исторические, ОК).
+`automation/imap_daemon.cjs`:
+- Добавлен `await loadRateLimitsFromFirestore()` ПЕРЕД стартом pollLoop()
+- Бан загружается из Firestore на каждом старте → первый poll сразу пропускает забаненный аккаунт
 
 ## КОММИТЫ
 
-- `b703a72` — persist IMAP rate limits to disk
-- `68b7630` — fix crash loop on too-many-connections
-- `41b73d0` — ban 5min (not 2h), no retry on too-many-conn
+- `95b32c2` — Firestore persist в imap_listener.cjs
+- `8e7d422` — await loadRateLimitsFromFirestore() в imap_daemon.cjs перед pollLoop
+- `5530272` — ban timer: показывает минуты когда <1ч (UX fix)
