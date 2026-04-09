@@ -3,6 +3,7 @@
 
 ## 2026-04-09
 
+- 2026-04-09 — ✅ MONITORING ROUND 1 ПРИНЯТО: watchdog стабилен, ложных срабатываний нет, tunnel-manager изолирован. BACKLOG пуст. PHASE→WAITING. Ожидаю новых задач от Perplexity.
 - 2026-04-09 — ✅ REVIEW ROUND 2 ПРИНЯТО: tunnel-manager убран из WATCHED_PROCESSES. BACKLOG пуст. PHASE→WAITING. Ожидаю новых задач от Perplexity.
 
 ## 2026-04-08
