@@ -80,9 +80,9 @@ async function loadRateLimitsFromFirestore() {
 
 // Load persisted bans on startup so we honour bans that survived a PM2 restart.
 // _loadRateLimits reads the local file (fast, sync — covers same-container PM2 restarts).
-// loadRateLimitsFromFirestore reads Firestore (async — covers Railway container replacements).
+// loadRateLimitsFromFirestore is called explicitly (await) from imap_daemon.cjs before
+// the first poll — do NOT call it here to avoid a concurrent gRPC init crash.
 _loadRateLimits();
-loadRateLimitsFromFirestore().catch(() => {});
 
 /**
  * 4. Main IMAP function: Connects to email, finds UNSEEN messages with attachments
