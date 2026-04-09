@@ -556,11 +556,18 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
         // If server says "rate limited / Try again in X hours" — record ban expiry in Map.
         // Do NOT sleep here — that blocks all other companies. Instead, checkEmailForInvoices
         // will skip this account on the next poll cycle until the ban expires.
-        const isRateLimit = /rate.limit|Download was rate limited|try again in|too many/i.test(error?.message || '');
-        if (isRateLimit) {
+        const isTooManyConns = /too many/i.test(error?.message || '');
+        const isRateLimit = /rate.limit|Download was rate limited|try again in/i.test(error?.message || '');
+        if (isTooManyConns) {
+            // Short ban: 5 minutes — server releases orphaned connections quickly
+            const banExpiry = Date.now() + 5 * 60 * 1000;
+            rateLimitUntil.set(accountKey, banExpiry);
+            _saveRateLimits();
+            _saveRateLimitsFirestore().catch(() => {});
+            console.warn(`[Email] ⏳ Too many connections for ${companyName}. Skipping for 5 min.`);
+        } else if (isRateLimit) {
             const hoursMatch = /try again in (\d+)\s*hour/i.exec(error?.message || '');
-            const isTooManyConns = /too many/i.test(error?.message || '');
-            const banHours = hoursMatch ? parseInt(hoursMatch[1], 10) + 1 : (isTooManyConns ? 2 : 17); // 2h for "too many connections", 17h default
+            const banHours = hoursMatch ? parseInt(hoursMatch[1], 10) + 1 : 17;
             const banExpiry = Date.now() + banHours * 60 * 60 * 1000;
             rateLimitUntil.set(accountKey, banExpiry);
             _saveRateLimits();
