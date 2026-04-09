@@ -3,21 +3,24 @@
 PHASE: WAITING
 ROUND: 0
 DEPLOY_STATUS: OK
-TASK: все задачи выполнены — ожидаю новых заданий от Einar/Perplexity
+TASK: все задачи из BACKLOG выполнены — ожидаю новых задач от Einar или Perplexity
 
-## ПОСЛЕДНЕЕ ИСПРАВЛЕНИЕ
+## СТАТУС СИСТЕМЫ (2026-04-09)
 
-**Симптом**: invoice-imap crash loop — 683 рестарта, тихий выход без ошибки.
+Все сервисы стабильны:
+- invoice-api OK
+- invoice-imap OK (crash loop исправлен в ROUND 2)
+- pipeline-monitor OK
+- pipeline-webhook OK
+- watchdog OK
+
+## ПОСЛЕДНЕЕ ИСПРАВЛЕНИЕ (ROUND 2)
+
+**Симптом**: invoice-imap 683 рестарта, crash без ошибки.
 
 **Два дефекта (исправлены):**
-
-### 1. Двойной вызов loadRateLimitsFromFirestore() — concurrent gRPC crash
-imap_listener.cjs вызывал на уровне модуля + явный await в imap_daemon.cjs → параллельный gRPC crash.
-Фикс: module-level вызов удалён из imap_listener.cjs.
-
-### 2. Нет .catch() на startup chain → event loop empty → тихий выход
-checkAndRunFlagTasks() падал → pollLoop()/auditLoop() не запускались → Node завершался → PM2 рестарт → цикл.
-Фикс: .catch(err => ...).then(async () => { pollLoop(); auditLoop(); }) в imap_daemon.cjs.
+1. Двойной вызов loadRateLimitsFromFirestore() — concurrent gRPC crash. Фикс: module-level вызов удалён из imap_listener.cjs.
+2. Нет .catch() на startup chain — event loop empty — тихий выход. Фикс: .catch().then() в imap_daemon.cjs.
 
 ## РЕЗУЛЬТАТ
 - node --check: OK
