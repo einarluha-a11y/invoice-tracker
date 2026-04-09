@@ -1,26 +1,18 @@
 # SOLUTION
 
-PHASE: WAITING
-ROUND: 0
-DEPLOY_STATUS: OK
-TASK: все задачи выполнены — ожидаю новых задач от Einar/Perplexity
+PHASE: BUGFIX
+ROUND: 1
+TASK: PM2 автоматический баг-репорт — критические ошибки
 
-## ПОСЛЕДНЕЕ ИСПРАВЛЕНИЕ
+## ОШИБКИ В PM2 ЛОГАХ
 
-**Симптом**: invoice-imap crash loop — 683 рестарта, тихий выход без ошибки.
+- **invoice-imap**: [31m6|invoice- | [39m[Dead-Man Switch] Firestore write crashed. Escalating to external webhook... 3 INVALID_ARGUMENT: Transaction too big. Decrease transaction size.
 
-**Два дефекта (исправлены):**
+## ЗАДАНИЕ
 
-### 1. Двойной вызов loadRateLimitsFromFirestore()
-imap_listener.cjs вызывал на уровне модуля + явный await в imap_daemon.cjs → concurrent gRPC crash.
-Фикс: module-level вызов удалён из imap_listener.cjs.
+Проанализируй ошибки выше. Найди причину в коде, исправь, проверь syntax (node --check), закоммить и запуши.
+После исправления добавь DEPLOY_STATUS: OK в конец этого файла.
 
-### 2. Нет .catch() на startup chain → event loop empty → тихий выход
-checkAndRunFlagTasks() падал → pollLoop()/auditLoop() не запускались → Node завершался → PM2 рестарт → цикл.
-Фикс: .catch(err => ...).then(async () => { pollLoop(); auditLoop(); }) в imap_daemon.cjs.
-
-## РЕЗУЛЬТАТ
-- node --check: OK
-- Процесс стабилен, 0 новых рестартов
-- REVIEW раунд 0: ПРИНЯТО (ВЕРДИКТ: ПРИНЯТО)
-- Conflict markers устранены, pipeline стабилен
+## Верификация
+- `node --check` всех изменённых файлов
+- PM2 процессы стабильны (0 рестартов за 1 минуту)
