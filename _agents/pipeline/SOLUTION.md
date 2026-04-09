@@ -1,19 +1,24 @@
 # SOLUTION
 
 PHASE: BUGFIX
-ROUND: 1
+ROUND: 2
 TASK: Watchdog автоматический баг-репорт
 
-## ОШИБКИ
+## ЧТО БЫЛО ИСПРАВЛЕНО
 
-- **invoice-api**: Not found and failed to start
-- **invoice-imap**: Not found and failed to start
-- **pipeline-monitor**: Not found and failed to start
-- **pipeline-webhook**: Not found and failed to start
-- **tunnel-manager**: Not found and failed to start
+**Причина ложных "Not found and failed to start":**
 
-## ЗАДАНИЕ
+1. `pm2 start ecosystem.config.cjs --only <name>` для тяжёлых процессов занимает 17-22 секунды. Watchdog использовал timeout: 15000ms → таймаут → ложная ошибка (процесс при этом всё равно стартовал).
 
-Проанализируй ошибки. Найди причину в коде, исправь, node --check, коммит, пуш.
+2. pipeline-monitor рестартился каждые 10 минут ("hung" detection) потому что в тихий период не логирует ничего → lastLog не меняется → watchdog думает завис.
 
-DEPLOY_STATUS: pending
+**Исправления:**
+- `automation/watchdog.cjs`: timeout 15000→45000, после таймаута проверить pm2 jlist
+- `automation/pipeline_monitor.cjs`: heartbeat log каждые 5 минут (`💓 idle`)
+
+## ВЕРИФИКАЦИЯ
+
+- node --check → OK оба файла
+- Коммит: 161bded — pushed to main
+
+DEPLOY_STATUS: OK
