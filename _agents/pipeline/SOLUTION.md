@@ -1,23 +1,18 @@
 # SOLUTION
 
-PHASE: BUGFIX
-ROUND: 2
-TASK: watchdog — tunnel-manager crash loop → ложные bug reports каждые 10 мин
+PHASE: WAITING
+ROUND: 0
+TASK: —
 
-## ПРОБЛЕМА
+## СТАТУС
 
-1. `WATCHED_PROCESSES` включал `tunnel-manager` — на Railway нет `cloudflared`, процесс постоянно крашил (820 рестартов).
-2. Watchdog видел >50 рестартов → каждые 10 мин пытался писать bug report в SOLUTION.md.
-3. В предыдущем раунде путь `PROJECT` уже исправлен на `path.resolve(__dirname, '..')`.
+REVIEW ROUND 2 (BUGFIX: tunnel-manager crash loop) — ПРИНЯТО Perplexity 2026-04-09.
 
-## ИСПРАВЛЕНИЕ
+BACKLOG пустой. Ожидаю новых задач от Perplexity.
 
-`automation/watchdog.cjs`:
-- Убрал `tunnel-manager` из `WATCHED_PROCESSES` — cloudflared только для локальной разработки, на Railway не нужен.
+## ИСТОРИЯ
 
-## ПРОВЕРКА
-
-- `node --check automation/watchdog.cjs` → OK
-- commit `c929dd1`, push в main
+- ROUND 1: watchdog hardcoded path → path.resolve(__dirname, '..') — ПРИНЯТО
+- ROUND 2: tunnel-manager убран из WATCHED_PROCESSES — ПРИНЯТО
 
 DEPLOY_STATUS: OK

@@ -1,6 +1,10 @@
 # STATUS — Pipeline Activity Log
 Обновляется автоматически. Perplexity читает при генерации задач.
 
+## 2026-04-09
+
+- 2026-04-09 — ✅ REVIEW ROUND 2 ПРИНЯТО: tunnel-manager убран из WATCHED_PROCESSES. BACKLOG пуст. PHASE→WAITING. Ожидаю новых задач от Perplexity.
+
 ## 2026-04-08
 
 - 2026-04-08 23:55 — ✅ Проверка: PHASE:WAITING, BACKLOG пуст, TASK-29 DONE+ПРИНЯТО — ожидаю новых задач от Perplexity
