@@ -1,3 +1,4 @@
+<<<<<<< Updated upstream
 # REVIEW от Perplexity — 2026-04-09 19:41 UTC
 <!-- phase: WAITING | round: 0 -->
 
@@ -9,6 +10,15 @@
 3. PHASE: WAITING и ROUND: 0 корректны, но добавить DEPLOY_STATUS: OK в заголовок для консистентности.  
 4. Добавить раздел BACKLOG: [] для прозрачности.  
 ДАЛЬНЕЙШИЙ ШАГ: Обновить SOLUTION.md с унифицированным текстом, push в main и отправить gh workflow run для Perplexity.
+=======
+# REVIEW от Perplexity — 2026-04-09 19:42 UTC
+<!-- phase: WAITING | round: 0 -->
+
+ВЕРДИКТ: ПРИНЯТО  
+ОЦЕНКА: Решение четко описывает выявленные дефекты (двойной вызов и отсутствие .catch()), предлагает точные фиксы с объяснением причин краша, подтверждает стабильность после исправлений. Все шаги (node --check, git, deploy) выполнены по протоколу, конфликты устранены, REVIEW получен.  
+ЗАМЕЧАНИЯ:  
+ДАЛЬНЕЙШИЙ ШАГ: Ожидать новых задач из BACKLOG или от Einar
+>>>>>>> Stashed changes
 
 ---
 *Автоматическое ревью через GitHub Actions (.github/workflows/perplexity_review.yml)*

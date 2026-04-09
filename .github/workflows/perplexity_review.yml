@@ -40,14 +40,21 @@ jobs:
           git config user.name "perplexity-bot"
           git config user.email "perplexity-bot@users.noreply.github.com"
 
-          # Pull latest first to minimize conflicts
-          git stash --include-untracked || true
-          git pull --rebase origin main || {
-            echo "Rebase conflict before commit — aborting rebase, retrying with merge"
-            git rebase --abort
-            git pull origin main --no-edit -X ours || true
-          }
-          git stash pop || true
+          # Save Perplexity output before pulling
+          cp _agents/pipeline/REVIEW.md /tmp/REVIEW.md.bak
+          cp _agents/pipeline/SOLUTION.md /tmp/SOLUTION.md.bak
+
+          # Pull latest, discard any local state
+          git checkout -- .
+          git pull --ff-only origin main || git pull origin main --no-edit -X ours || true
+
+          # Restore Perplexity output (overwrite whatever came from remote)
+          cp /tmp/REVIEW.md.bak _agents/pipeline/REVIEW.md
+          cp /tmp/SOLUTION.md.bak _agents/pipeline/SOLUTION.md
+
+          # Safety: remove any conflict markers that may have leaked
+          sed -i '/^<<<<<<</d; /^>>>>>>>/d; /^=======/d' _agents/pipeline/SOLUTION.md
+          sed -i '/^<<<<<<</d; /^>>>>>>>/d; /^=======/d' _agents/pipeline/REVIEW.md
 
           git add _agents/pipeline/REVIEW.md _agents/pipeline/SOLUTION.md
           git diff --staged --quiet && echo "No changes" && exit 0
