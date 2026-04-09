@@ -2,13 +2,12 @@
 Обновляется автоматически. Perplexity читает при генерации задач.
 
 ## 2026-04-09
-<<<<<<< Updated upstream
+- 2026-04-09 20:05 UTC — ✅ SYNC: конфликтные маркеры в STATUS.md и REVIEW.md устранены. PHASE: WAITING. DEPLOY_STATUS: OK. Ожидаю новых задач от Einar/Perplexity.
+- 2026-04-09 20:00 UTC — ✅ SYNC: агент запущен. Conflict markers в SOLUTION.md и REVIEW.md устранены (повторно). PHASE: WAITING. DEPLOY_STATUS: OK. Ожидаю новых задач.
 - 2026-04-09 19:42 UTC — ✅ SYNC: агент запущен. Conflict markers в SOLUTION.md устранены. REVIEW раунд 0 ПРИНЯТО. PHASE: WAITING. DEPLOY_STATUS: OK. Ожидаю новых задач от Einar/Perplexity.
 - 2026-04-09 — ✅ SYNC: агент запущен. SOLUTION.md двойной conflict marker устранён. PHASE: WAITING. DEPLOY_STATUS: OK. Ожидаю новых задач от Einar/Perplexity.
 - 2026-04-09 — ✅ SYNC: агент запущен. SOLUTION.md конфликты устранены. PHASE: WAITING. DEPLOY_STATUS: OK. Ожидаю новых задач от Einar/Perplexity.
-=======
 - 2026-04-09 — ✅ SYNC: агент запущен. REVIEW.md конфликты разрешены. REVIEW раунд 0 ПРИНЯТО (ВЕРДИКТ: ПРИНЯТО). BACKLOG пуст. PHASE: WAITING. DEPLOY_STATUS: OK. Ожидаю новых задач от Einar/Perplexity.
->>>>>>> Stashed changes
 - 2026-04-09 — ✅ SYNC: merge conflicts SOLUTION.md разрешены. Perplexity снова ответил не по протоколу. BACKLOG пуст (TASK-01..24 все DONE). PHASE: WAITING. DEPLOY_STATUS: OK. Ожидаю новых задач от Einar/Perplexity.
 
 - 2026-04-09 — ✅ SYNC: агент запущен (2026-04-09). REVIEW раунд 0 ПРИНЯТО — BUGFIX crash loop imap завершён (.catch() + rate limits persist). PHASE: WAITING. BACKLOG пуст. DEPLOY_STATUS: OK. Ожидаю новых задач от Einar/Perplexity.
@@ -72,27 +71,6 @@
 - 2026-04-08 16:31 — ✅ Завершено: 3:TASK-23 Round 3 — кнопка Tühista серая (Tailwind к
 - 2026-04-08 — ✅ Проверка: PHASE:WAITING, BACKLOG пуст, TASK-23 APPROVED — ожидаю новых задач от Perplexity
 
-### TASK-22 Round 5 — Диагностика companyId
-
-```
-=== ACCOUNTS/COMPANIES ===
-account:global-technics | company_id:bP6dc0PMdFtnmS5QTX4N | name:Global Technics OÜ
-account:ideacom         | company_id:vlhvA6i8d3Hry8rtrA3Z | name:Ideacom OÜ
-
-=== TOP-LEVEL COMPANIES ===
-id:bP6dc0PMdFtnmS5QTX4N | name:Global Technics OÜ
-id:vlhvA6i8d3Hry8rtrA3Z | name:Ideacom OÜ
-
-=== INVOICES COUNT ===
-companyId:bP6dc0PMdFtnmS5QTX4N (GT) → 103 invoices
-  top: Täisteenusliisingu AS:18, Allstore Assets OÜ:15, SIA Citadele Leasing:9, ESTMA Terminaali:9, Tele2 Eesti:8
-companyId:vlhvA6i8d3Hry8rtrA3Z (Ideacom) → 64 invoices
-  top: PRONTO Sp. z o.o.:15, UAB "Ursus LT":8, SIA Citadele Leasing:5, Alexela AS:5, LHV:4
-```
-
-ВЫВОД: Данные в Firestore КОРРЕКТНЫ. Subcollection IDs == top-level company IDs.
-Инвойсы распределены правильно. Проблема в FRONTEND логике, не в данных.
-
 - 2026-04-08 — ✅ TASK-23 APPROVED: кнопка "Tühista" исправлена — белый текст, рамка. PHASE→WAITING
 - 2026-04-08 15:46 — ✅ Завершено: 1:TASK-23 — Кнопка "Tühista" в диалоге архивации пло
 - 2026-04-08 15:30 — ✅ Завершено: 6:TASK-22 Round 6 — исправить stale selectedCompanyI
@@ -128,17 +106,3 @@ companyId:vlhvA6i8d3Hry8rtrA3Z (Ideacom) → 64 invoices
 - Merit Aktiva API интеграция (код готов)
 - Pipeline monitor как PM2 процесс
 - PM2 локальный деплой вместо Railway
-# Webhook test Wed Apr  8 13:09:10 EEST 2026
-- 2026-04-08 13:46 — ✅ Проверка: PHASE:WAITING, BACKLOG пуст, ожидаю новых задач
-webhook-test 17:10:00
-- 2026-04-08 — ✅ Проверка: TASK-22 DONE, BACKLOG пуст, node --check OK, TS OK — ожидаю новых задач
-
-- 2026-04-08 — ✅ Завершено: 1:TASK-24 Round 1 — CSV export кнопка добавлена в filters-bar (src/App.tsx). Build OK.
-- 2026-04-08 — ✅ TASK-24 APPROVED Perplexity. PHASE→WAITING. BACKLOG пуст. Ожидаю новых задач.
-- 2026-04-08 — ✅ Верификация: TASK-24 ✅ code present (src/App.tsx:184-464), build OK, SOLUTION.md DEPLOY_STATUS:OK — статус финальный, ожидаю новых задач от Perplexity.
-- 2026-04-09 17:20 EEST — ✅ PHASE: WAITING — merge conflict в SOLUTION.md исправлен. BACKLOG пуст. DEPLOY_STATUS: OK. Ожидаю новых задач от Perplexity.
-- 2026-04-09 18:45 UTC — ✅ SYNC: merge conflicts (SOLUTION.md + STATUS.md) разрешены. PHASE: WAITING. DEPLOY_STATUS: OK. Ожидаю новых задач от Perplexity.
-- 2026-04-09 18:45 UTC — ✅ SYNC: merge conflicts (SOLUTION.md + STATUS.md) разрешены. PHASE: WAITING. DEPLOY_STATUS: OK. Ожидаю новых задач от Perplexity.
-- 2026-04-09 — ✅ SYNC: агент запущен. PHASE: WAITING. BACKLOG пуст. DEPLOY_STATUS: OK. Ожидаю новых задач от Einar/Perplexity.
-- 2026-04-09 — ✅ SYNC: агент запущен. PHASE: WAITING. DEPLOY_STATUS: OK.
-- 2026-04-09 — ✅ SYNC: git конфликты (nested markers) устранены в SOLUTION.md + REVIEW.md. Перепись чистых версий + push. PHASE: WAITING. DEPLOY_STATUS: OK. Ожидаю новых задач от Einar/Perplexity.
