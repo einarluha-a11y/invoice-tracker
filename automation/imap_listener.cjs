@@ -19,10 +19,22 @@ const { auditAndProcessInvoice } = require('./accountant_agent.cjs');
 // Teacher for body-text invoices
 const { validateAndTeach } = require('./teacher_agent.cjs');
 
+// Per-account rate limit tracker: user -> timestamp when ban expires
+const rateLimitUntil = new Map();
+
 /**
  * 4. Main IMAP function: Connects to email, finds UNSEEN messages with attachments
  */
 async function checkEmailForInvoices(imapConfig, companyName = "Default", companyId = null, customRules = "") {
+    // Skip if this account is currently rate-limited
+    const accountKey = imapConfig.user || companyId;
+    const banUntil = rateLimitUntil.get(accountKey);
+    if (banUntil && Date.now() < banUntil) {
+        const remainingHours = Math.ceil((banUntil - Date.now()) / 3600000);
+        if (DEBUG) console.log(`[Email] Skipping ${companyName} — rate limited for ~${remainingHours}h more`);
+        return;
+    }
+
     if (!companyId) {
         console.error(`[Email] ⚠️  checkEmailForInvoices called without companyId for ${companyName}. Invoices may not be routed correctly.`);
     }
@@ -50,7 +62,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                 connection = await imaps.connect(config);
                 break;
             } catch (connErr) {
-                const isRateLimit = /rate.limit|too many|429|login.wait/i.test(connErr.message);
+                const isRateLimit = /rate.limit|too many|429|login.wait|Download was rate limited/i.test(connErr.message || '');
                 if (isRateLimit && attempt < MAX_IMAP_ATTEMPTS) {
                     const waitSec = attempt * 60; // 60s, 120s
                     console.warn(`[Email] ⚠️  IMAP rate limited for ${companyName} (attempt ${attempt}). Waiting ${waitSec}s...`);
@@ -61,6 +73,16 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
             }
         }
         if (!connection) throw new Error('IMAP connection failed after retries');
+
+        // Attach error listener on the underlying node-imap instance to prevent
+        // unhandled 'error' events (e.g. protocol-level "rate limited" BYE from server)
+        // from crashing the process. The outer try/catch handles async errors;
+        // this handles synchronous event-emitter errors that bypass try/catch.
+        if (connection.imap) {
+            connection.imap.on('error', (err) => {
+                console.error(`[Email] IMAP connection error (${companyName}): ${err.message}`);
+            });
+        }
 
         if (DEBUG) console.log('[Email] Connection successful! Opening INBOX.');
         await connection.openBox('INBOX');
@@ -454,12 +476,16 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
     } catch (error) {
         console.error(`[Email Error] IMAP Failure for ${companyName} (${config.imap.user}):`, error);
         await reportError('IMAP_ERROR', config.imap.user || companyId, error).catch(() => {});
-        // If server says "Try again in X hours", wait before returning to avoid crash-loop
-        const rateLimitMatch = /try again in (\d+)\s*hour/i.exec(error?.message || '');
-        if (rateLimitMatch) {
-            const waitHours = parseInt(rateLimitMatch[1], 10) + 1; // +1 for safety margin
-            console.warn(`[Email] ⏳ Rate limited for ${companyName}. Sleeping ${waitHours}h before next attempt.`);
-            await new Promise(r => setTimeout(r, waitHours * 60 * 60 * 1000));
+        // If server says "rate limited / Try again in X hours" — record ban expiry in Map.
+        // Do NOT sleep here — that blocks all other companies. Instead, checkEmailForInvoices
+        // will skip this account on the next poll cycle until the ban expires.
+        const isRateLimit = /rate.limit|Download was rate limited|try again in/i.test(error?.message || '');
+        if (isRateLimit) {
+            const hoursMatch = /try again in (\d+)\s*hour/i.exec(error?.message || '');
+            const banHours = hoursMatch ? parseInt(hoursMatch[1], 10) + 1 : 17; // default 17h if not specified
+            const banExpiry = Date.now() + banHours * 60 * 60 * 1000;
+            rateLimitUntil.set(accountKey, banExpiry);
+            console.warn(`[Email] ⏳ Rate limited for ${companyName}. Will skip until ${new Date(banExpiry).toISOString()} (~${banHours}h).`);
         }
     } finally {
         // Always close IMAP connection to avoid "Too many simultaneous connections"
