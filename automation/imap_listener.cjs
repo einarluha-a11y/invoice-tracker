@@ -20,7 +20,32 @@ const { auditAndProcessInvoice } = require('./accountant_agent.cjs');
 const { validateAndTeach } = require('./teacher_agent.cjs');
 
 // Per-account rate limit tracker: user -> timestamp when ban expires
+// Persisted to disk so PM2 restarts don't reset the ban and cause crash loops.
 const rateLimitUntil = new Map();
+const _fs   = require('fs');
+const _path = require('path');
+const RATE_LIMIT_FILE = _path.join(__dirname, '.rate_limits.json');
+
+function _loadRateLimits() {
+    try {
+        const raw = JSON.parse(_fs.readFileSync(RATE_LIMIT_FILE, 'utf8'));
+        const now = Date.now();
+        for (const [key, ts] of Object.entries(raw)) {
+            if (ts > now) rateLimitUntil.set(key, ts);
+        }
+    } catch (_) {} // File may not exist yet — that's fine
+}
+
+function _saveRateLimits() {
+    try {
+        _fs.writeFileSync(RATE_LIMIT_FILE, JSON.stringify(Object.fromEntries(rateLimitUntil)), 'utf8');
+    } catch (e) {
+        console.warn(`[RateLimit] Could not persist rate limits: ${e.message}`);
+    }
+}
+
+// Load persisted bans on startup so we honour bans that survived a PM2 restart
+_loadRateLimits();
 
 /**
  * 4. Main IMAP function: Connects to email, finds UNSEEN messages with attachments
@@ -88,6 +113,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                     const m = /try again in (\d+)\s*hour/i.exec(msg);
                     const hrs = m ? parseInt(m[1], 10) + 1 : 17;
                     rateLimitUntil.set(accountKey, Date.now() + hrs * 3600 * 1000);
+                    _saveRateLimits();
                     console.warn(`[Email] ⏳ Rate limited via event (${companyName}). Backoff ${hrs}h set.`);
                 }
             });
@@ -494,6 +520,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
             const banHours = hoursMatch ? parseInt(hoursMatch[1], 10) + 1 : 17; // default 17h if not specified
             const banExpiry = Date.now() + banHours * 60 * 60 * 1000;
             rateLimitUntil.set(accountKey, banExpiry);
+            _saveRateLimits();
             console.warn(`[Email] ⏳ Rate limited for ${companyName}. Will skip until ${new Date(banExpiry).toISOString()} (~${banHours}h).`);
         }
     } finally {
