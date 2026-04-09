@@ -93,3 +93,4 @@ webhook-test 17:10:00
 - 2026-04-08 — ✅ Завершено: 1:TASK-24 Round 1 — CSV export кнопка добавлена в filters-bar (src/App.tsx). Build OK.
 - 2026-04-08 — ✅ TASK-24 APPROVED Perplexity. PHASE→WAITING. BACKLOG пуст. Ожидаю новых задач.
 - 2026-04-08 — ✅ Верификация: TASK-24 ✅ code present (src/App.tsx:184-464), build OK, SOLUTION.md DEPLOY_STATUS:OK — статус финальный, ожидаю новых задач от Perplexity.
+- 2026-04-09 17:20 EEST — ✅ PHASE: WAITING — merge conflict в SOLUTION.md исправлен. BACKLOG пуст. DEPLOY_STATUS: OK. Ожидаю новых задач от Perplexity.
