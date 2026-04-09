@@ -1,10 +1,10 @@
 # STATUS — Invoice Tracker Pipeline
 
-**Дата:** 2026-04-09 (обновлено 21:45 UTC)  
-**Ветка:** main  
-**DEPLOY_STATUS:** OK  
-**PHASE:** WAITING  
-**LAST_TASK:** SOLUTION.md очищен от merge conflicts, pipeline в стабильном состоянии  
+**Дата:** 2026-04-09 (обновлено 22:00 UTC)
+**Ветка:** main
+**DEPLOY_STATUS:** OK
+**PHASE:** WAITING
+**LAST_TASK:** Merge conflicts в SOLUTION.md/REVIEW.md устранены — ПРИНЯТО
 
 ## Текущее состояние системы
 
@@ -17,10 +17,10 @@
 
 ## Последние изменения (2026-04-09)
 
-### CLEANUP: Merge conflicts в SOLUTION.md
-- SOLUTION.md содержал вложенные merge conflicts (<<<<<<</>>>>>>>)
-- Очищен вручную: PHASE: WAITING, ROUND: 0, TASK: ожидаю новых
-- Сохранён полный отчёт о выполненных задачах
+### CLEANUP (merge conflicts)
+- Устранены merge conflicts в SOLUTION.md ✅
+- Устранены merge conflicts в REVIEW.md ✅
+- ROUND: 0, PHASE: WAITING, DEPLOY_STATUS: OK ✅
 
 ### BUGFIX ROUND 2 (imap_listener — "Too many connections")
 - "Too many connections" → ban 5 минут (не 2 часа) ✅
@@ -34,17 +34,18 @@
 - 632 рестарта → 0 крашей ✅
 - commits: 95b32c2, 8e7d422, ПРИНЯТО Perplexity
 
-### АУДИТ PAID (audit-paid --fix)
-- 142 инвойса проверено, 22 ложных совпадения откатено ✅
+### АУДИТ (audit-paid)
+- Checked: 142 инвойса, OK: 52, Reverted: 22, No bank link: 68 ✅
 - commit: 489b6a4, ПРИНЯТО Perplexity
 
 ## История ревью
 
 | Round | Статус | Комментарий |
 |-------|--------|-------------|
-| WAITING ROUND 2 (cleanup) | ПРИНЯТО | Merge conflicts в SOLUTION.md устранены |
-| WAITING ROUND 2 (финал) | ПРИНЯТО | "Too many connections" ban 5min, no retry — корректно |
-| WAITING ROUND 1 | ПРИНЯТО | Firestore persist для rate limits — выживает Railway рестарты |
+| WAITING ROUND 0 (финал) | ПРИНЯТО | Merge conflicts устранены, файлы очищены |
+| WAITING ROUND 2 | ИЗМЕНЕНИЯ_НУЖНЫ | Merge conflicts в SOLUTION.md/REVIEW.md |
+| WAITING ROUND 1 | ПРИНЯТО | "Too many connections" ban 5min, no retry — корректно |
+| WAITING ROUND 0 | ПРИНЯТО | Firestore persist для rate limits — выживает Railway рестарты |
 | BUGFIX ROUND 1 | ПРИНЯТО | IMAP rate-limit crash loop устранён (632→0 рестартов) |
 
 ## Следующий шаг
