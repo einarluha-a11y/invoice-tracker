@@ -301,6 +301,7 @@ async function writeToFirestore(dataArray) {
             }
 
             webhooksToSend.push({
+                firestoreDocId: docRef.id,
                 invoiceId: invoiceId,
                 vendorName: vendorName,
                 amount: numAmount,
@@ -349,8 +350,9 @@ async function writeToFirestore(dataArray) {
                     const dropboxPath = await uploadInvoiceToPDF(payload.invoiceId, pdfBuffer, folderPath);
                     console.log(`[Dropbox] ✅ Uploaded ${payload.invoiceId} → ${dropboxPath}`);
 
-                    // Сохранить dropboxPath в Firestore
-                    await db.collection('invoices').doc(payload.invoiceId).update({ dropboxPath });
+                    // Сохранить dropboxPath в Firestore (use Firestore doc ID, not invoice number)
+                    const docId = payload.firestoreDocId || payload.invoiceId;
+                    await db.collection('invoices').doc(docId).update({ dropboxPath });
                 } catch (dbxErr) {
                     console.error(`[Dropbox] ❌ Upload failed for ${payload.invoiceId}:`, dbxErr.message);
                 }
