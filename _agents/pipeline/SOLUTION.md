@@ -2,10 +2,8 @@
 
 PHASE: WAITING
 ROUND: 0
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
 DEPLOY_STATUS: OK
-TASK: все задачи выполнены — ожидаю новых задач от Einar/Perplexity
+TASK: все задачи выполнены — ожидаю новых заданий от Perplexity
 
 ## ПОСЛЕДНЕЕ ИСПРАВЛЕНИЕ
 
@@ -25,9 +23,4 @@ checkAndRunFlagTasks() падал → pollLoop()/auditLoop() не запуска
 - node --check: OK
 - Процесс стабилен, 0 новых рестартов
 - REVIEW раунд 0: ПРИНЯТО (ВЕРДИКТ: ПРИНЯТО)
-=======
-TASK: все задачи из BACKLOG выполнены — ожидаю новых
->>>>>>> Stashed changes
-=======
-TASK: все задачи из BACKLOG выполнены — ожидаю новых
->>>>>>> Stashed changes
+- Конфликтные маркеры устранены, ожидаю новых задач
