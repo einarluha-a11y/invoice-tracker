@@ -1,10 +1,10 @@
 # STATUS — Invoice Tracker Pipeline
 
-**Дата:** 2026-04-09 (обновлено 23:00 UTC)
+**Дата:** 2026-04-09 (обновлено 23:30 UTC)
 **Ветка:** main
 **DEPLOY_STATUS:** OK
 **PHASE:** WAITING
-**LAST_TASK:** BUGFIX — crash loop imap_daemon (.catch() fix) — ПРИНЯТО
+**LAST_TASK:** BUGFIX — crash loop imap_daemon (.catch() fix) — задеплоено, BACKLOG исчерпан
 
 ## Текущее состояние системы
 
@@ -54,6 +54,11 @@
 | WAITING ROUND 0 | ПРИНЯТО | Firestore persist для rate limits — выживает Railway рестарты |
 | BUGFIX ROUND 1 | ПРИНЯТО | IMAP rate-limit crash loop устранён (632→0 рестартов) |
 
+## Известные проблемы
+
+### Perplexity pipeline (2026-04-09)
+REVIEW.md содержит ответ где Perplexity отказался выступать ревьюером — ответил как обычный поисковый ассистент. GitHub Actions workflow отправил задание в неправильном контексте. Pipeline временно не работает для автоматических ревью. Ручной надзор от Einar.
+
 ## Следующий шаг
 
-Ожидаем новых задач от Perplexity. Система в стабильном состоянии.
+BACKLOG исчерпан. Ожидаем новых задач от Einar. Система в стабильном состоянии.
