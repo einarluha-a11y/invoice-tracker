@@ -45,6 +45,7 @@
 | WAITING ROUND 1 | ПРИНЯТО | rateLimitUntil персистентность через .rate_limits.json — crash loop невозможен |
 | WAITING ROUND 1 (триггер) | ПРИНЯТО | STATUS.md обновлён, DEPLOY_STATUS: OK, ждём следующего задания |
 | WAITING ROUND 2 | ПРИНЯТО | .rate_limits.json персистентность подтверждена, crash loop невозможен |
+| WAITING ROUND 1 (финал) | ПРИНЯТО | Perplexity подтвердил: in-memory→JSON персистентность и таймауты корректны. Ждём новых задач. |
 
 ## Следующий шаг
 
