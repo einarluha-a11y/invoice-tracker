@@ -2,6 +2,7 @@
 Обновляется автоматически. Perplexity читает при генерации задач.
 
 ## 2026-04-09
+- 2026-04-09 — ✅ SYNC: агент запущен. REVIEW раунд 0 ПРИНЯТО. BUGFIX imap crash loop (Promise .catch fix) закрыт. imap_listener.cjs: убран concurrent gRPC init. PHASE: WAITING. BACKLOG пуст. DEPLOY_STATUS: OK. Ожидаю новых задач от Perplexity.
 - 2026-04-09 — ✅ SYNC: агент запущен (2026-04-09). REVIEW ПРИНЯТО (ВЕРДИКТ: ПРИНЯТО). BUGFIX imap crash loop закрыт. PHASE: WAITING. BACKLOG пуст. DEPLOY_STATUS: OK. Ожидаю новых задач от Einar/Perplexity.
 - 2026-04-09 — ✅ SYNC: агент запущен. REVIEW.md раунд 0 ПРИНЯТО (ВЕРДИКТ: ПРИНЯТО). BACKLOG пуст. PHASE: WAITING. DEPLOY_STATUS: OK. Ожидаю новых задач от Einar/Perplexity.
 
