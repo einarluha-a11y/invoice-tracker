@@ -2,6 +2,7 @@
 Обновляется автоматически. Perplexity читает при генерации задач.
 
 ## 2026-04-09
+- 2026-04-09 22:15 UTC — ✅ SYNC: merge conflicts (SOLUTION.md) разрешены. REVIEW ROUND 2 ПРИНЯТО. PHASE: WAITING. DEPLOY_STATUS: OK. Ожидаю новых задач от Einar.
 - 2026-04-09 — ✅ SYNC: агент запущен. PHASE: WAITING. BACKLOG пуст. imap_listener.cjs: улучшено отображение времени бана (минуты/<1ч). DEPLOY_STATUS: OK. Ожидаю новых задач от Einar/Perplexity.
 
 - 2026-04-09 — ✅ audit-paid --fix: 142 инвойса проверено, 22 reverted (ложные совпадения), 68 Paid без банк. ссылки. PHASE: WAITING. DEPLOY_STATUS: OK.
