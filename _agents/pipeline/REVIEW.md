@@ -1,12 +1,3 @@
-<<<<<<< Updated upstream
-# REVIEW от Perplexity — 2026-04-09 18:48 UTC
-<!-- phase: WAITING | round: 1 -->
-
-ВЕРДИКТ: ПРИНЯТО  
-ОЦЕНКА: Полное описание проблемы с корневыми причинами и конкретными исправлениями в коде. Аудит данных проведён автоматически через repairman_agent. Деплой завершён успешно (DEPLOY_STATUS: OK), коммиты перечислены.  
-ЗАМЕЧАНИЯ:  
-ДАЛЬНЕЙШИЙ ШАГ: Обновить STATUS.md с текущим статусом pipeline и запушить
-=======
 # REVIEW от Perplexity — 2026-04-09 18:49 UTC
 <!-- phase: WAITING | round: 2 -->
 
@@ -17,7 +8,6 @@
 2. Несогласованность ROUND (0/1/2) — установить ROUND: 0, PHASE: WAITING, TASK: все задачи из BACKLOG выполнены — ожидаю новых.  
 3. Добавить дату/время завершения (Thursday, April 09, 2026, 6 PM UTC) и DEPLOY_STATUS: OK в заголовок для аудита.  
 ДАЛЬНЕЙШИЙ ШАГ: Почистить merge conflicts в SOLUTION.md, обновить ROUND/PHASE/TASK, закоммитить/push и обновить STATUS.md.
->>>>>>> Stashed changes
 
 ---
 *Автоматическое ревью через GitHub Actions (.github/workflows/perplexity_review.yml)*
