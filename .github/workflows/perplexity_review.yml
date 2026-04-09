@@ -39,12 +39,28 @@ jobs:
         run: |
           git config user.name "perplexity-bot"
           git config user.email "perplexity-bot@users.noreply.github.com"
+
+          # Pull latest first to minimize conflicts
+          git stash --include-untracked || true
+          git pull --rebase origin main || {
+            echo "Rebase conflict before commit — aborting rebase, retrying with merge"
+            git rebase --abort
+            git pull origin main --no-edit -X ours || true
+          }
+          git stash pop || true
+
           git add _agents/pipeline/REVIEW.md _agents/pipeline/SOLUTION.md
           git diff --staged --quiet && echo "No changes" && exit 0
           PHASE=$(grep -oE '^PHASE:[[:space:]]*[A-Za-z]+' _agents/pipeline/SOLUTION.md | head -1 | awk '{print $2}')
           ROUND=$(grep -oE '^ROUND:[[:space:]]*[0-9]+' _agents/pipeline/SOLUTION.md | head -1 | awk '{print $2}')
           git commit -m "perplexity: review ${PHASE:-unknown} round ${ROUND:-1} + next task"
-          git stash --include-untracked || true
-          git pull --rebase origin main || true
-          git stash pop || true
-          git push origin main || (git pull --rebase origin main && git push origin main)
+
+          # Push with retry — auto-resolve conflicts favoring our version
+          for i in 1 2 3; do
+            git push origin main && break
+            echo "Push attempt $i failed, pulling with ours strategy..."
+            git pull --rebase -X theirs origin main || {
+              git rebase --abort || true
+              git pull origin main --no-edit -X ours || true
+            }
+          done
