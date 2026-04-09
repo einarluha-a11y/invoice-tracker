@@ -1,27 +1,17 @@
 # SOLUTION
 
-PHASE: WAITING
-ROUND: 3
-DEPLOY_STATUS: OK
-TASK: IMAP crash loop полностью устранён — Firestore persist + watchdog delta — ВЫПОЛНЕНО
+PHASE: BUGFIX
+ROUND: 1
+TASK: Watchdog автоматический баг-репорт
 
-## ИСПРАВЛЕНИЯ
+## ОШИБКИ
 
-### imap_listener.cjs
-- "Too many connections" → ban 5 минут (не 2 часа)
-- Rate limits персистированы в Firestore (config/imap_rate_limits) — выживают Railway container restarts
-- loadRateLimitsFromFirestore() экспортирована и вызывается при загрузке модуля
+- **invoice-imap**: Crash loop: 638 restarts. Last error: 2 minutes...
+[31m0|invoice- | [39m[RateLimit] ⏳ Restored 1 active IMAP ban(s) from Firestore on startup.
+[31m0|invoice- | [39m[RateLimit] ⏳ Restored 1 active IMAP ban(s) from Firestore on startup.
 
-### imap_daemon.cjs
-- await loadRateLimitsFromFirestore() ПЕРЕД стартом pollLoop()
+## ЗАДАНИЕ
 
-### watchdog.cjs
-- Delta-check вместо абсолютного порога — тревога только при >=3 новых рестартах за цикл
-- Первый запуск: seed с текущим счётчиком (исключает ложные алерты от старых 632 рестартов)
+Проанализируй ошибки. Найди причину в коде, исправь, node --check, коммит, пуш.
 
-## КОММИТЫ
-
-- 41b73d0 — fix: "Too many connections" ban 5min, no retry
-- 95b32c2 — Firestore persist в imap_listener.cjs
-- 8e7d422 — await loadRateLimitsFromFirestore() в imap_daemon.cjs
-- 52efca0 — module-level load + watchdog delta check
+DEPLOY_STATUS: pending
