@@ -1,6 +1,7 @@
 # SOLUTION
 
 PHASE: WAITING
+<<<<<<< Updated upstream
 ROUND: 1
 DEPLOY_STATUS: OK
 TASK: IMAP crash loop — rate limited — ВЫПОЛНЕНО
@@ -25,3 +26,7 @@ TASK: IMAP crash loop — rate limited — ВЫПОЛНЕНО
 
 - `95b32c2` — Firestore persist в imap_listener.cjs
 - `8e7d422` — await loadRateLimitsFromFirestore() в imap_daemon.cjs перед pollLoop
+=======
+ROUND: 0
+TASK: все задачи из BACKLOG выполнены — ожидаю новых
+>>>>>>> Stashed changes
