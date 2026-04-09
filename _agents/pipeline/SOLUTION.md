@@ -6,7 +6,7 @@ TASK: Watchdog автоматический баг-репорт
 
 ## ОШИБКИ
 
-- **invoice-imap**: Crash loop: 259 restarts. Last error: estore on startup.
+- **invoice-imap**: Crash loop: 263 restarts. Last error: estore on startup.
 [31m6|invoice- | [39mAutomated Invoice Processor Started. Checking every 2 minutes...
 [31m6|invoice- | [39m[RateLimit] ⏳ Restored 1 active IMAP ban(s) from Firestore on startup.
 
