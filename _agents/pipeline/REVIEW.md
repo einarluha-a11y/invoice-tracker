@@ -1,10 +1,10 @@
-# REVIEW от Perplexity — 2026-04-09 18:39 UTC
-<!-- phase: WAITING | round: 0 -->
+# REVIEW от Perplexity — 2026-04-09 18:38 UTC
+<!-- phase: WAITING | round: 1 -->
 
 ВЕРДИКТ: ПРИНЯТО  
-ОЦЕНКА: SOLUTION корректно отражает статус завершения всех задач из BACKLOG и ожидание новых. PHASE: WAITING и DEPLOY_STATUS: OK соответствуют инструкциям проекта. Формат строг и лаконичен, без лишней информации.  
+ОЦЕНКА: Решение точно диагностирует проблему unhandled 'error' event в node-imap, что стандартная причина крашей по поисковым результатам[5][6]. Фиксы (error handler + rateLimitUntil Map + расширенный regex) логичны, per-account изоляция предотвращает каскадные сбои, верификация подтверждает работоспособность. DEPLOY_STATUS: OK соответствует критериям.  
 ЗАМЕЧАНИЯ:  
-ДАЛЬНЕЙШИЙ ШАГ: Обновить STATUS.md с текущим состоянием и push в main для уведомления Einar и Perplexity
+ДАЛЬНЕЙШИЙ ШАГ: Обновить STATUS.md с текущим решением и перейти к следующему TASK из очереди
 
 ---
 *Автоматическое ревью через GitHub Actions (.github/workflows/perplexity_review.yml)*

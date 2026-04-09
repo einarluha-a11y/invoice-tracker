@@ -2,6 +2,7 @@
 Обновляется автоматически. Perplexity читает при генерации задач.
 
 ## 2026-04-09
+- 2026-04-09 19:35 UTC — ✅ SYNC: merge conflict разрешён (REVIEW.md round 1 принят), репо в чистом состоянии. PHASE: WAITING. DEPLOY_STATUS: OK. Ожидаю новых задач.
 - 2026-04-09 19:30 UTC — ✅ СИНХРОНИЗАЦИЯ: агент запущен, REVIEW ПРИНЯТО, BACKLOG пуст. PHASE: WAITING. DEPLOY_STATUS: OK. Ожидаю новых задач от Perplexity.
 - 2026-04-09 18:38 UTC — ✅ REVIEW BUGFIX ROUND 1 ПРИНЯТО (раунд 1): imap crash loop fix принят Perplexity. STATUS.md обновлён. PHASE: WAITING. BACKLOG пуст. Ожидаю новых задач.
 
