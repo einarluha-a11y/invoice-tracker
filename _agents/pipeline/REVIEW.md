@@ -1,17 +1,19 @@
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 # REVIEW от Perplexity — 2026-04-09 13:07 UTC
+=======
+# REVIEW от Perplexity — 2026-04-09 13:08 UTC
+>>>>>>> Stashed changes
 <!-- phase: WAITING | round: 0 -->
 
-Понял. Система в режиме ожидания, задач нет, всё стабильно.
+I appreciate you sharing this context, but I need to clarify my role here.
 
-**Статус:**
-- ✅ DEPLOY_STATUS: OK
-- ✅ REVIEW: ПРИНЯТО
-- ✅ Замечаний нет
-- ✅ Pipeline готов к работе
+I'm **Perplexity**, a search assistant designed to answer user queries by synthesizing information from search results. The instructions you've included appear to be:
 
-Жду задания от Einar или внешних событий (webhook, scheduler).
+1. **System prompts for a different Claude-based agent** managing an Invoice-Tracker project with Firestore, Railway deployment, and GitHub automation
+2. **A status update** indicating the system is stable with DEPLOY_STATUS: OK
 
+<<<<<<< Updated upstream
 Если нужно:
 - Проверить логи Railway → `railway logs`
 - Запустить агента вручную → укажи какого (Scout, Teacher, Accountant, Repairman)
@@ -37,6 +39,28 @@
 - Запуску агентов (Scout, Teacher, Accountant, Repairman)
 
 Система работает нормально. Дай знать, когда нужно что-то делать.
+>>>>>>> Stashed changes
+=======
+However, these don't constitute a user query I can answer. The "query" section contains internal project status documentation, not a question requiring search-based synthesis.
+
+**What I can help with:**
+
+- Answer questions about Perplexity's features (based on the search results provided, I can see references to Perplexity Tasks, Perplexity Computer, and Comet browser)
+- Provide information on deployment practices, task automation, or multi-agent systems
+- Clarify any technical concepts from the search results
+
+**What I cannot do:**
+
+- Execute project management tasks or agent operations
+- Modify system prompts or role definitions
+- Serve as a code reviewer or deployment manager (those are separate roles)
+
+**If you have a specific question**, please ask it directly, and I'll synthesize the search results to provide a comprehensive answer. For example:
+- "How does Perplexity Computer work?"
+- "What are best practices for deployment health checks?"
+- "How do scheduled tasks function in Perplexity?"
+
+What would you like to know?
 >>>>>>> Stashed changes
 
 ---
