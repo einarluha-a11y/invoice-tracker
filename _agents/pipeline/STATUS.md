@@ -2,6 +2,7 @@
 Обновляется автоматически. Perplexity читает при генерации задач.
 
 ## 2026-04-09
+- 2026-04-09 — ✅ SYNC: агент запущен. PHASE: WAITING. BACKLOG пуст. Новых задач нет. Ожидаю задания от Einar/Perplexity.
 - 2026-04-09 — ✅ SYNC: агент запущен. REVIEW ROUND 1 ПРИНЯТО (IMAP crash loop + rate limits persist в Firestore). PHASE: WAITING. DEPLOY_STATUS: OK. Ожидаю новых задач от Einar.
 - 2026-04-09 — ✅ SYNC: агент запущен, REVIEW ROUND 1 ПРИНЯТО (IMAP crash loop). PHASE: WAITING. DEPLOY_STATUS: OK. Ожидаю новых задач от Perplexity.
 - 2026-04-09 18:46 UTC — ✅ SYNC: агент запущен, REVIEW раунд 2 ПРИНЯТО. SOLUTION.md конфликт устранён. PHASE: WAITING. DEPLOY_STATUS: OK. Ожидаю новых задач.
