@@ -1,9 +1,9 @@
 # SOLUTION
 
 PHASE: WAITING
-ROUND: 1
+ROUND: 2
 DEPLOY_STATUS: OK
-TASK: IMAP crash loop — "Too many simultaneous connections" — ВЫПОЛНЕНО
+TASK: IMAP crash loop — rate limits + too-many-connections — ВЫПОЛНЕНО И ПРИНЯТО
 
 ## ПРИЧИНА
 
