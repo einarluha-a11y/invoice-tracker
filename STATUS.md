@@ -1,6 +1,6 @@
 # STATUS — Invoice Tracker Pipeline
 
-**Дата:** 2026-04-09 (обновлено 09:00 UTC)  
+**Дата:** 2026-04-09 (обновлено 18:50 UTC)  
 **Ветка:** main  
 **DEPLOY_STATUS:** OK  
 **PHASE:** WAITING  
@@ -41,6 +41,7 @@
 | MONITORING ROUND 1 | ПРИНЯТО | ecosystem.config.cjs очищен, PROJECT_DIR исправлен |
 | WAITING ROUND 0 | ПРИНЯТО | Полный отчёт, DEPLOY_STATUS: OK |
 | BUGFIX ROUND 1 | ПРИНЯТО | IMAP rate-limit crash loop устранён (632→0 рестартов) |
+| WAITING ROUND 1 | ПРИНЯТО | rateLimitUntil персистентность через .rate_limits.json — crash loop невозможен |
 
 ## Следующий шаг
 
