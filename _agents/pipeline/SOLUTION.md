@@ -2,5 +2,32 @@
 
 PHASE: WAITING
 ROUND: 0
+<<<<<<< Updated upstream
+<<<<<<< Updated upstream
 DEPLOY_STATUS: OK
-TASK: все задачи выполнены — ожидаю новых заданий
+TASK: все задачи выполнены — ожидаю новых заданий от Perplexity
+
+## ПОСЛЕДНЕЕ ИСПРАВЛЕНИЕ
+
+**Симптом**: invoice-imap 683 рестарта, crash без ошибки, только startup-логи.
+
+**Два дефекта (исправлены):**
+
+### 1. Двойной вызов loadRateLimitsFromFirestore() — concurrent gRPC crash
+imap_listener.cjs вызывал его на уровне модуля + явный await в imap_daemon.cjs → параллельный gRPC crash.
+Фикс: module-level вызов удалён из imap_listener.cjs.
+
+### 2. Нет .catch() на startup chain → event loop empty → тихий выход
+checkAndRunFlagTasks() падал → pollLoop()/auditLoop() не запускались → Node завершался → PM2 рестарт → цикл.
+Фикс: .catch(err => ...).then(async () => { pollLoop(); auditLoop(); }) в imap_daemon.cjs.
+
+## РЕЗУЛЬТАТ
+- node --check: OK
+- Процесс стабилен, 0 новых рестартов
+- REVIEW раунд 0: ПРИНЯТО (ВЕРДИКТ: ПРИНЯТО)
+=======
+TASK: все задачи из BACKLOG выполнены — ожидаю новых
+>>>>>>> Stashed changes
+=======
+TASK: все задачи из BACKLOG выполнены — ожидаю новых
+>>>>>>> Stashed changes
