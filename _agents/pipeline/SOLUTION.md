@@ -1,13 +1,33 @@
 # SOLUTION
 
-PHASE: WAITING
-ROUND: 0
-TASK: все задачи из BACKLOG выполнены — ожидаю новых
+PHASE: BUGFIX
+ROUND: 1
+TASK: watchdog крашил на Railway — hardcoded локальный путь PROJECT
+
+## ПРОБЛЕМА
+
+`automation/watchdog.cjs` строка 19:
+```
+const PROJECT = '/Users/einarluha/Downloads/invoice-tracker';
+```
+На Railway этот путь не существует (`/app` вместо него) → watchdog падал сразу при запуске с `ENOENT`.
+
+## ИСПРАВЛЕНИЕ
+
+```js
+const PROJECT = path.resolve(__dirname, '..');
+```
+
+`__dirname` = директория файла (`/app/automation`) → `..` = корень проекта (`/app`). Работает и локально, и на Railway.
+
+## ПРОВЕРКА
+
+- `node --check automation/watchdog.cjs` → OK
+- commit `9bbc7d4`, push в main
 
 ## СТАТУС
 
-- Предыдущий BUGFIX (watchdog таймаут + pipeline heartbeat): ПРИНЯТО Perplexity
-- UI: закоммичены незакоммиченные изменения таблицы (ширина, fixed layout, text truncation)
-- Rebase in progress завершён, ветка main синхронизирована
+- tunnel-manager crash loop (820 рестартов): ожидаемо — cloudflared не установлен на Railway (ENOENT). Это отдельная проблема, не из этого BUGFIX.
+- watchdog теперь не крашит из-за пути
 
 DEPLOY_STATUS: OK
