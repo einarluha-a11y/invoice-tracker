@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, Suspense } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback, Suspense } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Invoice, InvoiceStatus } from '../data/types';
 import { authHeaders } from '../data/api';
@@ -37,6 +37,59 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
     const [viewingPdfUrl, setViewingPdfUrl] = useState<string | null>(null);
     // Repair button state: docId → 'idle' | 'loading' | 'ok' | 'error'
     const [repairState, setRepairState] = useState<Record<string, 'loading' | 'ok' | 'error'>>({});
+
+    // --- Resizable columns ---
+    const STORAGE_KEY = 'invoiceTableColWidths';
+    const defaultWidths = [18, 11.5, 11.5, 11.5, 11.5, 11.5, 11.5, 13]; // vendor...actions
+    const [colWidths, setColWidths] = useState<number[]>(() => {
+        try {
+            const saved = localStorage.getItem(STORAGE_KEY);
+            if (saved) return JSON.parse(saved);
+        } catch {}
+        return defaultWidths;
+    });
+    const tableRef = useRef<HTMLTableElement>(null);
+    const resizingCol = useRef<number | null>(null);
+    const startX = useRef(0);
+    const startWidths = useRef<number[]>([]);
+
+    useEffect(() => {
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(colWidths)); } catch {}
+    }, [colWidths]);
+
+    const onResizeStart = useCallback((colIndex: number, e: React.MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        resizingCol.current = colIndex;
+        startX.current = e.clientX;
+        startWidths.current = [...colWidths];
+
+        const onMouseMove = (ev: MouseEvent) => {
+            if (resizingCol.current === null || !tableRef.current) return;
+            const tableW = tableRef.current.offsetWidth;
+            const deltaPercent = ((ev.clientX - startX.current) / tableW) * 100;
+            const idx = resizingCol.current;
+            const newWidths = [...startWidths.current];
+            const newLeft = newWidths[idx] + deltaPercent;
+            const newRight = newWidths[idx + 1] - deltaPercent;
+            if (newLeft >= 4 && newRight >= 4) {
+                newWidths[idx] = newLeft;
+                newWidths[idx + 1] = newRight;
+                setColWidths(newWidths);
+            }
+        };
+        const onMouseUp = () => {
+            resizingCol.current = null;
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+        };
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+    }, [colWidths]);
 
     const handleRepair = async (invoice: Invoice) => {
         if (repairState[invoice.id] === 'loading') return;
@@ -258,32 +311,42 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                 </button>
             </div>
             <div style={{ width: '100%', overflowX: 'hidden' }}>
-                <table>
+                <table ref={tableRef}>
+                    <colgroup>
+                        {colWidths.map((w, i) => <col key={i} style={{ width: `${w}%` }} />)}
+                    </colgroup>
                     <thead>
                         <tr>
-                            <th onClick={() => handleSort('vendor')} className="col-vendor">
+                            <th onClick={() => handleSort('vendor')}>
                                 <div className="th-content">{t('table.vendor')} <span>{renderSortIcon('vendor')}</span></div>
+                                <div className="col-resize-handle" onMouseDown={(e) => onResizeStart(0, e)} />
                             </th>
-                            <th onClick={() => handleSort('invoiceId')} className="col-mid">
+                            <th onClick={() => handleSort('invoiceId')}>
                                 <div className="th-content">{t('table.invoice_no')} <span>{renderSortIcon('invoiceId')}</span></div>
+                                <div className="col-resize-handle" onMouseDown={(e) => onResizeStart(1, e)} />
                             </th>
-                            <th onClick={() => handleSort('dateCreated')} className="col-mid">
+                            <th onClick={() => handleSort('dateCreated')}>
                                 <div className="th-content">{t('table.created')} <span>{renderSortIcon('dateCreated')}</span></div>
+                                <div className="col-resize-handle" onMouseDown={(e) => onResizeStart(2, e)} />
                             </th>
-                            <th onClick={() => handleSort('dueDate')} className="col-mid">
+                            <th onClick={() => handleSort('dueDate')}>
                                 <div className="th-content">{t('table.dueDate')} <span>{renderSortIcon('dueDate')}</span></div>
+                                <div className="col-resize-handle" onMouseDown={(e) => onResizeStart(3, e)} />
                             </th>
-                            <th onClick={() => handleSort('amount')} className="col-mid">
+                            <th onClick={() => handleSort('amount')}>
                                 <div className="th-content">{t('table.amount')} <span>{renderSortIcon('amount')}</span></div>
+                                <div className="col-resize-handle" onMouseDown={(e) => onResizeStart(4, e)} />
                             </th>
-                            <th onClick={() => handleSort('status')} className="col-mid">
+                            <th onClick={() => handleSort('status')}>
                                 <div className="th-content">{t('table.status')} <span>{renderSortIcon('status')}</span></div>
+                                <div className="col-resize-handle" onMouseDown={(e) => onResizeStart(5, e)} />
                             </th>
-                            <th className="col-mid" style={{ textAlign: 'center' }}>
+                            <th style={{ textAlign: 'center' }}>
                                 <div className="th-content">{t('invoiceDetails.merit')}</div>
+                                <div className="col-resize-handle" onMouseDown={(e) => onResizeStart(6, e)} />
                             </th>
-                            <th className="col-actions">
-                                <div className="th-content">{t('table.actions')}</div>
+                            <th style={{ textAlign: 'right', paddingRight: '1rem' }}>
+                                <div className="th-content" style={{ justifyContent: 'flex-end' }}>{t('table.actions')}</div>
                             </th>
                         </tr>
                     </thead>
