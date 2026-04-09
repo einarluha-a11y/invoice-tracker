@@ -23,7 +23,8 @@ const PERPLEXITY_TIMEOUT = 600000; // 10 min — if DEPLOY_STATUS: OK sits witho
 const STATE_FILE = '/tmp/.watchdog_state';
 const ERROR_COOLDOWN = 600000; // 10 min — don't spam bug reports
 
-const WATCHED_PROCESSES = ['invoice-api', 'invoice-imap', 'pipeline-monitor', 'pipeline-webhook', 'tunnel-manager'];
+// tunnel-manager — local dev only (cloudflared), not watched on Railway
+const WATCHED_PROCESSES = ['invoice-api', 'invoice-imap', 'pipeline-monitor', 'pipeline-webhook'];
 
 function log(msg) {
     console.log(`[${new Date().toISOString().slice(11, 19)}] ${msg}`);
