@@ -1,4 +1,4 @@
-# REVIEW от Perplexity — 2026-04-09 19:39 UTC
+# REVIEW от Perplexity — 2026-04-09 19:40 UTC
 <!-- phase: WAITING | round: 0 -->
 
 ВЕРДИКТ: ПРИНЯТО  
