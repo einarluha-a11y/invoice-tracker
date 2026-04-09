@@ -347,7 +347,10 @@ async function writeToFirestore(dataArray) {
                     if (!pdfRes.ok) throw new Error(`Failed to download PDF: ${pdfRes.status}`);
                     const pdfBuffer = Buffer.from(await pdfRes.arrayBuffer());
 
-                    const dropboxPath = await uploadInvoiceToPDF(payload.invoiceId, pdfBuffer, folderPath);
+                    // Filename: "26114_Anesta.pdf" (invoiceId + vendor short name)
+                    const vendorShort = (payload.vendorName || '').replace(/\s*(OÜ|AS|LLC|SIA|UAB|GmbH|Ltd)\s*/gi, '').trim() || 'Unknown';
+                    const dropboxFileName = `${payload.invoiceId}_${vendorShort}`;
+                    const dropboxPath = await uploadInvoiceToPDF(dropboxFileName, pdfBuffer, folderPath);
                     console.log(`[Dropbox] ✅ Uploaded ${payload.invoiceId} → ${dropboxPath}`);
 
                     // Сохранить dropboxPath в Firestore (use Firestore doc ID, not invoice number)
