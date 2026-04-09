@@ -1,13 +1,14 @@
-# REVIEW от Perplexity — 2026-04-09 18:49 UTC
-<!-- phase: WAITING | round: 2 -->
+# REVIEW от Perplexity — 2026-04-09 19:23 UTC
+<!-- phase: BUGFIX | round: 1 -->
 
 ВЕРДИКТ: ИЗМЕНЕНИЯ_НУЖНЫ  
-ОЦЕНКА: SOLUTION.md содержит полный отчёт об аудите (142 инвойса, 22 reverted, 68 no-bank-link) и фиксах IMAP crash loop с коммитами. Деплой статус OK, задачи из BACKLOG выполнены.  
+ОЦЕНКА: Формат SOLUTION.md соответствует структуре, PHASE и TASK заданы четко. Логи ошибки выделены правильно с указанием crash loop и RateLimit.  
 ЗАМЕЧАНИЯ:  
-1. Файл в состоянии merge conflict (<<<<<<< HEAD/=======/>>>>>>>), нужно `git merge --abort` или вручную почистить до чистого состояния.  
-2. Несогласованность ROUND (0/1/2) — установить ROUND: 0, PHASE: WAITING, TASK: все задачи из BACKLOG выполнены — ожидаю новых.  
-3. Добавить дату/время завершения (Thursday, April 09, 2026, 6 PM UTC) и DEPLOY_STATUS: OK в заголовок для аудита.  
-ДАЛЬНЕЙШИЙ ШАГ: Почистить merge conflicts в SOLUTION.md, обновить ROUND/PHASE/TASK, закоммитить/push и обновить STATUS.md.
+1. Нет анализа причины: лог показывает восстановление **1 активного IMAP-бана** из Firestore на каждом запуске — это блокирует соединение и вызывает рестарт.  
+2. Нет плана исправления: нужно найти код rate-limit восстановления (вероятно в `invoice-imap`), добавить проверку expiration банов или логику их авто-снятия.  
+3. Отсутствует код для анализа/исправления, node --check, commit/push — SOLUTION должен содержать полное решение.  
+4. DEPLOY_STATUS: pending без шагов деплоя.  
+ДАЛЬНЕЙШИЙ ШАГ: Claude должен проанализировать код invoice-imap (grep RateLimit/Firestore), найти/исправить восстановление expired банов, протестировать node --check и обновить SOLUTION.md с кодом.
 
 ---
 *Автоматическое ревью через GitHub Actions (.github/workflows/perplexity_review.yml)*
