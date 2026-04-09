@@ -92,8 +92,11 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
     const accountKey = imapConfig.user || companyId;
     const banUntil = rateLimitUntil.get(accountKey);
     if (banUntil && Date.now() < banUntil) {
-        const remainingHours = Math.ceil((banUntil - Date.now()) / 3600000);
-        if (DEBUG) console.log(`[Email] Skipping ${companyName} — rate limited for ~${remainingHours}h more`);
+        const remainingMs = banUntil - Date.now();
+        const remainingStr = remainingMs < 3600000
+            ? `~${Math.ceil(remainingMs / 60000)}min`
+            : `~${Math.ceil(remainingMs / 3600000)}h`;
+        if (DEBUG) console.log(`[Email] Skipping ${companyName} — ban active for ${remainingStr} more`);
         return;
     }
 
