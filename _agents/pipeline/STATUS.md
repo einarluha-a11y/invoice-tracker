@@ -141,3 +141,4 @@ webhook-test 17:10:00
 - 2026-04-09 18:45 UTC — ✅ SYNC: merge conflicts (SOLUTION.md + STATUS.md) разрешены. PHASE: WAITING. DEPLOY_STATUS: OK. Ожидаю новых задач от Perplexity.
 - 2026-04-09 — ✅ SYNC: агент запущен. PHASE: WAITING. BACKLOG пуст. DEPLOY_STATUS: OK. Ожидаю новых задач от Einar/Perplexity.
 - 2026-04-09 — ✅ SYNC: агент запущен. PHASE: WAITING. DEPLOY_STATUS: OK.
+- 2026-04-09 — ✅ SYNC: git конфликты (nested markers) устранены в SOLUTION.md + REVIEW.md. Перепись чистых версий + push. PHASE: WAITING. DEPLOY_STATUS: OK. Ожидаю новых задач от Einar/Perplexity.
