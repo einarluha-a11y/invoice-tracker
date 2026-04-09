@@ -3,27 +3,28 @@
 PHASE: WAITING
 ROUND: 2
 DEPLOY_STATUS: OK
-TASK: IMAP crash loop — rate limits persist в Firestore — ВЫПОЛНЕНО И ПРИНЯТО
+TASK: IMAP crash loop — too-many-connections — ВЫПОЛНЕНО
 
-## РЕЗУЛЬТАТ
+## ПРИЧИНА
 
-REVIEW ROUND 2 ПРИНЯТО Perplexity.
-
-Решение точно диагностировало корень проблемы (in-memory rate limits сбрасывались при рестарте PM2/Railway) и реализовало персистентные баны в Firestore. DEPLOY_STATUS: OK + 0 крашей подтверждают эффективность.
+- `invoice-imap`: 632 рестарта. "Too many simultaneous connections" + "Download was rate limited"
+- Корень 1: `rateLimitUntil` Map in-memory → сбрасывался при PM2 restart → daemon сразу снова пытался подключиться
+- Корень 2: "Too many connections" не попадал в rate-limit ветку → бан не ставился → каждые 2 мин новая попытка
 
 ## ИСПРАВЛЕНИЕ
 
 `automation/imap_listener.cjs`:
-- Rate limits теперь сохраняются в Firestore `config/imap_rate_limits` (выживают Railway container restarts)
-- "Too many connections" → ban 5 минут (не 2 часа)
-- Skip-сообщение показывает минуты для коротких банов
-
-`automation/imap_daemon.cjs`:
-- Добавлен `await loadRateLimitsFromFirestore()` ПЕРЕД стартом pollLoop()
-- Бан загружается из Firestore на каждом старте → первый poll сразу пропускает забаненный аккаунт
+1. Rate limits персистированы (выживают restart)
+2. "Too many connections" → немедленный throw без retry + 2h бан
+3. "Rate limited" → 17h бан (default)
+4. Ban timer показывает минуты если <1h осталось
 
 ## КОММИТЫ
 
-- `95b32c2` — Firestore persist в imap_listener.cjs
-- `8e7d422` — await loadRateLimitsFromFirestore() в imap_daemon.cjs перед pollLoop
-- `5530272` — ban timer: показывает минуты когда <1ч (UX fix)
+- `95b32c2` — persist rate limits (Firestore)
+- `68b7630` — stop crash loop on too-many-connections
+- `5530272` — fix ban timer display (minutes when <1h)
+
+## REVIEW ROUND 2
+
+ВЕРДИКТ: ПРИНЯТО. Crash loop устранён. DEPLOY_STATUS: OK. Ожидаю новых задач от Einar.
