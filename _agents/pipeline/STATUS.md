@@ -3,6 +3,7 @@
 
 ## 2026-04-09
 
+- 2026-04-09 — ✅ PHASE: WAITING — Agente запущен, задач нет. REVIEW раунд 0 принято. BACKLOG пуст. DEPLOY_STATUS: OK. Ожидаю новых задач от Perplexity.
 - 2026-04-09 — ✅ PHASE: WAITING — REVIEW раунд 0 принято (ВЕРДИКТ: ПРИНЯТО), STATUS.md обновлён. BACKLOG пуст. DEPLOY_STATUS: OK. Ожидаю новых задач от Perplexity.
 - 2026-04-09 13:05 UTC — ✅ MONITORING ФИНАЛ: все процессы стабильны (invoice-api, invoice-imap, pipeline-monitor, pipeline-webhook, watchdog). tunnel-manager изолирован. Ложных алертов нет. PHASE→WAITING. DEPLOY_STATUS: OK.
 - 2026-04-09 — ✅ REVIEW MONITORING ROUND 1 ПРИНЯТО: watchdog стабилен, tunnel-manager изолирован. BACKLOG пуст. PHASE→WAITING. DEPLOY_STATUS: OK.
