@@ -15,11 +15,14 @@ TASK: tunnel-manager crash loop полностью устранён
 - **pipeline-webhook**: `PROJECT_DIR` хардкод заменён на `process.env.PROJECT_DIR || path.resolve(__dirname)`
 - commit: d270509
 
-## RAILWAY СТАТУС (12:56+ UTC)
+## RAILWAY СТАТУС (2026-04-09)
 
 - watchdog: `Monitoring: invoice-api, invoice-imap, pipeline-monitor, pipeline-webhook` ✅
-- Первая проверка прошла SILENT (ошибок нет) ✅
-- После следующего деплоя tunnel-manager исчезнет из PM2 полностью
+- Запуск 12:58:26 UTC — все 5 процессов online (включая watchdog:5)
+- Первая проверка SILENT — ошибок нет, действий нет ✅
+- tunnel-manager продолжает crash loop (cloudflared ENOENT) — watchdog игнорирует ✅
+- Основные процессы (invoice-api, invoice-imap, pipeline-monitor, pipeline-webhook) стабильны ✅
+- Ложных bug report нет — мониторинг 2026-04-09 подтверждён ✅
 
 ## ИСТОРИЯ
 
