@@ -261,28 +261,28 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                 <table>
                     <thead>
                         <tr>
-                            <th onClick={() => handleSort('vendor')} style={{ width: '19%' }}>
+                            <th onClick={() => handleSort('vendor')} style={{ width: '16%' }}>
                                 <div className="th-content">{t('table.vendor')} <span>{renderSortIcon('vendor')}</span></div>
                             </th>
-                            <th onClick={() => handleSort('invoiceId')} style={{ width: '12%' }}>
+                            <th onClick={() => handleSort('invoiceId')} style={{ width: '11%' }}>
                                 <div className="th-content">{t('table.invoice_no')} <span>{renderSortIcon('invoiceId')}</span></div>
                             </th>
-                            <th onClick={() => handleSort('dateCreated')} style={{ width: '10%' }}>
+                            <th onClick={() => handleSort('dateCreated')} style={{ width: '9%' }}>
                                 <div className="th-content">{t('table.created')} <span>{renderSortIcon('dateCreated')}</span></div>
                             </th>
-                            <th onClick={() => handleSort('dueDate')} style={{ width: '11%' }}>
+                            <th onClick={() => handleSort('dueDate')} style={{ width: '9%' }}>
                                 <div className="th-content">{t('table.dueDate')} <span>{renderSortIcon('dueDate')}</span></div>
                             </th>
-                            <th onClick={() => handleSort('amount')} style={{ width: '17%' }}>
+                            <th onClick={() => handleSort('amount')} style={{ width: '15%' }}>
                                 <div className="th-content">{t('table.amount')} <span>{renderSortIcon('amount')}</span></div>
                             </th>
-                            <th onClick={() => handleSort('status')} style={{ width: '8%' }}>
+                            <th onClick={() => handleSort('status')} style={{ width: '11%' }}>
                                 <div className="th-content">{t('table.status')} <span>{renderSortIcon('status')}</span></div>
                             </th>
-                            <th style={{ width: '5%', textAlign: 'center' }}>
+                            <th style={{ width: '6%', textAlign: 'center' }}>
                                 <div className="th-content">{t('invoiceDetails.merit')}</div>
                             </th>
-                            <th style={{ width: '18%' }}>
+                            <th style={{ width: '23%' }}>
                                 <div className="th-content">{t('table.actions')}</div>
                             </th>
                         </tr>
