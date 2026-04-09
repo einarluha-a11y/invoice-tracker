@@ -1,21 +1,18 @@
 # SOLUTION
 
-PHASE: WAITING
-ROUND: 0
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-TASK: агент запущен, задач нет, DEPLOY_STATUS: OK
+PHASE: BUGFIX
+ROUND: 1
+TASK: Watchdog автоматический баг-репорт
 
-DEPLOY_STATUS: OK
+## ОШИБКИ
 
-## Статус системы
-- REVIEW от Perplexity: ПРИНЯТО
-- Замечаний нет
-- Система стабильна
-- Последняя проверка: 2026-04-09 17:30 EEST
-=======
-TASK: все задачи из BACKLOG выполнены — ожидаю новых
->>>>>>> Stashed changes
-=======
-TASK: все задачи из BACKLOG выполнены — ожидаю новых
->>>>>>> Stashed changes
+- **invoice-imap**: Crash loop: 632 restarts. Last error: AIL',
+[31m0|invoice- | [39m  source: 'protocol'
+[31m0|invoice- | [39m}
+[31m0|invoice- | [39m[ErrorReporter] 🚨 IMAP_ERROR: invoices@ideacom.ee — Download was rate limited. Try again in 16 hours.
+
+## ЗАДАНИЕ
+
+Проанализируй ошибки. Найди причину в коде, исправь, node --check, коммит, пуш.
+
+DEPLOY_STATUS: pending
