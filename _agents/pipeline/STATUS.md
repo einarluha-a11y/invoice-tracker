@@ -2,6 +2,9 @@
 Обновляется автоматически. Perplexity читает при генерации задач.
 
 ## 2026-04-09
+- 2026-04-09 — ✅ SYNC: агент запущен. REVIEW.md раунд 0 ПРИНЯТО (ВЕРДИКТ: ПРИНЯТО). BACKLOG пуст. PHASE: WAITING. DEPLOY_STATUS: OK. Ожидаю новых задач от Einar/Perplexity.
+
+
 - 2026-04-09 — ✅ SYNC: REVIEW ПРИНЯТО (ВЕРДИКТ: ПРИНЯТО). feat(table): resizable columns добавлены в InvoiceTable.tsx — ширины через localStorage, drag-to-resize. Build OK. BACKLOG пуст. PHASE: WAITING. DEPLOY_STATUS: OK.
 - 2026-04-09 — ✅ SYNC: агент запущен. PHASE: WAITING. BACKLOG пуст. DEPLOY_STATUS: OK. Ожидаю новых задач от Einar/Perplexity.
 
