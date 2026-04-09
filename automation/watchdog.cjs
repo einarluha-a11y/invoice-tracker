@@ -126,11 +126,23 @@ function check() {
             log(`⚠️ ${name} not found in PM2 — starting`);
             try {
                 execSync(`cd ${PROJECT} && pm2 start ecosystem.config.cjs --only ${name}`, {
-                    timeout: 15000, stdio: 'pipe'
+                    timeout: 45000, stdio: 'pipe'
                 });
                 actions.push(`Started missing ${name}`);
             } catch {
-                errors.push({ process: name, error: 'Not found and failed to start' });
+                // Timeout doesn't mean failure — pm2 start can take 20-30s for heavy processes.
+                // Verify if the process actually appeared before reporting error.
+                let started = false;
+                try {
+                    const checkJson = execSync('pm2 jlist', { encoding: 'utf-8', timeout: 10000 });
+                    const checkProcs = JSON.parse(checkJson);
+                    started = checkProcs.some(p => p.name === name);
+                } catch { /* ignore */ }
+                if (started) {
+                    actions.push(`Started missing ${name} (slow start)`);
+                } else {
+                    errors.push({ process: name, error: 'Not found and failed to start' });
+                }
             }
             continue;
         }

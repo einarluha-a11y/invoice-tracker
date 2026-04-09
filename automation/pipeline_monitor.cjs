@@ -353,4 +353,6 @@ if (!readState(STATE_REV)) {
 
 setInterval(pollOnce, POLL_INTERVAL);
 setInterval(pollErrors, ERROR_INTERVAL);
+// Heartbeat every 5 min — prevents watchdog "hung" false positive
+setInterval(() => log('💓 idle'), 300000);
 pollOnce();
