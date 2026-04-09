@@ -71,13 +71,27 @@ td.amount {
     text-overflow: unset;
 }
 
-/* === Column widths: even distribution === */
-/* Left anchor: vendor gets more space for company name + KMKR + Rg-kood */
-.col-vendor { width: 18%; }
-/* Middle 6 columns: equal width, evenly spaced */
-.col-mid { width: 11.5%; }
-/* Right anchor: actions get remaining space */
-.col-actions { width: 13%; }
+/* === Resizable column handles === */
+th {
+    position: relative;
+}
+
+.col-resize-handle {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 6px;
+    cursor: col-resize;
+    z-index: 1;
+    background: transparent;
+    transition: background-color 0.15s;
+}
+
+.col-resize-handle:hover,
+.col-resize-handle:active {
+    background-color: var(--accent-color, #58a6ff);
+}
 
 tr:last-child td {
     border-bottom: none;
