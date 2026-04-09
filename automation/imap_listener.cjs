@@ -87,8 +87,12 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
                 connection = await imaps.connect(config);
                 break;
             } catch (connErr) {
-                const isRateLimit = /rate.limit|too many|429|login.wait|Download was rate limited/i.test(connErr.message || '');
-                if (isRateLimit && attempt < MAX_IMAP_ATTEMPTS) {
+                const isTooManyConns = /too many simultaneous|too many connections/i.test(connErr.message || '');
+                const isRateLimit = /rate.limit|429|login.wait|Download was rate limited/i.test(connErr.message || '');
+                if (isTooManyConns) {
+                    // Don't retry — more connection attempts make it worse. Fall through to outer catch which sets ban.
+                    throw connErr;
+                } else if (isRateLimit && attempt < MAX_IMAP_ATTEMPTS) {
                     const waitSec = attempt * 60; // 60s, 120s
                     console.warn(`[Email] ⚠️  IMAP rate limited for ${companyName} (attempt ${attempt}). Waiting ${waitSec}s...`);
                     await new Promise(r => setTimeout(r, waitSec * 1000));
@@ -514,10 +518,11 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
         // If server says "rate limited / Try again in X hours" — record ban expiry in Map.
         // Do NOT sleep here — that blocks all other companies. Instead, checkEmailForInvoices
         // will skip this account on the next poll cycle until the ban expires.
-        const isRateLimit = /rate.limit|Download was rate limited|try again in/i.test(error?.message || '');
+        const isRateLimit = /rate.limit|Download was rate limited|try again in|too many/i.test(error?.message || '');
         if (isRateLimit) {
             const hoursMatch = /try again in (\d+)\s*hour/i.exec(error?.message || '');
-            const banHours = hoursMatch ? parseInt(hoursMatch[1], 10) + 1 : 17; // default 17h if not specified
+            const isTooManyConns = /too many/i.test(error?.message || '');
+            const banHours = hoursMatch ? parseInt(hoursMatch[1], 10) + 1 : (isTooManyConns ? 2 : 17); // 2h for "too many connections", 17h default
             const banExpiry = Date.now() + banHours * 60 * 60 * 1000;
             rateLimitUntil.set(accountKey, banExpiry);
             _saveRateLimits();
