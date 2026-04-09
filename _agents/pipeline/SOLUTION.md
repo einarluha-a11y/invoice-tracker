@@ -1,11 +1,9 @@
 # SOLUTION
 
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-PHASE: BUGFIX
+PHASE: WAITING
 ROUND: 1
 DEPLOY_STATUS: OK
-TASK: IMAP crash loop — too-many-connections
+TASK: IMAP crash loop — too-many-connections — ВЫПОЛНЕНО
 
 ## ПРИЧИНА
 
@@ -20,18 +18,9 @@ TASK: IMAP crash loop — too-many-connections
 - `isTooManyConns` проверка в inner loop: при "too many connections" сразу `throw` без retry
 - Outer catch pattern расширен: добавлен `|too many`
 - Ban duration: 2h для "too many" (был: 0), 17h default для других
-- `_saveRateLimits()` уже вызывался в обоих местах (не было багом)
+- rate limits персистированы в `.rate_limits.json` — выживают после PM2 restart
 
-## КОММИТ
+## КОММИТЫ
 
+`b703a72` — fix: persist IMAP rate limits to disk — prevent crash loop on PM2 restart
 `68b7630` — fix(imap): stop crash loop on too-many-connections
-=======
-PHASE: WAITING
-ROUND: 0
-TASK: все задачи из BACKLOG выполнены — ожидаю новых
->>>>>>> Stashed changes
-=======
-PHASE: WAITING
-ROUND: 0
-TASK: все задачи из BACKLOG выполнены — ожидаю новых
->>>>>>> Stashed changes

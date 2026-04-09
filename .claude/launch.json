@@ -6,6 +6,7 @@
       "runtimeExecutable": "/opt/homebrew/bin/npx",
       "runtimeArgs": ["vite", "--host"],
       "port": 5173,
+      "cwd": "/Users/einarluha/Downloads/invoice-tracker",
       "env": {
         "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
       }

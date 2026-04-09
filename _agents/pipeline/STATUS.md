@@ -2,27 +2,9 @@
 Обновляется автоматически. Perplexity читает при генерации задач.
 
 ## 2026-04-09
-- 2026-04-09 — ✅ SYNC: агент запущен, REVIEW раунд 2 ПРИНЯТО, PHASE: WAITING. BACKLOG пуст. DEPLOY_STATUS: OK. Ожидаю новых задач от Einar/Perplexity.
-- 2026-04-09 19:05 UTC — ✅ SYNC: watchdog bugfix раунд 1 выполнен. fix(imap): too-many-connections выделен в отдельную ветку с 2h баном, crash loop устранён. DEPLOY_STATUS: OK. PHASE: WAITING.
-- 2026-04-09 18:44 UTC — ✅ SYNC: REVIEW.md conflict markers разрешены (round 2 ПРИНЯТО). SOLUTION.md DEPLOY_STATUS: OK. PHASE: WAITING. Ожидаю новых задач.
-- 2026-04-09 23:15 UTC — ✅ SYNC: агент запущен, REVIEW раунд 2 ПРИНЯТО, REVIEW.md конфликт устранён. PHASE: WAITING, DEPLOY_STATUS: OK. Ожидаю новых задач от Einar/Perplexity.
-- 2026-04-09 23:00 UTC — ✅ SYNC: агент запущен, SOLUTION.md PHASE: WAITING, BACKLOG пуст. DEPLOY_STATUS: OK. Ожидаю новых задач от Perplexity.
-- 2026-04-09 22:45 UTC — ✅ SYNC: конфликт REVIEW.md разрешён (ПРИНЯТО раунд 1). PHASE: WAITING, DEPLOY_STATUS: OK. Ожидаю новых задач.
-- 2026-04-09 22:30 UTC — ✅ SYNC: конфликт REVIEW.md/SOLUTION.md разрешён. IMAP fix в коде (rateLimitUntil persist). PHASE: WAITING, DEPLOY_STATUS: OK. Ожидаю новых задач.
-- 2026-04-09 22:15 UTC — ✅ SYNC: агент запущен, REVIEW раунд 1 ПРИНЯТО (ВЕРДИКТ: ПРИНЯТО), BACKLOG пуст. PHASE: WAITING. DEPLOY_STATUS: OK. Ожидаю новых задач от Einar/Perplexity.
-- 2026-04-09 22:00 UTC — ✅ SYNC: агент запущен, REVIEW раунд 1 ПРИНЯТО, BACKLOG пуст. PHASE: WAITING. DEPLOY_STATUS: OK. Ожидаю новых задач от Einar/Perplexity.
-- 2026-04-09 21:30 UTC — ✅ SYNC: агент запущен, PHASE: WAITING ROUND 1, REVIEW ПРИНЯТО, BACKLOG пуст. DEPLOY_STATUS: OK. Ожидаю новых задач от Perplexity.
-- 2026-04-09 21:10 UTC — ✅ SYNC: агент запущен, REVIEW раунд 1 ПРИНЯТО, BACKLOG пуст. PHASE: WAITING. DEPLOY_STATUS: OK. Ожидаю новых задач от Perplexity.
-- 2026-04-09 20:30 UTC — ✅ SYNC: агент запущен, REVIEW.md merge conflict устранён (раунд 0+1 ПРИНЯТО), PHASE: WAITING, DEPLOY_STATUS: OK. Ожидаю новых задач от Perplexity.
-- 2026-04-09 20:05 UTC — ✅ SYNC: агент запущен, REVIEW.md conflict разрешён (раунд 1 принят), PHASE: WAITING, DEPLOY_STATUS: OK. Ожидаю новых задач.
-- 2026-04-09 18:39 UTC — ✅ PHASE: WAITING ROUND:1 — REVIEW ПРИНЯТО, conflict markers исправлены. DEPLOY_STATUS: OK. Ожидаю новых задач от Perplexity.
-- 2026-04-09 19:50 UTC — ✅ SYNC: агент запущен, REVIEW принято (раунд 0), BACKLOG пуст. PHASE: WAITING. DEPLOY_STATUS: OK. Ожидаю новых задач от Perplexity.
-- 2026-04-09 19:35 UTC — ✅ SYNC: merge conflict разрешён (REVIEW.md round 1 принят), репо в чистом состоянии. PHASE: WAITING. DEPLOY_STATUS: OK. Ожидаю новых задач.
-- 2026-04-09 19:30 UTC — ✅ СИНХРОНИЗАЦИЯ: агент запущен, REVIEW ПРИНЯТО, BACKLOG пуст. PHASE: WAITING. DEPLOY_STATUS: OK. Ожидаю новых задач от Perplexity.
-- 2026-04-09 18:38 UTC — ✅ REVIEW BUGFIX ROUND 1 ПРИНЯТО (раунд 1): imap crash loop fix принят Perplexity. STATUS.md обновлён. PHASE: WAITING. BACKLOG пуст. Ожидаю новых задач.
+- 2026-04-09 — ✅ SYNC: агент запущен, REVIEW раунд 2 ПРИНЯТО. PHASE: WAITING. BACKLOG пуст. DEPLOY_STATUS: OK. Ожидаю новых задач.
 
-- 2026-04-09 18:50 UTC — ✅ REVIEW BUGFIX ROUND 1 ПРИНЯТО (повторная синхронизация): imap crash loop fix верифицирован. STATUS.md обновлён. PHASE: WAITING. BACKLOG пуст. DEPLOY_STATUS: OK. Ожидаю новых задач от Perplexity.
-- 2026-04-09 — ✅ REVIEW BUGFIX ROUND 1 ПРИНЯТО: imap rate-limit crash loop исправлен (error handler + per-account rate-limit tracking). DEPLOY_STATUS: OK. BACKLOG пуст. PHASE→WAITING. Ожидаю новых задач от Perplexity.
+- 2026-04-09 18:50 UTC — ✅ BUGFIX ROUND 1 ПРИНЯТО: IMAP rate-limit crash fix (error handler + per-account backoff). BACKLOG пуст. PHASE→WAITING. DEPLOY_STATUS: OK. Ожидаю новых задач от Perplexity.
 - 2026-04-09 — ✅ PHASE: WAITING — Агент запущен, REVIEW принято, BACKLOG пуст. DEPLOY_STATUS: OK. Ожидаю новых задач от Perplexity.
 - 2026-04-09 — ✅ PHASE: WAITING — Agente запущен, задач нет. REVIEW раунд 0 принято. BACKLOG пуст. DEPLOY_STATUS: OK. Ожидаю новых задач от Perplexity.
 - 2026-04-09 — ✅ PHASE: WAITING — REVIEW раунд 0 принято (ВЕРДИКТ: ПРИНЯТО), STATUS.md обновлён. BACKLOG пуст. DEPLOY_STATUS: OK. Ожидаю новых задач от Perplexity.
@@ -114,3 +96,5 @@ webhook-test 17:10:00
 - 2026-04-08 — ✅ TASK-24 APPROVED Perplexity. PHASE→WAITING. BACKLOG пуст. Ожидаю новых задач.
 - 2026-04-08 — ✅ Верификация: TASK-24 ✅ code present (src/App.tsx:184-464), build OK, SOLUTION.md DEPLOY_STATUS:OK — статус финальный, ожидаю новых задач от Perplexity.
 - 2026-04-09 17:20 EEST — ✅ PHASE: WAITING — merge conflict в SOLUTION.md исправлен. BACKLOG пуст. DEPLOY_STATUS: OK. Ожидаю новых задач от Perplexity.
+- 2026-04-09 18:45 UTC — ✅ SYNC: merge conflicts (SOLUTION.md + STATUS.md) разрешены. PHASE: WAITING. DEPLOY_STATUS: OK. Ожидаю новых задач от Perplexity.
+- 2026-04-09 18:45 UTC — ✅ SYNC: merge conflicts (SOLUTION.md + STATUS.md) разрешены. PHASE: WAITING. DEPLOY_STATUS: OK. Ожидаю новых задач от Perplexity.
