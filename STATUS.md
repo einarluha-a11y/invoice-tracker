@@ -1,10 +1,6 @@
 # STATUS — Invoice Tracker Pipeline
 
-<<<<<<< Updated upstream
-**Дата:** 2026-04-10 (обновлено 2026-04-10T14:30:00Z — Claude agent sync v33)
-=======
-**Дата:** 2026-04-10 (обновлено 2026-04-10T13:30:00Z — Claude agent sync v34)
->>>>>>> Stashed changes
+**Дата:** 2026-04-10 (обновлено 2026-04-10T14:30:00Z — Claude agent sync v34)
 **Ветка:** main
 **DEPLOY_STATUS:** OK
 **PHASE:** WAITING
@@ -21,15 +17,15 @@
 
 ## Последние изменения (2026-04-10 UTC)
 
+### AGENT_SYNC 2026-04-10 UTC (sync v34)
+- 2026-04-10 14:30: REVIEW ПРИНЯТО (WAITING ROUND 1) — подтверждено Perplexity
+- SOLUTION.md: PHASE WAITING, 0 задач в backlog
+- PHASE: WAITING, DEPLOY_STATUS: OK
+
 ### AGENT_SYNC 2026-04-10 UTC (sync v33)
-<<<<<<< Updated upstream
 - WAITING: нет новых задач, система стабильна
 - REVIEW от Perplexity: ПРИНЯТО (audit-paid 141 проверено, 0 ложных матчей)
 - STATUS.md синхронизирован по запросу REVIEW
-=======
-- 2026-04-10 13:12: WAITING phase confirmed, no tasks
-- REVIEW Perplexity: ИЗМЕНЕНИЯ_НУЖНЫ → LAST_SYNC обновлён, STATUS.md дополнен
->>>>>>> Stashed changes
 - PHASE: WAITING, DEPLOY_STATUS: OK
 
 ### AGENT_SYNC 2026-04-10 UTC (sync v28)
@@ -68,6 +64,7 @@
 
 | Round | Статус | Комментарий |
 |-------|--------|-------------|
+| WAITING ROUND 1 | ПРИНЯТО | Audit Paid: 141 проверено, 0 ложных матчей, 84 легаси |
 | Audit Paid (0 ложных матчей) | ПРИНЯТО | 136 проверено, 0 reverted, 82 легаси без bank link |
 | BUGFIX ROUND 5 (false timeout race condition) | ПРИНЯТО | Флаг `_firestoreResolved` + таймаут 15s→30s, commit b6f69cb |
 | BUGFIX ROUND 4 (preferRest:true) | ПРИНЯТО | Firestore REST API вместо gRPC: cold start 8-12s→1-2s, commit f22935e |
@@ -75,7 +72,6 @@
 | BUGFIX ROUND 1 (imap safe err.message) | ПРИНЯТО | Точный анализ crash loop, non-Error rejection fix, commit 906b338 |
 | BUGFIX ROUND 2 (watchdog false alarm) | ПРИНЯТО | Полный анализ хронологии, первопричины и ложной тревоги подтверждён |
 | WAITING ROUND 0 (финал) | ПРИНЯТО | Merge conflicts устранены, файлы очищены |
-| WAITING ROUND 1 | ПРИНЯТО | "Too many connections" ban 5min, no retry — корректно |
 | WAITING ROUND 0 | ПРИНЯТО | Firestore persist для rate limits — выживает Railway рестарты |
 | BUGFIX ROUND 1 | ПРИНЯТО | IMAP rate-limit crash loop устранён (632→0 рестартов) |
 
