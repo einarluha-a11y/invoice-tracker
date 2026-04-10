@@ -14,4 +14,14 @@ TASK: Watchdog автоматический баг-репорт
 
 Проанализируй ошибки. Найди причину в коде, исправь, node --check, коммит, пуш.
 
-DEPLOY_STATUS: pending
+## АНАЛИЗ И РЕШЕНИЕ
+
+**Корневая причина**: Watchdog (PID запущен 9 апреля) работал со старым кодом (`if (restarts > 50)` — абсолютный порог). invoice-imap имел 193 рестарта → watchdog спамил bug report каждые 2 мин → pipeline-monitor запускал Claude → деплой добавлял рестарт → цикл.
+
+**Фикс**: Watchdog перезапущен через PM2 с новым delta-based кодом (`delta >= 3` за последний цикл). Теперь не алертит на исторические рестарты.
+
+**IMAP crash**: Event loop drain при всех забаненных аккаунтах. Уже исправлен keepalive `setInterval(() => {}, 5000)` в imap_daemon.cjs.
+
+**Текущее состояние**: invoice-imap стабилен (207 рестартов, >90s uptime). Watchdog работает в PM2.
+
+DEPLOY_STATUS: OK
