@@ -1,6 +1,10 @@
 # STATUS — Invoice Tracker Pipeline
 
+<<<<<<< Updated upstream
 **Дата:** 2026-04-10 (обновлено 2026-04-10T14:30:00Z — Claude agent sync v33)
+=======
+**Дата:** 2026-04-10 (обновлено 2026-04-10T13:30:00Z — Claude agent sync v34)
+>>>>>>> Stashed changes
 **Ветка:** main
 **DEPLOY_STATUS:** OK
 **PHASE:** WAITING
@@ -18,9 +22,14 @@
 ## Последние изменения (2026-04-10 UTC)
 
 ### AGENT_SYNC 2026-04-10 UTC (sync v33)
+<<<<<<< Updated upstream
 - WAITING: нет новых задач, система стабильна
 - REVIEW от Perplexity: ПРИНЯТО (audit-paid 141 проверено, 0 ложных матчей)
 - STATUS.md синхронизирован по запросу REVIEW
+=======
+- 2026-04-10 13:12: WAITING phase confirmed, no tasks
+- REVIEW Perplexity: ИЗМЕНЕНИЯ_НУЖНЫ → LAST_SYNC обновлён, STATUS.md дополнен
+>>>>>>> Stashed changes
 - PHASE: WAITING, DEPLOY_STATUS: OK
 
 ### AGENT_SYNC 2026-04-10 UTC (sync v28)

@@ -50,13 +50,12 @@ async function reportError(errorCode, context, err) {
         console.error('[ErrorReporter] Failed to write error log:', logErr.message);
     }
 
-    // Attempt to broadcast securely to the Firestore UI dashboard
-    // TTL: keep only the most recent MAX_SYSTEM_LOG_ENTRIES entries (oldest deleted on write)
-    const MAX_SYSTEM_LOG_ENTRIES = 200;
-    try {
-        if (db) {
+    // Attempt to broadcast securely to the Firestore UI dashboard.
+    // Two separate try/catch blocks so cleanup errors NEVER trigger the Dead-Man Switch.
+    if (db) {
+        // Step 1: Write the log entry. Failure here = real Dead-Man Switch (Firestore offline).
+        try {
             const logsRef = db.collection('system_logs');
-            // Truncate message to avoid oversized documents (Firestore 1 MiB doc limit)
             const safeMessage = message.length > 4000 ? message.slice(0, 4000) + '…[truncated]' : message;
             await logsRef.add({
                 errorCode,
@@ -65,34 +64,32 @@ async function reportError(errorCode, context, err) {
                 timestamp,
                 createdAt: admin.firestore.FieldValue.serverTimestamp()
             });
-            // Prune oldest entries when collection exceeds the cap.
-            // Use .select('createdAt') to fetch minimal field data — avoids "Transaction too big"
-            // when documents have large message fields.
-            const totalSnap = await logsRef.count().get();
-            if (totalSnap.data().count > MAX_SYSTEM_LOG_ENTRIES) {
-                const excess = Math.min(totalSnap.data().count - MAX_SYSTEM_LOG_ENTRIES, 100);
-                const oldSnap = await logsRef.orderBy('createdAt', 'asc').limit(excess).select('createdAt').get();
-                // Batch size 10: avoids "Transaction too big" when documents have large message fields.
-                // Each batch wrapped in its own try/catch so one failed chunk doesn't abort pruning
-                // or propagate to the outer catch (which would fire the Dead-Man Switch).
-                const CHUNK = 10;
-                for (let i = 0; i < oldSnap.docs.length; i += CHUNK) {
-                    try {
-                        const batch = db.batch();
-                        oldSnap.docs.slice(i, i + CHUNK).forEach(doc => batch.delete(doc.ref));
-                        await batch.commit();
-                    } catch (batchErr) {
-                        console.warn('[ErrorReporter] ⚠️  Pruning batch failed (non-fatal):', batchErr.message);
-                    }
+        } catch (fsErr) {
+            // Firestore unavailable (e.g. ENOTFOUND during network outage) — file log already written.
+            console.error('[Dead-Man Switch] Firestore write failed — file log only:', fsErr.message);
+        }
+
+        // Step 2: Best-effort cleanup — keep collection under 200 entries.
+        // Avoids count() (fails on large collections) and orderBy+asc (needs composite index).
+        // Fetches 210 newest docs (desc), deletes any beyond 200. Small batches avoid TX limits.
+        try {
+            const MAX_SYSTEM_LOG_ENTRIES = 200;
+            const logsRef = db.collection('system_logs');
+            const snap = await logsRef.orderBy('createdAt', 'desc').limit(MAX_SYSTEM_LOG_ENTRIES + 10).select('createdAt').get();
+            if (snap.docs.length > MAX_SYSTEM_LOG_ENTRIES) {
+                const toDelete = snap.docs.slice(MAX_SYSTEM_LOG_ENTRIES);
+                const CHUNK = 20;
+                for (let i = 0; i < toDelete.length; i += CHUNK) {
+                    const batch = db.batch();
+                    toDelete.slice(i, i + CHUNK).forEach(doc => batch.delete(doc.ref));
+                    await batch.commit();
                 }
             }
-        } else {
-             console.error('[Dead-Man Switch] Firestore connection is totally offline. UI logging bypassed.');
+        } catch (cleanupErr) {
+            console.warn('[ErrorReporter] ⚠️  system_logs cleanup skipped (non-fatal):', cleanupErr.message);
         }
-    } catch (fsErr) {
-        // Firestore unavailable (e.g. ENOTFOUND during network outage) — file log already written.
-        // If ALERT_WEBHOOK_URL is set, the webhook below will deliver the alert instead.
-        console.error('[Dead-Man Switch] Firestore write failed — file log only:', fsErr.message);
+    } else {
+        console.error('[Dead-Man Switch] Firestore connection is totally offline. UI logging bypassed.');
     }
 
     console.error(`[ErrorReporter] 🚨 ${errorCode}: ${context} — ${message}`);
