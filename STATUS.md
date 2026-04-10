@@ -3,8 +3,8 @@
 **Дата:** 2026-04-10 (обновлено 2026-04-10 UTC — Claude agent sync v25)
 **Ветка:** main
 **DEPLOY_STATUS:** OK
-**PHASE:** BUGFIX ROUND 1
-**LAST_TASK:** invoice-imap crash loop fix (477+ рестартов) — 2026-04-10.
+**PHASE:** WAITING
+**LAST_TASK:** invoice-imap uptime мониторинг 24ч — online с 13:09:55 UTC, 0 крашей.
 
 ## Текущее состояние системы
 
