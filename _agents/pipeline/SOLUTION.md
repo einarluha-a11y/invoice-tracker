@@ -6,7 +6,7 @@ TASK: Watchdog автоматический баг-репорт
 
 ## ОШИБКИ
 
-- **invoice-imap**: Crash loop: 81 restarts. Last error:  on startup.
+- **invoice-imap**: Crash loop: 85 restarts. Last error:  on startup.
 [31m16|invoice | [39m[RateLimit] ⏳ Restored 1 active IMAP ban(s) from Firestore on startup.
 [31m16|invoice | [39m[RateLimit] ⏳ Restored 1 active IMAP ban(s) from Firestore on startup.
 
