@@ -151,9 +151,21 @@ function check() {
         const status = proc.pm2_env?.status;
         const restarts = proc.pm2_env?.restart_time || 0;
 
+        // Always update restart baseline BEFORE errored check.
+        // If we skip updating when errored, the accumulated delta after recovery
+        // causes a false crash-loop report on the next normal cycle.
+        if (name !== 'pipeline-monitor') {
+            if (!state.restartCounts) state.restartCounts = {};
+            if (state.restartCounts[name] === undefined) {
+                state.restartCounts[name] = restarts; // first run: seed with current
+            }
+        }
+
         // 1. Process crashed or stopped
         if (status === 'errored' || status === 'stopped') {
             log(`❌ ${name} is ${status} (${restarts} restarts) — restarting`);
+            // Update baseline to current value so recovery delta starts from here
+            if (name !== 'pipeline-monitor') state.restartCounts[name] = restarts;
             pm2Restart(name);
             actions.push(`Restarted ${name} (was ${status})`);
             continue;
@@ -163,8 +175,7 @@ function check() {
         // The pm2 restart_time counter is cumulative (never resets unless pm2 delete/start).
         // A process that crashed 600 times weeks ago and is now stable should not trigger alarms.
         if (name !== 'pipeline-monitor') {
-            if (!state.restartCounts) state.restartCounts = {};
-            const prevRestarts = state.restartCounts[name] ?? restarts; // first run: seed with current
+            const prevRestarts = state.restartCounts[name];
             const delta = restarts - prevRestarts;
             state.restartCounts[name] = restarts;
             // Alert only if we saw ≥3 new restarts since the last check (avoids one-off flaps)

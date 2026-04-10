@@ -38,6 +38,7 @@ if (require.main === module) {
     // CRITICAL: .catch() ensures pollLoop/auditLoop always start even if flag tasks fail.
     // Without it: checkAndRunFlagTasks() rejection → unhandledRejection handler logs it
     // → pollLoop never called → event loop empty → Node exits → PM2 restarts → crash loop.
+    console.error('[imap-daemon] 🟢 Startup: running flag tasks');
     checkAndRunFlagTasks()
         .catch(err => {
             // Use safe stringify — err may be null/non-Error (same pattern as unhandledRejection handler).
@@ -53,6 +54,7 @@ if (require.main === module) {
             // Timeout guard: if Firestore hangs, don't block pollLoop forever.
             // Use a flag so we only warn if Firestore truly didn't respond — not when it
             // responds at the same instant the timer fires (race condition on Railway cold start).
+            console.error('[imap-daemon] 🟢 Startup: restoring rate limits from Firestore');
             const RESTORE_TIMEOUT_MS = 30000;
             let _firestoreResolved = false;
             await Promise.race([
@@ -69,6 +71,7 @@ if (require.main === module) {
             // Self-healing wrappers: if a loop exits for any reason (uncaught throw
             // before first await, or unhandled rejection), restart it after 30s rather
             // than leaving the daemon silent until the next PM2 restart.
+            console.error('[imap-daemon] 🟢 Startup: starting pollLoop and auditLoop');
             (async () => {
                 while (true) {
                     try { await pollLoop(); } catch (e) {
@@ -85,6 +88,7 @@ if (require.main === module) {
                     await new Promise(r => setTimeout(r, 30000));
                 }
             })();
+            console.error('[imap-daemon] 🟢 Startup complete — daemon running');
         });
 }
 
