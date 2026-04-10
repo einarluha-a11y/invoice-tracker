@@ -2,5 +2,5 @@
 
 PHASE: WAITING
 ROUND: 0
-TASK: WAITING sync — REVIEW ПРИНЯТО (watchdog false alarm). STATUS.md синхронизирован. Новых задач нет. Система стабильна.
+TASK: WAITING sync v4 — система стабильна, Perplexity ПРИНЯТО, ожидаю новых задач от Einar/Perplexity
 DEPLOY_STATUS: OK
