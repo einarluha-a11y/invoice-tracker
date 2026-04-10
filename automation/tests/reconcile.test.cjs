@@ -101,8 +101,34 @@ t('tx less than invoice → partial', () => {
     assert.strictEqual(matchAmount(3600, 1000), 'partial');
 });
 
+t('Revolut bank fee 0.20 (ANESTA case) → full', () => {
+    // Invoice 9672.00 €, Revolut deducted 0.20 € fee, bank tx = 9671.80
+    // Must be full match so invoice is marked Paid, not partial
+    assert.strictEqual(matchAmount(9672, 9671.80), 'full');
+});
+
+t('SEPA fee 0.35 → full', () => {
+    assert.strictEqual(matchAmount(100, 99.65), 'full');
+});
+
+t('exact 0.50 fee boundary → full', () => {
+    assert.strictEqual(matchAmount(100, 99.50), 'full');
+});
+
+t('diff 0.51 → partial (over boundary)', () => {
+    assert.strictEqual(matchAmount(100, 99.49), 'partial');
+});
+
 t('tx greater than invoice → false', () => {
     assert.strictEqual(matchAmount(3600, 5000), false);
+});
+
+t('tx slightly over (0.03) → full (rounding up)', () => {
+    assert.strictEqual(matchAmount(100, 100.03), 'full');
+});
+
+t('tx over by 0.10 → false (over-payment anomaly)', () => {
+    assert.strictEqual(matchAmount(100, 100.10), false);
 });
 
 t('invalid input → false', () => {

@@ -229,12 +229,30 @@ async function reconcilePayment(reference, description, paidAmount, totalBankDra
 
             console.log(`[Reconciliation] Matched payment €${paidAmount} to Invoice ${data.invoiceId} (Total: €${fxOverwriteTriggered ? paidAmount : data.amount})`);
 
+            // Bank fee absorption: if the customer paid slightly LESS than the invoice
+            // amount (typical Revolut/SEPA fee of 0.15–0.35 €), treat it as a full
+            // payment and stamp the deducted fee onto the invoice record. Threshold
+            // kept in sync with BANK_FEE_TOLERANCE in core/reconcile_rules.cjs.
+            const { BANK_FEE_TOLERANCE } = require('./core/reconcile_rules.cjs');
+            const feeGap = data.amount - paidAmount;           // positive = customer short
+            const isFeeAbsorption = feeGap > 0 && feeGap <= BANK_FEE_TOLERANCE;
+            const computedBankFee = isFeeAbsorption
+                ? cleanNum(feeGap.toFixed(2))
+                : (bankFee || 0);
+
             // If it's a cross-currency match, it's intrinsically fully Paid (bypass partial deduction check)
-            if (isCrossCurrencyMatch || fxOverwriteTriggered || paidAmount >= (data.amount - 0.05)) {
+            if (
+                isCrossCurrencyMatch ||
+                fxOverwriteTriggered ||
+                paidAmount >= (data.amount - BANK_FEE_TOLERANCE)
+            ) {
                 let globalPayload = { status: 'Paid' };
-                if (bankFee > 0) {
-                    globalPayload.bankFee = bankFee;
-                    globalPayload.totalBankDrain = totalBankDrain || paidAmount;
+                if (computedBankFee > 0) {
+                    globalPayload.bankFee = computedBankFee;
+                    globalPayload.totalBankDrain = totalBankDrain || data.amount;
+                    if (isFeeAbsorption) {
+                        console.log(`[Reconciliation] 💸 Bank fee absorbed: €${computedBankFee.toFixed(2)} (${data.invoiceId})`);
+                    }
                 }
                 await db.runTransaction(async (t) => {
                     const freshDoc = await t.get(docRef);

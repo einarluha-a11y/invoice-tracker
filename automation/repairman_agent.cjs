@@ -832,7 +832,12 @@ async function runAudit() {
                     if (invoiceDate && tx.date && tx.date < invoiceDate) continue;
 
                     const txAmount = cleanNum(tx.amount);
-                    if (Math.abs(txAmount - invoiceAmount) > 0.50) continue;
+                    // Fee-absorption tolerance: accept tx up to 0.50 € SHORT of
+                    // invoice amount (Revolut/SEPA fee). Over-payments still use
+                    // tight 0.05 € tolerance.
+                    const diff = invoiceAmount - txAmount;
+                    if (diff > 0.50) continue;         // real underpayment
+                    if (diff < -0.05) continue;        // unexpected over-payment
 
                     const txVendorFull = (tx.counterparty || '').toLowerCase();
                     const txRef = (tx.reference || '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -847,7 +852,17 @@ async function runAudit() {
                     const isEttemaks = (tx.reference || '').toLowerCase().includes('ettemaks');
 
                     if (vendorMatch && !refMatch && txRef.length > 3 && !isEttemaks) continue;
-                    if (vendorMatch || refMatch) { isPaidInBank = true; break; }
+                    if (vendorMatch || refMatch) {
+                        isPaidInBank = true;
+                        // Stamp bank fee if customer paid slightly less than invoice.
+                        // Tracks Revolut/SEPA charges so accounting can reconcile
+                        // the discrepancy without creating a fake partial payment.
+                        if (diff > 0.01) {
+                            updates.bankFee = cleanNum(diff.toFixed(2));
+                            updates.totalBankDrain = invoiceAmount;
+                        }
+                        break;
+                    }
                 }
             }
 
@@ -895,30 +910,14 @@ async function runAudit() {
             }
         }
 
-        // ── Partial-payment ledger restoration ──
-        // If a previous run (or any code path) corrupted `amount` so it no longer
-        // matches `remainingAmount`, fix it. The invariant is:
-        //   amount === remainingAmount   when payments[].length > 0
-        // This is the only place in the audit pass that's allowed to touch
-        // amount on a partial-payment invoice — and only to restore it.
-        if (Array.isArray(data.payments) && data.payments.length > 0) {
-            const expectedAmount = cleanNum(data.remainingAmount);
-            const currentAmount  = cleanNum(data.amount);
-            if (
-                expectedAmount > 0 || expectedAmount === 0
-            ) {
-                if (Math.abs(currentAmount - expectedAmount) > 0.01) {
-                    updates.amount = expectedAmount;
-                    // If the invoice was wrongly marked Paid by the bank-sync
-                    // branch above (now guarded), revert status too: 0 < remaining
-                    // means it isn't fully paid.
-                    if (expectedAmount > 0.01 && (data.status === 'Paid' || updates.status === 'Paid')) {
-                        updates.status = 'Pending';
-                        if (!updates.previousStatus) updates.previousStatus = data.status;
-                    }
-                }
-            }
-        }
+        // NOTE: a previous commit had a "partial-payment ledger restoration" block
+        // here that enforced `amount === remainingAmount` when `payments[].length > 0`.
+        // It was removed because the premise was wrong: the ANESTA case that
+        // triggered it was actually a Revolut bank fee of 0.20 €, not a real
+        // partial payment. With the new 0.50 € fee-absorption tolerance, those
+        // records should never become partial payments in the first place, and
+        // any existing ones need a one-off data fix (see scripts/), not on every
+        // audit run.
 
         // ── Apply updates ──
         if (Object.keys(updates).length === 0) {

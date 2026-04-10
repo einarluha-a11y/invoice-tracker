@@ -9,11 +9,21 @@
  * Rules (all must pass for a match):
  *  1. Reference: exact OR strong substring (≥5 chars, ≥70% length ratio)
  *  2. Vendor: ≥1 common word ≥4 chars (after stripping legal suffixes, cities, stopwords)
- *  3. Amount: exact ±0.05 for full payment, or tx.amount < invoice.amount for partial
+ *  3. Amount: within ±0.50 € of invoice amount → full (absorbs Revolut/SEPA bank fee),
+ *     or tx.amount < invoice.amount − 0.50 → partial (real underpayment).
  *  4. Idempotency: tx.matchedInvoiceId must be null/undefined
  */
 
 const { cleanNum } = require('./utils.cjs');
+
+// Maximum absolute difference between bank tx amount and invoice amount that is
+// treated as a full match (bank fee absorption). Revolut, SEPA and some
+// correspondent banks deduct a small fee (typically 0.15–0.35 €) before or
+// after the transfer is credited. Anything under this threshold is NOT a
+// partial payment — it's a fee. Using 0.50 € gives us enough headroom for
+// cumulative rounding on multi-hop SEPA transfers without opening the door
+// to genuine underpayments.
+const BANK_FEE_TOLERANCE = 0.50;
 
 const LEGAL_SUFFIXES = /\b(o[uü]|as|sa|sia|sp\.?\s*z\s*o\.?\s*o\.?|gmbh|llc|ltd|inc|ag|bv|srl|spa)\b/gi;
 const CITIES = /\b(tallinn|tartu|narva|p[aä]rnu|kohtla[\s-]?j[aä]rve|warsaw|warszawa|riga|vilnius|helsinki|stockholm|moscow|kiev|kyiv)\b/gi;
@@ -74,15 +84,29 @@ function vendorOverlap(a, b) {
 /**
  * Check if an amount matches within tolerance, or is a valid partial payment.
  * Returns: 'full' | 'partial' | false
+ *
+ * Fee absorption asymmetry:
+ *   - tx slightly OVER invoice (tx > inv): only ±0.05 € accepted. An over-payment
+ *     is a real anomaly — it should not be absorbed as a fee because banks never
+ *     charge negative fees.
+ *   - tx slightly UNDER invoice (tx < inv): up to BANK_FEE_TOLERANCE (0.50 €)
+ *     absorbed as a bank fee and still counted as a FULL match.
+ *   - tx significantly under invoice (inv - tx > 0.50 €): partial payment.
  */
 function matchAmount(invoiceAmount, txAmount) {
     // cleanNum handles European "1.200,50", US "1,200.50", null, and currency prefixes
     const inv = cleanNum(invoiceAmount);
     const tx = cleanNum(txAmount);
     if (tx <= 0 || inv <= 0) return false;
-    if (Math.abs(inv - tx) <= 0.05) return 'full';
-    if (tx < inv) return 'partial';
-    return false; // tx > invoice amount → not our payment
+
+    const diff = inv - tx;  // positive = customer paid less (fee?)
+    // Bank fee absorption — tx is at most 0.50 € short of invoice
+    if (diff >= 0 && diff <= BANK_FEE_TOLERANCE) return 'full';
+    // Tiny over-payment (rounding up) — narrow band
+    if (diff < 0 && Math.abs(diff) <= 0.05) return 'full';
+    // Genuine partial payment (diff > 0.50)
+    if (diff > BANK_FEE_TOLERANCE) return 'partial';
+    return false; // tx significantly > invoice → not our payment
 }
 
 /**
@@ -114,4 +138,5 @@ module.exports = {
     LEGAL_SUFFIXES,
     CITIES,
     VENDOR_STOPWORDS,
+    BANK_FEE_TOLERANCE,
 };
