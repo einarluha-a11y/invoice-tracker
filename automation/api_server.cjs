@@ -1,8 +1,14 @@
 require('dotenv').config({ path: __dirname + '/.env' });
 
 // --- CLOUD HOSTING & API SUPPORT ---
-// This server handles ONLY HTTP endpoints: webhook intake, AI chat, and health checks.
+// This server handles:
+//   • /api/*      — webhook intake, AI chat, health checks, agent stats
+//   • /health     — Railway healthcheck
+//   • everything else → static SPA served from dist/ (built by Vite)
 // All IMAP polling and invoice processing runs exclusively in imap_daemon.cjs.
+const path = require('path');
+const fs = require('fs');
+const express = require('express');
 const app = require('./webhook_server.cjs');
 const PORT = process.env.PORT || 3000;
 
@@ -136,14 +142,55 @@ app.get('/api/pdf-proxy', requireRole(['user', 'admin', 'master']), async (req, 
     }
 });
 
-app.get('/', (req, res) => {
-    res.send('🤖 Invoice Automation Bot is Active & Running!');
-});
+// NOTE: GET / is now handled by the SPA fallback below — the old text
+// "Invoice Automation Bot is Active" was removed when the frontend moved
+// from GitHub Pages onto Railway.
 
 app.get('/health', (req, res) => {
     res.json({ status: 'ok', uptime: Math.floor(process.uptime()), timestamp: new Date().toISOString() });
 });
 
+// ── STATIC FRONTEND (Vite SPA) ─────────────────────────────────────────────
+// Serves the React app from ../dist. Previously hosted on GitHub Pages and
+// Vercel, now consolidated onto Railway so there's a single source of truth
+// per deployment. Nixpacks runs `npm run build` automatically because we
+// have a `build` script in package.json — the `dist` folder lands at the
+// repo root alongside `automation/`.
+const DIST_DIR = path.resolve(__dirname, '..', 'dist');
+const INDEX_HTML = path.join(DIST_DIR, 'index.html');
+const hasFrontend = fs.existsSync(INDEX_HTML);
+
+if (hasFrontend) {
+    // Immutable hashed assets can be cached aggressively; index.html must
+    // never be cached or PWAs pin to stale bundles after a deploy.
+    app.use(express.static(DIST_DIR, {
+        setHeaders: (res, filePath) => {
+            if (filePath.endsWith('index.html')) {
+                res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+            } else {
+                res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+            }
+        },
+    }));
+
+    // SPA fallback: any non-API path that didn't match a static file gets
+    // index.html so React Router (client-side) can take over. /api/* is
+    // already handled above and will never reach this middleware.
+    app.get(/^\/(?!api|health).*/, (req, res) => {
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        res.sendFile(INDEX_HTML);
+    });
+
+    console.log(`[Web] Frontend SPA mounted from ${DIST_DIR}`);
+} else {
+    // Build didn't run — API is still usable but the UI won't load.
+    // Log loudly so the next deploy catches this in Railway logs.
+    console.warn(`[Web] ⚠️  No dist/index.html found at ${DIST_DIR}. API-only mode — run \`npm run build\` before deploy.`);
+    app.get('/', (req, res) => {
+        res.status(503).send('Frontend build missing. Please redeploy with npm run build step.');
+    });
+}
+
 app.listen(PORT, () => {
-    console.log(`[Web] Express server listening on port ${PORT} (Webhook API & Chat & Healthchecks).`);
+    console.log(`[Web] Express server listening on port ${PORT} (API + SPA${hasFrontend ? '' : ' [API-only]'})`);
 });
