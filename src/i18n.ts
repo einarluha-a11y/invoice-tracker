@@ -474,7 +474,7 @@ const resources = {
         translation: {
             appName: "Invoice-Tracker",
             totalInvoices: "Arveid Kokku",
-            overdue: "Maksetähtaja Ületanud",
+            overdue: "Maksmata",
             totalAmount: "Kogusumma",
             searchPlaceholder: "Otsi tarnija või ID järgi...",
             settings: "Seaded",
@@ -488,7 +488,7 @@ const resources = {
                 unpaid: "Maksmata",
                 pending: "Ootel",
                 paid: "Makstud",
-                overdue: "Maksetähtaja ületanud",
+                overdue: "Maksmata",
                 needsReview: "Karantiin",
                 dateFrom: "Alates",
                 dateTo: "Kuni",
