@@ -32,6 +32,7 @@ if (!admin.apps.length && sa) {
 
 // Guard abstractions: prevent uninitialized firestore calls from crashing Express/PM2 loops
 const db = admin.apps.length ? admin.firestore() : null;
+if (db) db.settings({ preferRest: true }); // REST API: cold start 1-2s vs gRPC 8-12s
 const bucket = admin.apps.length ? admin.storage().bucket() : null;
 
 // ─── Global AI Rules (cached) ───────────────────────────────────────────────
