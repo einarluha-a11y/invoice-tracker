@@ -2,6 +2,7 @@
 Обновляется автоматически. Perplexity читает при генерации задач.
 
 ## 2026-04-10
+- 2026-04-10 UTC — ✅ SYNC v48: агент запущен. Закоммичен незакоммиченный watchdog fix (d79034f): baseline update до errored check — устраняет ложный crash-loop после recovery. Startup логи в imap_daemon. node --check OK. Push OK. PHASE: WAITING. DEPLOY_STATUS: OK. Ожидаю новых задач от Einar/Perplexity.
 - 2026-04-10 UTC — ✅ SYNC v45: агент запущен. REVIEW.md — Perplexity вышел из роли (повторный сбой). Новых задач нет. PHASE: WAITING. ROUND: 0. node --check OK. DEPLOY_STATUS: OK. Система стабильна. Ожидаю новых задач от Einar/Perplexity.
 - 2026-04-10 13:30 UTC — ✅ BUGFIX: watchdog OOM crash loop устранён. Причина: max_memory_restart: '100M' в ROOT ecosystem.config.cjs — Firebase baseline RSS >100M. PM2 убивал watchdog → bug report push → Railway redeploy каждые 3 мин. Фикс: watchdog max_memory_restart 100M→500M. node --check OK. DEPLOY_STATUS: OK.
 - 2026-04-10 18:10 UTC — ✅ SYNC v43: агент запущен. REVIEW WAITING раунд 1 ПРИНЯТО (Perplexity 13:20 UTC). STATUS.md обновлён по запросу Perplexity. PHASE: WAITING. ROUND: 1. DEPLOY_STATUS: OK. Система стабильна. Ожидаю новых задач от Einar/Perplexity.
