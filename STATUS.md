@@ -1,10 +1,10 @@
 # STATUS — Invoice Tracker Pipeline
 
-**Дата:** 2026-04-10 (обновлено 2026-04-10 UTC — Claude agent sync v11)
+**Дата:** 2026-04-10 (обновлено 2026-04-10 UTC — Claude agent sync v12)
 **Ветка:** main
 **DEPLOY_STATUS:** OK
 **PHASE:** WAITING
-**LAST_TASK:** BUGFIX ROUND 1 (imap crash loop — safe err.message) — ПРИНЯТО Perplexity. BACKLOG исчерпан.
+**LAST_TASK:** BUGFIX ROUND 4 (Firestore REST API preferRest:true — cold start 8-12s→1-2s) — ПРИНЯТО Perplexity.
 
 ## Текущее состояние системы
 
@@ -16,6 +16,13 @@
 - `watchdog` — online, мониторинг активен ✅
 
 ## Последние изменения (2026-04-10 UTC)
+
+### AGENT_SYNC 2026-04-10 UTC (sync v12)
+- REVIEW: ПРИНЯТО (BUGFIX ROUND 4 — preferRest: true, Firestore REST API)
+- Perplexity вердикт: "Решение точно решает проблему gRPC cold start, подтверждено источниками"
+- Firestore cold start: ~1-2s (было 8-12s по gRPC)
+- PHASE: WAITING, DEPLOY_STATUS: OK
+- Система стабильна. Ожидание новых задач от Einar.
 
 ### AGENT_SYNC 2026-04-10 UTC (sync v11)
 - PHASE: WAITING — новых задач нет, BACKLOG исчерпан
@@ -76,6 +83,8 @@
 
 | Round | Статус | Комментарий |
 |-------|--------|-------------|
+| BUGFIX ROUND 4 (preferRest:true) | ПРИНЯТО | Firestore REST API вместо gRPC: cold start 8-12s→1-2s, commit f22935e |
+| BUGFIX ROUND 3 (Firestore restore timeout 15s) | ПРИНЯТО | Timeout увеличен 8s→15s для Railway cold start |
 | BUGFIX ROUND 1 (imap safe err.message) | ПРИНЯТО | Точный анализ crash loop, non-Error rejection fix, commit 906b338 |
 | BUGFIX ROUND 2 (watchdog false alarm) | ПРИНЯТО | Полный анализ хронологии, первопричины и ложной тревоги подтверждён |
 | BUGFIX ROUND 1 (watchdog false alarm) | ПРИНЯТО | Ложный репорт из console.warn→stderr, реальные фиксы 3f90b55+8af1cd3 |
