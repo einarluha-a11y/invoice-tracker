@@ -43,13 +43,17 @@ if (require.main === module) {
             // that survives container restarts. Without this, rate-limited accounts would
             // be retried immediately on each restart, causing the crash loop.
             // Timeout guard: if Firestore hangs, don't block pollLoop forever.
-            const RESTORE_TIMEOUT_MS = 15000;
-            let _restoreTimer;
+            // Use a flag so we only warn if Firestore truly didn't respond — not when it
+            // responds at the same instant the timer fires (race condition on Railway cold start).
+            const RESTORE_TIMEOUT_MS = 30000;
+            let _firestoreResolved = false;
             await Promise.race([
-                loadRateLimitsFromFirestore().then(r => { clearTimeout(_restoreTimer); return r; }),
+                loadRateLimitsFromFirestore().then(r => { _firestoreResolved = true; return r; }),
                 new Promise(resolve => {
-                    _restoreTimer = setTimeout(() => {
-                        console.warn('[imap-daemon] ⚠️  loadRateLimitsFromFirestore timed out — starting loops anyway');
+                    setTimeout(() => {
+                        if (!_firestoreResolved) {
+                            console.warn('[imap-daemon] ⚠️  loadRateLimitsFromFirestore timed out — starting loops anyway');
+                        }
                         resolve();
                     }, RESTORE_TIMEOUT_MS);
                 }),
