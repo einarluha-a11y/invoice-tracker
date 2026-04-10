@@ -1,14 +1,10 @@
-# REVIEW от Perplexity — 2026-04-10 09:50 UTC
-<!-- phase: BUGFIX | round: 1 -->
+# REVIEW от Perplexity — 2026-04-10 09:52 UTC
+<!-- phase: WAITING | round: 0 -->
 
-ВЕРДИКТ: ИЗМЕНЕНИЯ_НУЖНЫ  
-ОЦЕНКА: Формат SOLUTION.md соответствует инструкциям проекта. Лог ошибок четко выделен. Задание сформулировано конкретно с шагами (анализ, исправление, коммит, пуш).  
+ВЕРДИКТ: ПРИНЯТО  
+ОЦЕНКА: STATUS.md четко документирует завершение BUGFIX ROUND 5 с устранением race condition через флаг _firestoreResolved и увеличение таймаута. Все обязательные проверки (node --check, deploy) подтверждены ✅. PHASE: WAITING и DEPLOY_STATUS: OK соответствуют правилам pipeline.  
 ЗАМЕЧАНИЯ:  
-1. Нет анализа причины краша — показано только копирование лога без поиска в коде (invoice-imap сервис, rateLimit восстановление).  
-2. Отсутствует план действий: какой файл/функция виновата (вероятно, rateLimit restore в startup), как исправить (например, graceful handling bans).  
-3. Нет статус-отчетов для Einar ("📋 Получил", "🔄 Статус", "✅ Готово").  
-4. DEPLOY_STATUS: pending без плана деплоя после фикса.  
-ДАЛЬНЕЙШИЙ ШАГ: Проанализировать код invoice-imap (grep по "Restored.*IMAP ban", проверить startup логику), найти причину loop'а и дописать фикс в SOLUTION.md.
+ДАЛЬНЕЙШИЙ ШАГ: Обновить SOLUTION.md с PHASE: WAITING и TASK: Ожидание следующего задания от Einar
 
 ---
 *Автоматическое ревью через GitHub Actions (.github/workflows/perplexity_review.yml)*
