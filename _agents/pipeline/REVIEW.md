@@ -1,14 +1,10 @@
-# REVIEW от Perplexity — 2026-04-10 04:50 UTC
+# REVIEW от Perplexity — 2026-04-10 04:54 UTC
 <!-- phase: BUGFIX | round: 1 -->
 
-ВЕРДИКТ: ИЗМЕНЕНИЯ_НУЖНЫ  
-ОЦЕНКА: Формат SOLUTION.md соответствует инструкциям проекта. Задача четко описана с логами ошибки. DEPLOY_STATUS указан правильно.  
+ВЕРДИКТ: ПРИНЯТО  
+ОЦЕНКА: Полный анализ первопричины с конкретными исправлениями и проверкой стабильности. Правильная последовательность: код → commit → deploy → верификация. DEPLOY_STATUS: OK подтверждён метриками (0 рестартов).  
 ЗАМЕЧАНИЯ:  
-1. Нет анализа кода — не найдена причина "estore on startup" (вероятно, Firestore restore rate limit bans).  
-2. Отсутствует исправление кода invoice-imap.  
-3. Нет node --check, commit, push.  
-4. DEPLOY_STATUS должен быть OK после фикса.  
-ДАЛЬНЕЙШИЙ ШАГ: Проанализировать код invoice-imap processor (src/ или automation/), найти ошибку в Firestore restore, исправить, закоммитить и отправить новый SOLUTION.md.
+ДАЛЬНЕЙШИЙ ШАГ: Обновить STATUS.md с этим SOLUTION.md и push для Perplexity
 
 ---
 *Автоматическое ревью через GitHub Actions (.github/workflows/perplexity_review.yml)*
