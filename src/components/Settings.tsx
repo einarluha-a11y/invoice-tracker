@@ -136,18 +136,18 @@ export function Settings({ onBack }: SettingsProps) {
             setNewBrand({ brand: '', legalName: '', regCode: '', vatNumber: '' });
         } catch (e) {
             console.error('Failed to add brand alias', e);
-            alert('Failed: ' + e);
+            alert(t('settingsPage.errorPrefix') + ': ' + e);
         }
     };
 
     const handleDeleteBrandAlias = async (id: string) => {
         if (!db) return;
-        if (!window.confirm('Delete this brand alias?')) return;
+        if (!window.confirm(t('settingsPage.brandAliasesConfirmDelete'))) return;
         try {
             await deleteDoc(doc(db, 'brand_aliases', id));
         } catch (e) {
             console.error('Failed to delete brand alias', e);
-            alert('Failed: ' + e);
+            alert(t('settingsPage.errorPrefix') + ': ' + e);
         }
     };
 
@@ -487,9 +487,9 @@ export function Settings({ onBack }: SettingsProps) {
             <div className="table-container" style={{ padding: '2rem', marginBottom: '2rem' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
-                        <h3>Brand → Legal entity</h3>
+                        <h3>{t('settingsPage.brandAliasesTitle')}</h3>
                         <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', margin: '0.3rem 0 0 0' }}>
-                            Marketing brand on the invoice → official legal entity in accounting (e.g. "Kookon Nutilaod" → "Allstore Assets OÜ").
+                            {t('settingsPage.brandAliasesDesc')}
                         </p>
                     </div>
                     <button onClick={() => setShowBrands(!showBrands)} style={{
@@ -497,26 +497,26 @@ export function Settings({ onBack }: SettingsProps) {
                         border: '1px solid var(--border-color)', color: 'var(--primary-color)',
                         padding: '0.4rem 0.8rem', borderRadius: '4px', cursor: 'pointer'
                     }}>
-                        {showBrands ? 'Hide' : 'Manage'} {brandAliases.length > 0 ? `(${brandAliases.length})` : ''}
+                        {showBrands ? t('settingsPage.brandAliasesHide') : t('settingsPage.brandAliasesManage')} {brandAliases.length > 0 ? `(${brandAliases.length})` : ''}
                     </button>
                 </div>
 
                 {showBrands && (
                     <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--border-color)' }}>
                         {brandLoading ? (
-                            <div className="loader">Loading…</div>
+                            <div className="loader">{t('settingsPage.brandAliasesLoading')}</div>
                         ) : brandAliases.length === 0 ? (
                             <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-                                No brand aliases yet. Add one below.
+                                {t('settingsPage.brandAliasesEmpty')}
                             </p>
                         ) : (
                             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem', marginBottom: '1rem' }}>
                                 <thead>
                                     <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
-                                        <th style={{ textAlign: 'left', padding: '0.5rem', color: 'var(--text-secondary)' }}>Brand</th>
-                                        <th style={{ textAlign: 'left', padding: '0.5rem', color: 'var(--text-secondary)' }}>Legal entity</th>
-                                        <th style={{ textAlign: 'left', padding: '0.5rem', color: 'var(--text-secondary)' }}>Reg code</th>
-                                        <th style={{ textAlign: 'left', padding: '0.5rem', color: 'var(--text-secondary)' }}>VAT</th>
+                                        <th style={{ textAlign: 'left', padding: '0.5rem', color: 'var(--text-secondary)' }}>{t('settingsPage.brandAliasesColBrand')}</th>
+                                        <th style={{ textAlign: 'left', padding: '0.5rem', color: 'var(--text-secondary)' }}>{t('settingsPage.brandAliasesColLegal')}</th>
+                                        <th style={{ textAlign: 'left', padding: '0.5rem', color: 'var(--text-secondary)' }}>{t('settingsPage.brandAliasesColReg')}</th>
+                                        <th style={{ textAlign: 'left', padding: '0.5rem', color: 'var(--text-secondary)' }}>{t('settingsPage.brandAliasesColVat')}</th>
                                         <th style={{ padding: '0.5rem' }}></th>
                                     </tr>
                                 </thead>
@@ -531,7 +531,7 @@ export function Settings({ onBack }: SettingsProps) {
                                                 <button onClick={() => handleDeleteBrandAlias(b.id)} style={{
                                                     color: 'var(--status-overdue-text)', border: '1px solid currentColor',
                                                     background: 'transparent', padding: '0.3rem 0.7rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem'
-                                                }}>Delete</button>
+                                                }}>{t('settingsPage.brandAliasesDeleteBtn')}</button>
                                             </td>
                                         </tr>
                                     ))}
@@ -540,18 +540,18 @@ export function Settings({ onBack }: SettingsProps) {
                         )}
 
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr auto', gap: '0.5rem', alignItems: 'end', paddingTop: '1rem', borderTop: '1px dashed var(--border-color)' }}>
-                            <input type="text" placeholder="Brand (e.g. Kookon Nutilaod)" className="search-input"
+                            <input type="text" placeholder={t('settingsPage.brandAliasesPlaceholderBrand')} className="search-input"
                                 value={newBrand.brand} onChange={e => setNewBrand({ ...newBrand, brand: e.target.value })} />
-                            <input type="text" placeholder="Legal entity (e.g. Allstore Assets OÜ)" className="search-input"
+                            <input type="text" placeholder={t('settingsPage.brandAliasesPlaceholderLegal')} className="search-input"
                                 value={newBrand.legalName} onChange={e => setNewBrand({ ...newBrand, legalName: e.target.value })} />
-                            <input type="text" placeholder="Reg code (optional)" className="search-input"
+                            <input type="text" placeholder={t('settingsPage.brandAliasesPlaceholderReg')} className="search-input"
                                 value={newBrand.regCode} onChange={e => setNewBrand({ ...newBrand, regCode: e.target.value })} />
-                            <input type="text" placeholder="VAT (optional)" className="search-input"
+                            <input type="text" placeholder={t('settingsPage.brandAliasesPlaceholderVat')} className="search-input"
                                 value={newBrand.vatNumber} onChange={e => setNewBrand({ ...newBrand, vatNumber: e.target.value })} />
                             <button onClick={handleAddBrandAlias} style={{
                                 background: 'var(--header-accent)', color: 'white', border: 'none',
                                 padding: '0.6rem 1.2rem', borderRadius: '4px', cursor: 'pointer', fontWeight: 500
-                            }}>Add</button>
+                            }}>{t('settingsPage.brandAliasesAddBtn')}</button>
                         </div>
                     </div>
                 )}
