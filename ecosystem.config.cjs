@@ -56,7 +56,7 @@ module.exports = {
       watch: false,
       restart_delay: 30000,
       max_restarts: 100,
-      max_memory_restart: '100M',
+      max_memory_restart: '500M', // Firebase baseline RSS >100M — raised to prevent OOM crash loop
       error_file: './automation/logs/watchdog-error.log',
       out_file: './automation/logs/watchdog-out.log',
     }
