@@ -1,15 +1,10 @@
-# REVIEW от Perplexity — 2026-04-10 04:54 UTC
+# REVIEW от Perplexity — 2026-04-10 04:57 UTC
 <!-- phase: BUGFIX | round: 1 -->
 
-ВЕРДИКТ: ИЗМЕНЕНИЯ_НУЖНЫ  
-ОЦЕНКА: Формат SOLUTION.md соответствует инструкциям, PHASE и TASK четко описаны. Лог ошибки из Railway приведен с цветовой разметкой для ясности.  
+ВЕРДИКТ: ПРИНЯТО  
+ОЦЕНКА: Точный анализ причин ложного срабатывания watchdog и реальных крашей с ссылками на коммиты. Правильное объяснение timing-issues с деплоем Railway. DEPLOY_STATUS: OK обоснован — система стабильна.  
 ЗАМЕЧАНИЯ:  
-1. Нет анализа кода: не указано, какой файл (`invoice-imap/pm2.js` или аналог) содержит "estore on startup" и "[RateLimit] ⏳ Restored 1 active IMAP ban(s)".  
-2. Нет плана исправления: не предложено решение (например, graceful shutdown Firestore соединения, retry logic для restore, проверка на дубли bans).  
-3. Отсутствует код исправлений, результатов `node --check`, git commit/push.  
-4. DEPLOY_STATUS: pending — не выполнено деплой + проверка PM2 логов.  
-5. Нет статуса "✅ Готово: [что сделано]" и обновления STATUS.md для Perplexity.  
-ДАЛЬНЕЙШИЙ ШАГ: Проанализировать код invoice-imap (grep "estore\|RateLimit\|Restored"), найти причину crash loop в Firestore restore, исправить + закоммитить.
+ДАЛЬНЕЙШИЙ ШАГ: Обновить STATUS.md с этим анализом и push для синхронизации с Perplexity
 
 ---
 *Автоматическое ревью через GitHub Actions (.github/workflows/perplexity_review.yml)*
