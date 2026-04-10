@@ -26,6 +26,11 @@
 require('dotenv').config();
 const { DocumentAnalysisClient, AzureKeyCredential } = require('@azure/ai-form-recognizer');
 const { cleanNum, cleanVendorName } = require('./core/utils.cjs');
+const {
+    extractConfidenceScores,
+    classifyExtractionQuality,
+    LOW_CONFIDENCE_THRESHOLD,
+} = require('./core/confidence_scorer.cjs');
 
 // --- Azure Document Intelligence Setup ---
 const AZURE_ENDPOINT = process.env.AZURE_DOC_INTEL_ENDPOINT;
@@ -225,6 +230,224 @@ function applyMultiLanguageRegexFallback(rawText, result) {
  * @param {string|null} vendorHint   Deprecated — kept for API compat
  * @returns {Promise<Array>} Array of invoice objects or []
  */
+/**
+ * Build a single invoice payload from one Azure document result.
+ * Used by processInvoiceWithDocAI to support multi-document (multi-invoice) PDFs.
+ *
+ * @param {object} azureDoc     — one element from result.documents[]
+ * @param {string} rawDocText   — full document text (result.content) — shared across docs
+ * @param {object} azureResult  — full Azure result (for page info, quality classification)
+ * @param {number} docIndex     — 0-based index of this document in the result
+ * @param {number} docCount     — total number of documents in the result
+ */
+function buildInvoiceFromAzureDoc(azureDoc, rawDocText, azureResult, docIndex, docCount) {
+    const fields = azureDoc.fields || {};
+
+    // Helper: extract string field
+    const str = (name) => fields[name]?.value || fields[name]?.content || '';
+    // Helper: extract currency field (returns {amount, currencyCode})
+    const curr = (name) => fields[name]?.value || null;
+    // Helper: extract date field → YYYY-MM-DD string
+    const dateField = (name) => {
+        const v = fields[name]?.value;
+        if (!v) return null;
+        if (typeof v === 'string') return v.split('T')[0];
+        if (v instanceof Date) return v.toISOString().split('T')[0];
+        return parseDocAiDate(fields[name]?.content || '');
+    };
+
+    // VendorName
+    let vendorName = cleanVendorName(str('VendorName')) || 'Unknown Vendor';
+    // InvoiceId
+    let invoiceId = str('InvoiceId') || `Auto-${Date.now()}${docCount > 1 ? '-' + (docIndex + 1) : ''}`;
+    // Dates
+    let dateCreated = dateField('InvoiceDate');
+    let dueDate = dateField('DueDate');
+
+    // Amounts — Azure currency fields have {amount, currencyCode}
+    const totalCurr = curr('InvoiceTotal');
+    let amount = totalCurr?.amount ?? cleanNum(fields.InvoiceTotal?.content || '');
+
+    const taxCurr = curr('TotalTax');
+    let taxAmount = taxCurr?.amount ?? cleanNum(fields.TotalTax?.content || '');
+
+    const subCurr = curr('SubTotal');
+    let subtotalAmount = subCurr?.amount ?? cleanNum(fields.SubTotal?.content || '');
+
+    // Currency — from InvoiceTotal.currencyCode or fallback EUR
+    let currency = totalCurr?.currencyCode || subCurr?.currencyCode || 'EUR';
+
+    // Supplier identifiers
+    let supplierVat = str('VendorTaxId');
+    let supplierRegistration = ''; // Azure doesn't have a separate reg code field — regex will catch it
+
+    // Receiver
+    let receiverName = str('CustomerName');
+    let receiverVat = str('CustomerTaxId');
+
+    // Payment terms
+    let paymentTerms = str('PaymentTerm');
+
+    // Line items — extract full details for buhgalterija
+    const lineItems = [];
+    const itemsField = fields.Items;
+    if (itemsField && itemsField.values) {
+        for (const item of itemsField.values) {
+            const props = item.properties || {};
+            const itemDesc = (props.Description?.value || props.Description?.content || '').replace(/\n/g, ' ').trim();
+            const itemAmtCurr = props.Amount?.value;
+            const itemAmt = itemAmtCurr?.amount ?? cleanNum(props.Amount?.content || '');
+            const itemTax = props.Tax?.value?.amount ?? cleanNum(props.Tax?.content || '');
+            const itemUnitPrice = props.UnitPrice?.value?.amount ?? cleanNum(props.UnitPrice?.content || '');
+            const itemQty = cleanNum(props.Quantity?.content || '') || 1;
+
+            // Build rich description: "LTR Lisateenused — 22,50 (+ KM 4,95 = 27,45 EUR)"
+            let richDesc = itemDesc;
+            if (itemUnitPrice > 0 && itemTax > 0 && itemAmt > 0) {
+                richDesc += ` — ${itemUnitPrice} (+ KM ${itemTax} = ${itemAmt} ${currency || 'EUR'})`;
+            } else if (itemUnitPrice > 0 && itemAmt > 0 && itemUnitPrice !== itemAmt) {
+                richDesc += ` — ${itemUnitPrice} (= ${itemAmt} ${currency || 'EUR'})`;
+            }
+
+            if (itemDesc || itemAmt) lineItems.push({
+                description: richDesc || itemDesc,
+                amount: itemAmt,
+                tax: itemTax || 0,
+                unitPrice: itemUnitPrice || itemAmt,
+                quantity: itemQty,
+            });
+        }
+    }
+
+    // Build description from all line items (buhgalterija needs full details)
+    const docDescription = lineItems.length > 0
+        ? lineItems.map(li => {
+            const desc = li.description || '';
+            const amt = (li.amount !== undefined && li.amount !== null) ? ` (${li.amount} ${currency || 'EUR'})` : '';
+            return desc + amt;
+        }).filter(s => s.trim()).join('; ')
+        : '';
+
+    // Assemble partial result for regex shims
+    let partial = {
+        invoiceId,
+        vendorName,
+        supplierRegistration,
+        supplierVat,
+        receiverName,
+        receiverVat,
+        amount,
+        taxAmount,
+        subtotalAmount,
+        currency,
+        dateCreated,
+        dueDate,
+        description: docDescription,
+        paymentTerms,
+        lineItems,
+    };
+
+    // --- ШАГ 2: Regex fallback for Estonian labels ---
+    // Only run regex fallbacks on single-doc PDFs — on multi-doc, the text
+    // contains ALL invoices' labels interleaved and regex would cross-contaminate.
+    if (docCount === 1) {
+        partial = applyEstonianRegexFallback(rawDocText, partial);
+        partial = applyMultiLanguageRegexFallback(rawDocText, partial);
+    }
+
+    // --- Final fallbacks ---
+    if (!partial.dateCreated) partial.dateCreated = '';
+    if (!partial.dueDate) partial.dueDate = '';
+
+    if (!partial.description || partial.description.trim() === '') {
+        partial.description = inferDescription(partial.vendorName);
+    }
+
+    // Enrich description with main service/product info from rawText (single-doc only)
+    if (docCount === 1) {
+        const enrichParts = [];
+        const rentMatch = rawDocText.match(/(?:^|\n)\s*(?:Rent|Kirjeldus|Teenus|Service|Objekt)[:\s]*\n?\s*(.{10,120})/i);
+        if (rentMatch) enrichParts.push(rentMatch[1].trim());
+        const periodMatch = rawDocText.match(/(?:Rent periood|Period|Periood)[:\s]+(.{5,40})/i);
+        if (periodMatch) enrichParts.push('Periood: ' + periodMatch[1].trim());
+        if (enrichParts.length > 0 && partial.description) {
+            partial.description = enrichParts.join('; ') + ' | ' + partial.description;
+        } else if (enrichParts.length > 0) {
+            partial.description = enrichParts.join('; ');
+        }
+    }
+
+    if (partial.subtotalAmount === 0 && partial.taxAmount === 0 && partial.amount > 0) {
+        partial.subtotalAmount = partial.amount;
+    }
+
+    // --- A1: Per-field confidence scoring ---
+    const scores = extractConfidenceScores(azureDoc);
+
+    // --- A5: Extraction quality classification ---
+    // For multi-doc PDFs, classify based on THIS doc's scores but shared page text
+    const extractionQuality = classifyExtractionQuality(azureResult, scores);
+
+    // Initial status: low quality goes directly to NEEDS_REVIEW (skip Repairman)
+    let status = 'Pending';
+    if (extractionQuality === 'low') {
+        status = 'NEEDS_REVIEW';
+    }
+
+    // --- Validation warnings ---
+    const validationWarnings = [];
+    if (scores.lowConfidenceFields.length > 0) {
+        validationWarnings.push(
+            `Low confidence on ${scores.lowConfidenceFields.length} field(s): ${scores.lowConfidenceFields.join(', ')} (min=${scores.minFieldConfidence.toFixed(2)})`
+        );
+    }
+    if (partial.amount === 0) {
+        validationWarnings.push('Total amount not extracted — manual review required');
+    }
+    if (extractionQuality === 'low') {
+        validationWarnings.push(`Low extraction quality (avgConfidence=${scores.avgConfidence.toFixed(2)}) — routed to NEEDS_REVIEW without repair`);
+    }
+
+    const indexLabel = docCount > 1 ? ` [${docIndex + 1}/${docCount}]` : '';
+    console.log(
+        `[Scout]${indexLabel} vendor="${partial.vendorName}", invoiceId="${partial.invoiceId}", ` +
+        `amount=${partial.amount} ${partial.currency}, ` +
+        `quality=${extractionQuality}, avgConf=${scores.avgConfidence.toFixed(2)}, minConf=${scores.minFieldConfidence.toFixed(2)}`
+    );
+
+    return {
+        type: 'INVOICE',
+        invoiceId:            partial.invoiceId,
+        vendorName:           partial.vendorName,
+        supplierRegistration: partial.supplierRegistration,
+        supplierVat:          partial.supplierVat,
+        receiverName:         partial.receiverName,
+        receiverVat:          partial.receiverVat,
+        amount:               partial.amount,
+        taxAmount:            partial.taxAmount,
+        subtotalAmount:       partial.subtotalAmount,
+        currency:             partial.currency,
+        dateCreated:          partial.dateCreated,
+        dueDate:              partial.dueDate,
+        status,
+        description:          partial.description,
+        paymentTerms:         partial.paymentTerms,
+        lineItems:            partial.lineItems,
+        // A1: confidence scores surfaced to Firestore
+        confidenceScores:     scores.confidenceScores,
+        minFieldConfidence:   scores.minFieldConfidence,
+        avgFieldConfidence:   scores.avgConfidence,
+        lowConfidenceFields:  scores.lowConfidenceFields,
+        // A5: extraction quality classification
+        extractionQuality,
+        // A2: multi-doc index (so downstream can tell if this invoice is part of a batch)
+        docIndex:             docCount > 1 ? docIndex : undefined,
+        docCount:             docCount > 1 ? docCount : undefined,
+        validationWarnings:   validationWarnings.length > 0 ? validationWarnings : undefined,
+        _rawText:             rawDocText,
+    };
+}
+
 async function processInvoiceWithDocAI(buffer, mimeType = 'application/pdf', supervisorCritique = null, customRules = null, vendorHint = null) {
     console.log(`[Scout] Sending document to Azure Document Intelligence (prebuilt-invoice)...`);
 
@@ -237,192 +460,21 @@ async function processInvoiceWithDocAI(buffer, mimeType = 'application/pdf', sup
             return [];
         }
 
-        const doc = result.documents[0];
-        const fields = doc.fields || {};
-        const confidenceScores = {};
-
-        // --- ШАГ 1: Map Azure Document Intelligence fields to invoice schema ---
-
-        // Helper: extract string field
-        const str = (name) => fields[name]?.value || fields[name]?.content || '';
-        // Helper: extract currency field (returns {amount, currencyCode})
-        const curr = (name) => fields[name]?.value || null;
-        // Helper: extract date field → YYYY-MM-DD string
-        const dateField = (name) => {
-            const v = fields[name]?.value;
-            if (!v) return null;
-            if (typeof v === 'string') return v.split('T')[0];
-            if (v instanceof Date) return v.toISOString().split('T')[0];
-            return parseDocAiDate(fields[name]?.content || '');
-        };
-
-        // VendorName
-        let vendorName = cleanVendorName(str('VendorName')) || 'Unknown Vendor';
-        confidenceScores.vendor = fields.VendorName?.confidence || 0;
-
-        // InvoiceId
-        let invoiceId = str('InvoiceId') || `Auto-${Date.now()}`;
-        confidenceScores.invoiceId = fields.InvoiceId?.confidence || 0;
-
-        // Dates
-        let dateCreated = dateField('InvoiceDate');
-        let dueDate = dateField('DueDate');
-
-        // Amounts — Azure currency fields have {amount, currencyCode}
-        const totalCurr = curr('InvoiceTotal');
-        let amount = totalCurr?.amount ?? cleanNum(fields.InvoiceTotal?.content || '');
-        confidenceScores.total = fields.InvoiceTotal?.confidence || 0;
-
-        const taxCurr = curr('TotalTax');
-        let taxAmount = taxCurr?.amount ?? cleanNum(fields.TotalTax?.content || '');
-
-        const subCurr = curr('SubTotal');
-        let subtotalAmount = subCurr?.amount ?? cleanNum(fields.SubTotal?.content || '');
-
-        // Currency — from InvoiceTotal.currencyCode or fallback EUR
-        let currency = totalCurr?.currencyCode || subCurr?.currencyCode || 'EUR';
-
-        // Supplier identifiers
-        let supplierVat = str('VendorTaxId');
-        let supplierRegistration = ''; // Azure doesn't have a separate reg code field — regex will catch it
-
-        // Receiver
-        let receiverName = str('CustomerName');
-        let receiverVat = str('CustomerTaxId');
-
-        // Payment terms
-        let paymentTerms = str('PaymentTerm');
-
-        // Line items — extract full details for buhgalterija
-        const lineItems = [];
-        let descriptionText = '';
-        const itemsField = fields.Items;
-        if (itemsField && itemsField.values) {
-            for (const item of itemsField.values) {
-                const props = item.properties || {};
-                const itemDesc = (props.Description?.value || props.Description?.content || '').replace(/\n/g, ' ').trim();
-                const itemAmtCurr = props.Amount?.value;
-                const itemAmt = itemAmtCurr?.amount ?? cleanNum(props.Amount?.content || '');
-                const itemTax = props.Tax?.value?.amount ?? cleanNum(props.Tax?.content || '');
-                const itemUnitPrice = props.UnitPrice?.value?.amount ?? cleanNum(props.UnitPrice?.content || '');
-                const itemQty = cleanNum(props.Quantity?.content || '') || 1;
-
-                // Build rich description: "LTR Lisateenused — 22,50 (+ KM 4,95 = 27,45 EUR)"
-                let richDesc = itemDesc;
-                if (itemUnitPrice > 0 && itemTax > 0 && itemAmt > 0) {
-                    richDesc += ` — ${itemUnitPrice} (+ KM ${itemTax} = ${itemAmt} ${currency || 'EUR'})`;
-                } else if (itemUnitPrice > 0 && itemAmt > 0 && itemUnitPrice !== itemAmt) {
-                    richDesc += ` — ${itemUnitPrice} (= ${itemAmt} ${currency || 'EUR'})`;
-                }
-
-                if (itemDesc || itemAmt) lineItems.push({
-                    description: richDesc || itemDesc,
-                    amount: itemAmt,
-                    tax: itemTax || 0,
-                    unitPrice: itemUnitPrice || itemAmt,
-                    quantity: itemQty,
-                });
-            }
-        }
-
-        // Build description from first line item
-        // Collect ALL line items into description (buhgalterija needs full details)
-        const docDescription = lineItems.length > 0
-            ? lineItems.map(li => {
-                const desc = li.description || '';
-                const amt = (li.amount !== undefined && li.amount !== null) ? ` (${li.amount} ${currency || 'EUR'})` : '';
-                return desc + amt;
-            }).filter(s => s.trim()).join('; ')
-            : '';
-
-        // Assemble partial result for Шаги 2-3
-        let partial = {
-            invoiceId,
-            vendorName,
-            supplierRegistration,
-            supplierVat,
-            receiverName,
-            receiverVat,
-            amount,
-            taxAmount,
-            subtotalAmount,
-            currency,
-            dateCreated,
-            dueDate,
-            description: docDescription,
-            paymentTerms,
-            lineItems,
-        };
-
-        // --- ШАГ 2: Regex fallback for Estonian labels ---
         const rawDocText = result.content || '';
-        partial = applyEstonianRegexFallback(rawDocText, partial);
+        const docCount = result.documents.length;
 
-        // --- ШАГ 2b: Multilingual regex fallback (EN/DE/RU/PL) ---
-        partial = applyMultiLanguageRegexFallback(rawDocText, partial);
-
-        // --- Final fallbacks ---
-        if (!partial.dateCreated) partial.dateCreated = '';
-        if (!partial.dueDate) partial.dueDate = '';
-
-        if (!partial.description || partial.description.trim() === '') {
-            partial.description = inferDescription(partial.vendorName);
+        if (docCount > 1) {
+            console.log(`[Scout] Multi-invoice PDF detected — ${docCount} documents in one file, extracting each separately.`);
         }
 
-        // Enrich description with main service/product info from rawText
-        // Leasing invoices have "Rent:", "Kirjeldus:", service descriptions before the table
-        {
-            const enrichParts = [];
-            const rentMatch = rawDocText.match(/(?:^|\n)\s*(?:Rent|Kirjeldus|Teenus|Service|Objekt)[:\s]*\n?\s*(.{10,120})/i);
-            if (rentMatch) enrichParts.push(rentMatch[1].trim());
-            const periodMatch = rawDocText.match(/(?:Rent periood|Period|Periood)[:\s]+(.{5,40})/i);
-            if (periodMatch) enrichParts.push('Periood: ' + periodMatch[1].trim());
-            if (enrichParts.length > 0 && partial.description) {
-                partial.description = enrichParts.join('; ') + ' | ' + partial.description;
-            } else if (enrichParts.length > 0) {
-                partial.description = enrichParts.join('; ');
-            }
+        // A2: Multi-document support — iterate over every document the model found
+        const invoices = [];
+        for (let i = 0; i < docCount; i++) {
+            const doc = result.documents[i];
+            invoices.push(buildInvoiceFromAzureDoc(doc, rawDocText, result, i, docCount));
         }
 
-        if (partial.subtotalAmount === 0 && partial.taxAmount === 0 && partial.amount > 0) {
-            partial.subtotalAmount = partial.amount;
-        }
-
-        const status = 'Pending';
-
-        // --- Validation warnings ---
-        const validationWarnings = [];
-        // Math check removed — sub + tax ≠ total is normal (leasing, mixed VAT)
-        if ((confidenceScores.total || 0) < 0.6 || (confidenceScores.vendor || 0) < 0.6) {
-            validationWarnings.push(`Low confidence: total=${(confidenceScores.total||0).toFixed(2)}, vendor=${(confidenceScores.vendor||0).toFixed(2)}`);
-        }
-        if (partial.amount === 0) {
-            validationWarnings.push('Total amount not extracted — manual review required');
-        }
-
-        console.log(`[Scout] Extraction complete: vendor="${partial.vendorName}", invoiceId="${partial.invoiceId}", amount=${partial.amount} ${partial.currency}`);
-
-        return [{
-            type: 'INVOICE',
-            invoiceId:            partial.invoiceId,
-            vendorName:           partial.vendorName,
-            supplierRegistration: partial.supplierRegistration,
-            supplierVat:          partial.supplierVat,
-            receiverName:         partial.receiverName,
-            receiverVat:          partial.receiverVat,
-            amount:               partial.amount,
-            taxAmount:            partial.taxAmount,
-            subtotalAmount:       partial.subtotalAmount,
-            currency:             partial.currency,
-            dateCreated:          partial.dateCreated,
-            dueDate:              partial.dueDate,
-            status,
-            description:          partial.description,
-            paymentTerms:         partial.paymentTerms,
-            lineItems:            partial.lineItems,
-            validationWarnings:   validationWarnings.length > 0 ? validationWarnings : undefined,
-            _rawText:             rawDocText,
-        }];
+        return invoices;
 
     } catch (error) {
         console.error(`[Scout] Extraction failed:`, error.message);

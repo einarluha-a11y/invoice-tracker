@@ -364,7 +364,42 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                                                 {expandedRows.has(invoice.id) ? '▼' : '▶'}
                                             </button>
                                             <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                                                <span>{invoice.vendor}</span>
+                                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                                    {invoice.vendor}
+                                                    {/* Phase 1 quality / anomaly badges */}
+                                                    {typeof invoice.minFieldConfidence === 'number' && invoice.minFieldConfidence < 0.85 && (
+                                                        <span
+                                                            className="quality-badge quality-badge-confidence"
+                                                            title={`Low extraction confidence (min=${invoice.minFieldConfidence.toFixed(2)})${invoice.lowConfidenceFields?.length ? ' on: ' + invoice.lowConfidenceFields.join(', ') : ''}`}
+                                                        >
+                                                            ⚠️
+                                                        </span>
+                                                    )}
+                                                    {typeof invoice.anomalyScore === 'number' && invoice.anomalyScore >= 0.7 && (
+                                                        <span
+                                                            className="quality-badge quality-badge-anomaly"
+                                                            title={`Anomaly score ${invoice.anomalyScore.toFixed(2)}${invoice.anomalyReasons?.length ? ': ' + invoice.anomalyReasons.join('; ') : ''}`}
+                                                        >
+                                                            🚩
+                                                        </span>
+                                                    )}
+                                                    {invoice.extractionQuality === 'low' && (
+                                                        <span
+                                                            className="quality-badge quality-badge-low-ocr"
+                                                            title="OCR quality is low — needs human review"
+                                                        >
+                                                            🔍
+                                                        </span>
+                                                    )}
+                                                    {invoice.viesStatus === 'invalid' && (
+                                                        <span
+                                                            className="quality-badge quality-badge-vies"
+                                                            title={`Supplier VAT not in EU VIES registry`}
+                                                        >
+                                                            🛑
+                                                        </span>
+                                                    )}
+                                                </span>
                                                 {(invoice.supplierVat || invoice.supplierRegistration) && (
                                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', fontSize: '0.75rem', fontWeight: 400, color: 'var(--text-secondary)', marginTop: '4px' }}>
                                                         {invoice.supplierVat && <span style={{ whiteSpace: 'nowrap' }}>{t('invoiceDetails.vatLabel')} {invoice.supplierVat}</span>}

@@ -36,7 +36,9 @@ const fs          = require('fs');
 const path        = require('path');
 const readline    = require('readline');
 const { admin, db, bucket } = require('./core/firebase.cjs');
-const { cleanNum, cleanVendorName } = require('./core/utils.cjs');
+const { cleanNum, cleanVendorName, isEmpty } = require('./core/utils.cjs');
+const { findLegalEntityByBrand } = require('./core/brand_mapping.cjs');
+const { applySelfInvoiceGuard } = require('./core/self_invoice_guard.cjs');
 const debug = (...a) => process.env.DEBUG && console.log(...a);
 
 // ── Colours for terminal output ──────────────────────────────────────────────
@@ -305,30 +307,109 @@ function setCurrencySafely(invoice, newCurrency, source, corrections) {
     invoice.currency = newCurrency;
     corrections.push(`${source}: currency ${oldCurrency} → ${newCurrency}`);
 
+    // Partial-payment protection: if invoice already has recorded payments,
+    // never silently overwrite amount — accountant decisions depend on it.
+    if (Array.isArray(invoice.payments) && invoice.payments.length > 0) {
+        corrections.push(`WARNING: ${source} changed currency but invoice has ${invoice.payments.length} payment(s) — amount preserved, manual review`);
+        invoice._needsReview = true;
+        invoice._reviewReasons = invoice._reviewReasons || [];
+        invoice._reviewReasons.push(`Currency changed (${oldCurrency}→${newCurrency}) on invoice with payments`);
+        return true;
+    }
+
     if (invoice.amount <= 0) return true;
     const rawText = invoice._rawText || '';
     if (!rawText) return true;
 
-    // Find all amounts labeled with the new currency in the document
-    const re = new RegExp(`([\\d\\s]+[,.]\\d{2})\\s*${newCurrency}\\b`, 'gi');
-    const amounts = [...rawText.matchAll(re)].map(m => cleanNum(m[1])).filter(n => n > 0);
+    // ── Strategy: find labeled total in the new currency, do NOT pick max ──
+    // The previous heuristic (Math.max of all numbers near the new currency
+    // code) often picked a line-item or VAT amount instead of the document
+    // total. Now we look for explicit Total/Summa kokku labels first.
+    const newAmount = findTotalInCurrency(rawText, newCurrency);
 
-    if (amounts.length > 0) {
-        // The largest amount labeled with new currency is usually the total
-        const newAmount = Math.max(...amounts);
+    if (newAmount > 0) {
         if (Math.abs(newAmount - invoice.amount) > 0.01) {
-            corrections.push(`${source}: amount ${invoice.amount} ${oldCurrency} → ${newAmount} ${newCurrency} (re-extracted from text)`);
+            corrections.push(`${source}: amount ${invoice.amount} ${oldCurrency} → ${newAmount} ${newCurrency} (re-extracted from labeled total)`);
             invoice.amount = newAmount;
+            // Don't blindly reset subtotal/tax — let downstream re-derive if needed
             invoice.subtotalAmount = newAmount;
             invoice.taxAmount = 0;
         }
     } else {
-        corrections.push(`WARNING: ${source} changed currency ${oldCurrency} → ${newCurrency} but no matching amount in rawText. Cleared amount.`);
+        // Could not locate a labeled total in the new currency → flag for review,
+        // do NOT silently keep the old number with the new label.
+        corrections.push(`WARNING: ${source} changed currency ${oldCurrency} → ${newCurrency} but no labeled total found in rawText. Marked NEEDS_REVIEW.`);
+        invoice._needsReview = true;
+        invoice._reviewReasons = invoice._reviewReasons || [];
+        invoice._reviewReasons.push(`Currency changed (${oldCurrency}→${newCurrency}) but no matching total in document text`);
+        // Clear amount so downstream knows it's untrustworthy
         invoice.amount = 0;
         invoice.subtotalAmount = 0;
         invoice.taxAmount = 0;
     }
     return true;
+}
+
+/**
+ * Find a Total/Summa kokku/Grand Total amount labeled with the given currency in raw text.
+ * Returns 0 if no labeled total found.
+ *
+ * Strategy (in priority order):
+ *   1. "Summa kokku ... <num> <CUR>"  (Estonian)
+ *   2. "Total ... <num> <CUR>"        (English)
+ *   3. "Gesamtbetrag ... <num> <CUR>" (German)
+ *   4. "Razem ... <num> <CUR>"        (Polish)
+ *   5. "Итого ... <num> <CUR>"        (Russian)
+ *   6. "<num> <CUR>" on the same line as "Total" / "Kokku" / "Итого" / etc.
+ */
+function findTotalInCurrency(rawText, currency) {
+    if (!rawText || !currency) return 0;
+    const cur = currency.toUpperCase();
+    const numPattern = '([\\d][\\d\\s.,]{0,15}[,.]\\d{2})';
+
+    // Labeled total patterns — order matters (most specific first)
+    const labels = [
+        'Summa\\s+kokku',
+        'Kokku\\s+(?:tasuda|maksta)',
+        'Grand\\s+total',
+        'Total\\s+(?:amount|due|to\\s+pay)',
+        'Total',
+        'Gesamtbetrag',
+        'Gesamtsumme',
+        'Razem',
+        'Suma\\s+(?:całkowita|do\\s+zapłaty)',
+        'Итого',
+        'Всего\\s+к\\s+оплате',
+        'Visa\\s+summa',
+        'Iš\\s+viso',
+    ];
+
+    for (const label of labels) {
+        // Pattern: label ... number ... currency  (within ~80 chars)
+        const re1 = new RegExp(`${label}[^\\n]{0,40}?${numPattern}[^\\n]{0,5}${cur}\\b`, 'i');
+        const m1 = rawText.match(re1);
+        if (m1) {
+            const v = cleanNum(m1[1]);
+            if (v > 0) return v;
+        }
+        // Pattern: label ... currency ... number  (currency comes first)
+        const re2 = new RegExp(`${label}[^\\n]{0,40}?${cur}\\s*${numPattern}`, 'i');
+        const m2 = rawText.match(re2);
+        if (m2) {
+            const v = cleanNum(m2[1]);
+            if (v > 0) return v;
+        }
+        // Pattern: label ... number  (no currency on same fragment, but rest of doc has it)
+        const re3 = new RegExp(`${label}[^\\n]{0,40}?${numPattern}`, 'i');
+        const m3 = rawText.match(re3);
+        if (m3) {
+            const v = cleanNum(m3[1]);
+            // Only trust this if the currency appears anywhere in the text
+            if (v > 0 && new RegExp(`\\b${cur}\\b`, 'i').test(rawText)) return v;
+        }
+    }
+
+    return 0;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -341,14 +422,7 @@ const MANDATORY_FIELDS = [
     'subtotalAmount', 'taxAmount',
 ];
 
-const EMPTY_VALUES = ['', 'Not_Found', 'Unknown Vendor', 'UNKNOWN VENDOR', 'Unknown', null, undefined];
-
-function isEmpty(val) {
-    if (EMPTY_VALUES.includes(val)) return true;
-    if (typeof val === 'number' && val === 0) return true;
-    if (typeof val === 'string' && val.startsWith('Auto-')) return true;
-    return false;
-}
+// isEmpty is imported from ./core/utils.cjs — single source of truth (whitespace-aware)
 
 /**
  * Validates and enriches an invoice extracted by the Scout (DocAI).
@@ -363,94 +437,57 @@ async function validateAndTeach(invoiceData, companyId) {
     const invoice = { ...invoiceData };
     const corrections = [];
     const originalCurrency = invoice.currency; // Track for currency-change detection
+    const originalVendorName = invoice.vendorName; // Track for B2: charter re-check
 
-    // ── 0. SELF-INVOICE GUARD: clear buyer data, re-extract supplier's ──────
-    // If invoice's vendorName, supplierVat, or supplierRegistration matches any
-    // registered receiving company → Scout extracted buyer's data, not vendor's.
-    // After clearing, search rawText for the real supplier's name/Reg/VAT.
+    // ── 0. SELF-INVOICE GUARD (B3 — unified) ────────────────────────────────
+    // If the invoice's vendorName, supplierVat or supplierRegistration matches
+    // any registered receiving company, Scout extracted the buyer's fields
+    // instead of the vendor's. Delegate to core/self_invoice_guard.cjs which
+    // clears leaked fields and re-extracts from rawText using buyer-exclusion.
     if (db) {
         try {
             const compSnap = await db.collection('companies').get();
-            const buyerIds = new Set(); // collect all buyer VAT/Reg to exclude
-            const buyerNames = new Set(); // collect buyer names (lowercased, cleaned)
-            const invVat = (invoice.supplierVat || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-            const invReg = (invoice.supplierRegistration || '').replace(/[^0-9]/g, '');
-            const invName = (invoice.vendorName || '').toLowerCase().replace(/[^a-zöäüõ0-9]/g, '');
-            let vatCleared = false, regCleared = false, nameCleared = false;
-
-            for (const cd of compSnap.docs) {
-                const c = cd.data();
-                const cVat = (c.vat || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-                const cReg = (c.regCode || '').replace(/[^0-9]/g, '');
-                const cName = (c.name || '').toLowerCase().replace(/[^a-zöäüõ0-9]/g, '');
-                if (cVat) buyerIds.add(cVat);
-                if (cReg) buyerIds.add(cReg);
-                if (cName) buyerNames.add(cName);
-
-                // Match VAT directly, or detect regCode embedded in VAT (e.g. "EE14987085" contains regCode "14987085")
-                const vatMatchesBuyer = (cVat && invVat && cVat === invVat) ||
-                    (cReg && invVat && invVat.endsWith(cReg));
-                if (vatMatchesBuyer) {
-                    corrections.push(`Self-invoice guard: cleared buyer VAT ${invoice.supplierVat} (belongs to ${c.name})`);
-                    invoice.supplierVat = '';
-                    vatCleared = true;
-                }
-                if (cReg && invReg && cReg === invReg) {
-                    corrections.push(`Self-invoice guard: cleared buyer Reg ${invoice.supplierRegistration} (belongs to ${c.name})`);
-                    invoice.supplierRegistration = '';
-                    regCleared = true;
-                }
-                // Check vendorName — buyer company can never be the vendor
-                if (cName && invName && (cName === invName || invName.includes(cName) || cName.includes(invName)) && invName.length > 3) {
-                    corrections.push(`Self-invoice guard: vendor "${invoice.vendorName}" is a receiver company (${c.name}) — clearing`);
-                    invoice.vendorName = '';
-                    nameCleared = true;
-                }
-            }
-
-            // Re-extract from rawText: find Reg/VAT/vendorName that are NOT buyer's
-            if (regCleared || vatCleared || nameCleared) {
-                const rawText = invoice._rawText || invoiceData._rawText || '';
-                if (rawText) {
-                    if (regCleared) {
-                        const regMatches = rawText.matchAll(/(?:Reg\.?\s*(?:nr|code|kood)|Rg-?kood)[.:\s]+(\d{6,10})/gi);
-                        for (const m of regMatches) {
-                            if (!buyerIds.has(m[1])) {
-                                invoice.supplierRegistration = m[1];
-                                corrections.push(`Self-invoice guard: found supplier Reg ${m[1]} in text`);
-                                break;
-                            }
-                        }
-                    }
-                    if (vatCleared) {
-                        const vatMatches = rawText.matchAll(/(?:KMKR|KMKN|VAT)[.\s:]*([A-Z]{2}\d{6,12})/gi);
-                        for (const m of vatMatches) {
-                            const clean = m[1].toUpperCase();
-                            if (!buyerIds.has(clean)) {
-                                invoice.supplierVat = m[1];
-                                corrections.push(`Self-invoice guard: found supplier VAT ${m[1]} in text`);
-                                break;
-                            }
-                        }
-                    }
-                    // Re-extract vendorName: first line of the document is usually the vendor
-                    if (nameCleared) {
-                        const lines = rawText.split('\n').map(l => l.trim()).filter(l => l.length > 3);
-                        for (const line of lines) {
-                            const lineLower = line.toLowerCase().replace(/[^a-zöäüõ0-9]/g, '');
-                            // Skip lines that match buyer names or look like addresses/dates
-                            if (buyerNames.has(lineLower)) continue;
-                            if (/^\d|^arve|^kuup|^maks|^viitenumber|^swedbank|^seb|^lhv/i.test(line)) continue;
-                            if (line.length > 80) continue;
-                            // This is likely the vendor name
-                            invoice.vendorName = line;
-                            corrections.push(`Self-invoice guard: found supplier name "${line}" in text`);
-                            break;
-                        }
-                    }
-                }
+            const receivers = compSnap.docs.map(d => d.data());
+            const rawText = invoice._rawText || invoiceData._rawText || '';
+            const guardResult = applySelfInvoiceGuard(invoice, receivers, rawText);
+            if (guardResult.corrections.length > 0) {
+                corrections.push(...guardResult.corrections);
             }
         } catch { /* non-critical */ }
+    }
+
+    // ── 0b. BRAND → LEGAL ENTITY MAPPING (A4) ──────────────────────────────
+    // Marketing brand on an invoice rarely matches the legal entity we need
+    // in accounting: "Kookon Nutilaod" should become "Allstore Assets OÜ",
+    // "Bolt" → "Bolt Operations OÜ", etc. Token-overlap example lookup
+    // downstream cannot match these because the strings share zero tokens,
+    // so we do a direct Firestore lookup in `brand_aliases`.
+    //
+    // Runs AFTER self-invoice guard (so buyer-leaked names are already cleared)
+    // and BEFORE example lookup (so examples are searched by the legal name).
+    if (db && invoice.vendorName && !isEmpty(invoice.vendorName)) {
+        try {
+            const alias = await findLegalEntityByBrand(db, invoice.vendorName);
+            if (alias && alias.legalName && alias.legalName !== invoice.vendorName) {
+                const fromName = invoice.vendorName;
+                invoice.vendorName = alias.legalName;
+                corrections.push(`Brand mapping: "${fromName}" → "${alias.legalName}"`);
+                // If the alias has a regCode/VAT and the invoice is missing them,
+                // stamp them in. Never overwrite an existing value — that's the
+                // Teacher's job via examples, not the brand table.
+                if (alias.regCode && isEmpty(invoice.supplierRegistration)) {
+                    invoice.supplierRegistration = alias.regCode;
+                    corrections.push(`Brand mapping: filled supplierRegistration=${alias.regCode}`);
+                }
+                if (alias.vatNumber && isEmpty(invoice.supplierVat)) {
+                    invoice.supplierVat = alias.vatNumber;
+                    corrections.push(`Brand mapping: filled supplierVat=${alias.vatNumber}`);
+                }
+            }
+        } catch (brandErr) {
+            // Non-critical — fall through to regular example lookup
+            debug(`[Teacher] Brand mapping lookup failed: ${brandErr.message}`);
+        }
     }
 
     // ── 1. Parallel load: Charter + Global Rules + Examples ────────────────
@@ -595,9 +632,15 @@ async function validateAndTeach(invoiceData, companyId) {
     }
 
     // ── 3. Fill/correct fields from examples ────────────────────────────────
-    // Sort once, reuse in step 3 and step 5
+    // Sort once, reuse in step 3 and step 5.
+    // C2: Prefer human-verified examples (verifiedByHuman=true / confidence=1.0)
+    // over auto-generated ones — manual corrections beat heuristic snapshots.
+    // Tie-break by recency so the latest correction wins.
     const bestExample = examples.length > 0
         ? examples.sort((a, b) => {
+              const cA = (a.confidence ?? (a.verifiedByHuman ? 1 : 0));
+              const cB = (b.confidence ?? (b.verifiedByHuman ? 1 : 0));
+              if (cA !== cB) return cB - cA;
               const tA = a.updatedAt?._seconds || a.createdAt?._seconds || 0;
               const tB = b.updatedAt?._seconds || b.createdAt?._seconds || 0;
               return tB - tA;
@@ -651,6 +694,8 @@ async function validateAndTeach(invoiceData, companyId) {
 
         // Amount fix: if any example has same invoiceId and DocAI amount is wildly different,
         // DocAI likely parsed amount in wrong currency (e.g. PLN instead of EUR)
+        // B5: exactMatch override safety — never overwrite when partial payments exist,
+        // log the override source for traceability.
         const exactMatch = examples.find(ex => {
             const exId = (ex.groundTruth?.invoiceId || '').toLowerCase().trim();
             const invId = (invoice.invoiceId || '').toLowerCase().trim();
@@ -658,18 +703,32 @@ async function validateAndTeach(invoiceData, companyId) {
         });
         if (exactMatch && invoice.amount > 0) {
             const egt = exactMatch.groundTruth;
-            if (egt.amount > 0) {
+            // B5: PARTIAL PAYMENT GUARD — if the invoice has any payments[],
+            // its `amount` reflects the remaining balance (originalAmount - paid).
+            // Overwriting it with the example's amount would corrupt that state
+            // and re-introduce the bug we already burned a quarter on. Always
+            // refuse to touch amount/subtotal/tax in this case.
+            const hasPartialPayments = Array.isArray(invoice.payments) && invoice.payments.length > 0;
+
+            if (egt.amount > 0 && !hasPartialPayments) {
                 const ratio = invoice.amount / egt.amount;
                 if (ratio > 1.5 || ratio < 0.5) {
-                    corrections.push(`Fixed amount: ${invoice.amount} → ${egt.amount} (example match by invoiceId, DocAI had wrong currency)`);
+                    const matchSource = exactMatch.groundTruth?.invoiceId
+                        ? `invoiceId ${exactMatch.groundTruth.invoiceId}`
+                        : 'exact id match';
+                    corrections.push(`exactMatch override (via ${matchSource}): amount ${invoice.amount} → ${egt.amount} (DocAI had wrong currency)`);
                     invoice.amount = egt.amount;
                     invoice.subtotalAmount = egt.subtotalAmount || egt.amount;
                     invoice.taxAmount = egt.taxAmount || 0;
                 }
+            } else if (egt.amount > 0 && hasPartialPayments) {
+                // Honest log so the regression jumps out next time
+                debug(`[Teacher] exactMatch refused amount overwrite — invoice has ${invoice.payments.length} partial payment(s), preserving current balance ${invoice.amount}`);
             }
+
             // Also pick Reg from exact match (more precise than latest example)
             if (egt.supplierRegistration && egt.supplierRegistration !== invoice.supplierRegistration) {
-                corrections.push(`Corrected supplierRegistration: ${invoice.supplierRegistration} → ${egt.supplierRegistration} (exact invoiceId match)`);
+                corrections.push(`exactMatch override: supplierRegistration ${invoice.supplierRegistration} → ${egt.supplierRegistration}`);
                 invoice.supplierRegistration = egt.supplierRegistration;
             }
         }
@@ -686,7 +745,19 @@ async function validateAndTeach(invoiceData, companyId) {
         }
     }
 
-    // Charter rules already applied in step 1a2 (before global fallbacks)
+    // ── 3b. CHARTER RE-CHECK (B2) ───────────────────────────────────────────
+    // Charter rules were applied in step 1a2 against the ORIGINAL vendorName.
+    // If brand mapping (0b) or example application (3a) changed the vendor
+    // name, vendor-specific charter rules for the NEW vendor were skipped —
+    // re-run the rules so they can match. Only run when the name actually
+    // changed AND a non-empty charter exists, to avoid double-applying.
+    if (charterRules && invoice.vendorName !== originalVendorName && !isEmpty(invoice.vendorName)) {
+        const reapplied = applyCharterRules(invoice, charterRules);
+        if (reapplied.length > 0) {
+            corrections.push(`Charter re-check after vendor change "${originalVendorName}" → "${invoice.vendorName}":`);
+            corrections.push(...reapplied);
+        }
+    }
 
     // ── 4a. VENDOR NAME CLEANUP: strip trailing \n + city lines ─────────────
     // DocAI sometimes extracts multi-line text as vendorName:

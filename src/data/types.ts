@@ -35,4 +35,17 @@ export interface Invoice {
     // Soft delete (archive)
     archived?: boolean;
     deletedAt?: any;
+    // Phase 1 — Confidence + anomaly metadata (Scout/Teacher pipeline)
+    confidenceScores?: Record<string, number>;
+    minFieldConfidence?: number;
+    avgFieldConfidence?: number;
+    lowConfidenceFields?: string[];
+    extractionQuality?: 'high' | 'medium' | 'low';
+    anomalyScore?: number;
+    anomalyReasons?: string[];
+    anomalyZScore?: number;
+    viesStatus?: 'valid' | 'invalid' | 'unverified';
+    contentHash?: string;
+    docIndex?: number;
+    docCount?: number;
 }

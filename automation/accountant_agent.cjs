@@ -5,6 +5,8 @@ const { validateVat } = require('./vies_validator.cjs');
 const { admin, db } = require('./core/firebase.cjs');
 const { enrichCompanyData } = require('./company_enrichment.cjs');
 const { cleanNum } = require('./core/utils.cjs');
+const { applySelfInvoiceGuard } = require('./core/self_invoice_guard.cjs');
+const { detectAnomalies } = require('./core/anomaly_detector.cjs');
 const { saveBankTransaction } = require('./core/bank_dedup.cjs');
 const { syncInvoiceToMerit, syncPaymentToMerit } = require('./merit_sync.cjs');
 const debug = (...a) => process.env.DEBUG && console.log(...a);
@@ -245,30 +247,17 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
         }
     }
 
-    // --- 0.6. SELF-INVOICE GUARD: receiver company can never be the vendor ---
-    // All registered companies (that receive invoices) are checked.
-    // If vendor VAT/Reg matches any registered company → data was extracted from buyer section.
+    // --- 0.6. SELF-INVOICE GUARD (B3 — unified) ---
+    // Delegates to core/self_invoice_guard.cjs so Teacher, Accountant and
+    // the last-line guard in invoice_processor all behave identically.
     {
         const companiesSnap = await getCachedCompanies();
-        const invVat = (docAiPayload.supplierVat || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-        const invReg = (docAiPayload.supplierRegistration || '').replace(/[^0-9]/g, '');
-
-        for (const compDoc of companiesSnap.docs) {
-            const comp = compDoc.data();
-            const compVat = (comp.vat || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-            const compReg = (comp.regCode || '').replace(/[^0-9]/g, '');
-
-            const vatMatch = (compVat && invVat && compVat === invVat) || (compReg && invVat && invVat.endsWith(compReg));
-            const regMatch = compReg && invReg && compReg === invReg;
-
-            if (vatMatch || regMatch) {
-                debug(`[Accountant Agent] ⚠️ SELF-INVOICE GUARD: vendor VAT/Reg matches receiver "${comp.name}". Clearing buyer data from vendor fields.`);
-                // Clear fields that belong to the buyer, not the vendor
-                if (vatMatch) docAiPayload.supplierVat = '';
-                if (regMatch) docAiPayload.supplierRegistration = '';
-                // Don't clear vendorName — DocAI may have extracted the real vendor elsewhere
-                break;
-            }
+        const receivers = companiesSnap.docs.map(d => d.data());
+        const rawText = docAiPayload._rawText || '';
+        const guardResult = applySelfInvoiceGuard(docAiPayload, receivers, rawText);
+        if (guardResult.leaked) {
+            debug(`[Accountant Agent] ⚠️ SELF-INVOICE GUARD cleared ${guardResult.corrections.length} buyer-leaked field(s)`);
+            for (const c of guardResult.corrections) debug(`  └ ${c}`);
         }
     }
 
@@ -582,14 +571,39 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
         }
     }
 
-    // --- 3. COMPLIANCE AUDIT: VIES Validation ---
+    // --- 3. COMPLIANCE AUDIT: VIES Validation (B1 — blocking gate) ---
+    // Three outcomes:
+    //   valid    → accept
+    //   invalid  → status NEEDS_REVIEW + validationErrors (does NOT reject the
+    //              record outright, so the human can fix it instead of losing it)
+    //   timeout  → graceful degradation: continue, but stamp viesStatus='unverified'
     let viesResult = null;
     if (docAiPayload.supplierVat && docAiPayload.supplierVat !== 'Not_Found' && !isPrivate) {
         debug(`[Accountant Agent] 🌍 Verifying VAT [${docAiPayload.supplierVat}] with EU VIES...`);
-        viesResult = await validateVat(docAiPayload.supplierVat);
-        debug(`[Accountant Agent] 💶 VIES Response: Valid? ${viesResult.isValid}`);
-        // Attach raw result to DB for UI
-        docAiPayload.viesValidation = viesResult;
+        try {
+            viesResult = await validateVat(docAiPayload.supplierVat);
+            debug(`[Accountant Agent] 💶 VIES Response: Valid? ${viesResult.isValid}`);
+            docAiPayload.viesValidation = viesResult;
+
+            if (viesResult.isValid === true) {
+                docAiPayload.viesStatus = 'valid';
+            } else if (viesResult.isValid === false) {
+                // Hard-invalid VAT — block but keep the record for human review.
+                docAiPayload.viesStatus = 'invalid';
+                docAiPayload.validationErrors = docAiPayload.validationErrors || [];
+                docAiPayload.validationErrors.push(`VAT ${docAiPayload.supplierVat} not in VIES registry`);
+                warnings.push(`CRITICAL: Supplier VAT ${docAiPayload.supplierVat} is invalid per EU VIES — needs review.`);
+                systemStatus = 'NEEDS_REVIEW';
+            } else {
+                // viesResult.isValid is null/undefined → service didn't give a definitive answer
+                docAiPayload.viesStatus = 'unverified';
+            }
+        } catch (viesErr) {
+            // VIES is notoriously flaky — never block on infrastructure failure.
+            console.warn(`[Accountant Agent] ⚠️  VIES check failed (${viesErr.message}) — proceeding as 'unverified'.`);
+            docAiPayload.viesStatus = 'unverified';
+            docAiPayload.viesValidation = { isValid: null, error: viesErr.message };
+        }
     }
 
     // --- 4. RULE-BASED ACCOUNTING AUDIT (Claude disabled) ---
@@ -628,6 +642,39 @@ async function auditAndProcessInvoice(docAiPayload, fileUrl, companyId) {
              debug(`[Accountant Agent] 🔒 Immutable 'Paid' status preserved despite ${warnings.length} warnings.`);
         }
 
+    }
+
+    // --- 5. ANOMALY DETECTION (C1) ---
+    // Statistical (Z-score over vendor history) + semantic (round numbers,
+    // duplicate amount window, dueDate-before-dateCreated). Score >= 0.9 routes
+    // to NEEDS_REVIEW. Lower scores attach a badge to the dashboard but don't
+    // block. Soft-fails on Firestore errors so we never block extraction
+    // because of an analytics step.
+    try {
+        const anomaly = await detectAnomalies(db, {
+            vendorName: docAiPayload.vendorName,
+            amount: cleanNum(docAiPayload.amount),
+            dateCreated: docAiPayload.dateCreated,
+            dueDate: docAiPayload.dueDate,
+        }, { companyId });
+
+        if (anomaly.score > 0) {
+            docAiPayload.anomalyScore = anomaly.score;
+            docAiPayload.anomalyReasons = anomaly.reasons;
+            docAiPayload.anomalyZScore = anomaly.zScore;
+            debug(`[Accountant Agent] 🧠 Anomaly score=${anomaly.score.toFixed(2)} (history=${anomaly.historyCount}) reasons=${JSON.stringify(anomaly.reasons)}`);
+
+            if (anomaly.blocking && systemStatus !== 'Paid' && systemStatus !== 'Duplicate') {
+                systemStatus = 'NEEDS_REVIEW';
+                warnings.push(`CRITICAL: Anomaly score ${anomaly.score.toFixed(2)} — ${anomaly.reasons.join('; ')}`);
+            }
+        } else {
+            // Persist a 0 so the dashboard knows we ran the check.
+            docAiPayload.anomalyScore = 0;
+            docAiPayload.anomalyReasons = [];
+        }
+    } catch (anomErr) {
+        console.warn(`[Accountant Agent] ⚠️  Anomaly detection failed (non-blocking): ${anomErr.message}`);
     }
 
     // --- OVERDUE CHECK: if dueDate is in the past and not Paid/Duplicate → Overdue ---

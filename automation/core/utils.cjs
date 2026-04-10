@@ -3,6 +3,26 @@
  * Used by Scout, Teacher, Accountant, imap_daemon.
  */
 
+const crypto = require('crypto');
+
+/**
+ * Compute SHA-256 content hash of a file buffer.
+ * Used for idempotency: the same PDF uploaded twice (email re-poll,
+ * manual re-upload, re-imported Dropbox file) should never produce
+ * two invoice records. Returns a 64-char hex string.
+ *
+ * NOTE: hash is over the raw bytes, so identical-looking PDFs with
+ * different metadata (e.g. re-saved by a different program) will NOT
+ * collide — that's intentional, because we rely on separate dedup
+ * (invoiceId + vendor + amount) to catch semantic duplicates.
+ */
+function computeContentHash(buffer) {
+    if (!buffer) return null;
+    // Accept both Buffer and base64 string inputs for convenience.
+    const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
+    return crypto.createHash('sha256').update(buf).digest('hex');
+}
+
 /**
  * Parse a numeric string into a float, handling European (1.200,50) and US (1,200.50) formats.
  * Strips currency symbols, spaces, and normalizes separators.
@@ -89,4 +109,22 @@ async function getVendorAliases(db, companyId) {
     return { ...DEFAULT_ALIASES };
 }
 
-module.exports = { cleanNum, cleanVendorName, getVendorAliases };
+// ─── isEmpty — single source of truth for "value is missing" ────────────────
+// Used by Teacher, Repairman, Accountant. Whitespace-only strings are EMPTY.
+const EMPTY_STRINGS = new Set(['', 'Not_Found', 'NOT_FOUND_ON_INVOICE', 'not_found',
+    'Unknown Vendor', 'UNKNOWN VENDOR', 'Unknown', 'unknown']);
+
+function isEmpty(val) {
+    if (val === null || val === undefined) return true;
+    if (typeof val === 'number') return val === 0;
+    if (typeof val === 'string') {
+        const trimmed = val.trim();
+        if (trimmed === '') return true;
+        if (EMPTY_STRINGS.has(trimmed)) return true;
+        if (trimmed.startsWith('Auto-')) return true;
+        return false;
+    }
+    return false;
+}
+
+module.exports = { cleanNum, cleanVendorName, getVendorAliases, isEmpty, computeContentHash };
