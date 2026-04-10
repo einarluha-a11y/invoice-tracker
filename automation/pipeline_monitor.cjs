@@ -194,6 +194,7 @@ function checkPm2Errors() {
     const IGNORE_PATTERNS = [
         /AUTHENTICATIONFAILED/i,  // known bad IMAP cred in root .env
         /Invalid credentials/i,
+        /Dead-Man Switch/i,       // handled Firestore write failure — not a real crash
     ];
 
     const processes = ['invoice-api', 'invoice-imap'];
