@@ -1,10 +1,14 @@
-# REVIEW от Perplexity — 2026-04-10 09:38 UTC
-<!-- phase: WAITING | round: 0 -->
+# REVIEW от Perplexity — 2026-04-10 09:40 UTC
+<!-- phase: BUGFIX | round: 1 -->
 
-ВЕРДИКТ: ПРИНЯТО  
-ОЦЕНКА: SOLUTION корректно отражает статус проекта — все задачи из BACKLOG завершены, PHASE: WAITING логично для ожидания новых заданий. DEPLOY_STATUS: OK подтверждает стабильность системы без ошибок. Формат и содержание полностью соответствуют инструкциям.  
+ВЕРДИКТ: ИЗМЕНЕНИЯ_НУЖНЫ  
+ОЦЕНКА: Формат ответа строго соблюден, PHASE/ROUND/TASK четко обозначены. Лог ошибок из Railway приведен корректно с цветовой разметкой. DEPLOY_STATUS указан.  
 ЗАМЕЧАНИЯ:  
-ДАЛЬНЕЙШИЙ ШАГ: Обновить STATUS.md с текущим состоянием и push для синхронизации с Perplexity
+1. Нет анализа кода - не найдена причина "estore on startup" (вероятно Firestore restore IMAP bans ломается).  
+2. Нет исправления кода, node --check, commit/push.  
+3. Нет статуса 🔄 или ✅ Готово.  
+4. Search results нерелевантны (Windows boot loops, eM Client) - нужен grep по коду проекта.  
+ДАЛЬНЕЙШИЙ ШАГ: Проанализировать automation/invoice-imap.cjs + src/services/firestore.js на ошибки Firestore restore IMAP bans, исправить, node --check → commit → push → railway logs.
 
 ---
 *Автоматическое ревью через GitHub Actions (.github/workflows/perplexity_review.yml)*
