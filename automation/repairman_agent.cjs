@@ -865,11 +865,24 @@ async function runAudit() {
             } // close else if (invoiceAmount > 0)
         }
 
-        // ── Paid invoice: sync amount with bank transaction ──
-        // Foreign currency invoices (USD, PLN) get paid in EUR.
+        // ── Paid invoice: sync amount with bank transaction (FX only) ──
+        // Foreign currency invoices (USD, PLN, GBP, ...) get paid in EUR.
         // The displayed amount should reflect what was actually paid (EUR from bank statement).
+        //
+        // GUARDS:
+        //  1. Skip when invoice has payments[] — partial-payment state must not be
+        //     overwritten. `amount` already represents `remainingAmount`, not the
+        //     bank-side number. Touching it corrupts the partial-payment ledger.
+        //  2. Skip when invoice currency is already EUR — there's no FX conversion
+        //     to apply, and the bank txAmount may differ from invoice.amount only
+        //     because of fees/rounding (which is a separate problem).
         const companyTxs = bankTxByCompany[data.companyId] || [];
-        if ((data.status === 'Paid' || updates.status === 'Paid') && companyTxs.length > 0) {
+        if (
+            (data.status === 'Paid' || updates.status === 'Paid') &&
+            companyTxs.length > 0 &&
+            !(Array.isArray(data.payments) && data.payments.length > 0) &&  // guard 1
+            data.currency && data.currency !== 'EUR'                          // guard 2
+        ) {
             const matchedTx = companyTxs.find(tx => tx.matchedInvoiceId === doc.id);
             if (matchedTx) {
                 const txAmount = cleanNum(matchedTx.amount);
@@ -878,6 +891,31 @@ async function runAudit() {
                     updates.amount = txAmount;
                     updates.currency = 'EUR';  // bank statement is always EUR
                     if (!data.originalAmount) updates.originalAmount = invAmount;
+                }
+            }
+        }
+
+        // ── Partial-payment ledger restoration ──
+        // If a previous run (or any code path) corrupted `amount` so it no longer
+        // matches `remainingAmount`, fix it. The invariant is:
+        //   amount === remainingAmount   when payments[].length > 0
+        // This is the only place in the audit pass that's allowed to touch
+        // amount on a partial-payment invoice — and only to restore it.
+        if (Array.isArray(data.payments) && data.payments.length > 0) {
+            const expectedAmount = cleanNum(data.remainingAmount);
+            const currentAmount  = cleanNum(data.amount);
+            if (
+                expectedAmount > 0 || expectedAmount === 0
+            ) {
+                if (Math.abs(currentAmount - expectedAmount) > 0.01) {
+                    updates.amount = expectedAmount;
+                    // If the invoice was wrongly marked Paid by the bank-sync
+                    // branch above (now guarded), revert status too: 0 < remaining
+                    // means it isn't fully paid.
+                    if (expectedAmount > 0.01 && (data.status === 'Paid' || updates.status === 'Paid')) {
+                        updates.status = 'Pending';
+                        if (!updates.previousStatus) updates.previousStatus = data.status;
+                    }
                 }
             }
         }
