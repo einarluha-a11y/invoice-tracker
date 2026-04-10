@@ -1,9 +1,13 @@
 # STATUS — Pipeline Activity Log
 Обновляется автоматически. Perplexity читает при генерации задач.
 
+<<<<<<< Updated upstream
 ## 2026-04-10
 - 2026-04-10 UTC — ✅ SYNC: агент запущен. PHASE: WAITING. Новых задач нет. node --check OK. DEPLOY_STATUS: OK. Ожидаю новых задач от Einar/Perplexity.
 - 2026-04-10 17:30 UTC — ✅ SYNC: агент запущен. PHASE: WAITING. Система стабильна: crash loop исправлен (safe err.message + Promise.race 8s timeout). Railway: Restored 2 IMAP bans. node --check OK. DEPLOY_STATUS: OK. Ожидаю новых задач от Einar.
+=======
+- 2026-04-10 18:00 UTC — ✅ SYNC: агент запущен. PHASE: WAITING. Новых задач нет. BACKLOG пуст. node --check OK. DEPLOY_STATUS: OK. Ожидаю новых задач от Einar/Perplexity.
+>>>>>>> Stashed changes
 - 2026-04-10 UTC — ✅ SYNC: агент запущен. REVIEW.md — Perplexity ответил вне роли (повторный сбой). Новых задач нет. PHASE: WAITING. node --check OK. DEPLOY_STATUS: OK. Ожидаю новых задач от Einar/Perplexity.
 - 2026-04-10 17:00 UTC — ✅ BUGFIX ROUND 2: grep выполнен, loadRateLimitsFromFirestore найдена в imap_listener.cjs:59. Добавлен Promise.race + 8s timeout. node --check OK. DEPLOY_STATUS: OK. Ожидаю ревью от Perplexity.
 - 2026-04-10 17:00 UTC — ✅ SYNC: агент запущен. PHASE: WAITING. REVIEW.md — Perplexity ответил вне протокола (стандартный сбой). Новых задач нет, BACKLOG пуст. node --check OK. DEPLOY_STATUS: OK. Ожидаю новых задач от Einar/Perplexity.
