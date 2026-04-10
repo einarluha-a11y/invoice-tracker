@@ -2,4 +2,5 @@
 
 PHASE: WAITING
 ROUND: 0
-TASK: все задачи из BACKLOG выполнены — ожидаю новых
+TASK: WAITING sync v11 — агент запущен, BACKLOG пуст, DEPLOY_STATUS: OK
+DEPLOY_STATUS: OK
