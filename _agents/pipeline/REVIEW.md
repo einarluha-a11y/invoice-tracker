@@ -2,9 +2,9 @@
 <!-- phase: WAITING | round: 0 -->
 
 ВЕРДИКТ: ПРИНЯТО  
-ОЦЕНКА: Статус синхронизирован корректно, BACKLOG пуст, DEPLOY_STATUS: OK — система в стабильном состоянии ожидания. PHASE: WAITING и ROUND: 0 отражают отсутствие активных задач.  
+ОЦЕНКА: STATUS четко отражает успешное состояние (агент запущен, BACKLOG пуст, DEPLOY_STATUS: OK). PHASE: WAITING и ROUND: 0 правильно сигнализируют о готовности к следующему заданию. Формат SOLUTION.md соответствует пайплайну для синхронизации с Perplexity.  
 ЗАМЕЧАНИЯ:  
-ДАЛЬНЕЙШИЙ ШАГ: Мониторить BACKLOG на новые задачи из агентов
+ДАЛЬНЕЙШИЙ ШАГ: Ждать нового TASK от Einar или pipeline события в /tmp/.pipeline_event
 
 ---
 *Автоматическое ревью через GitHub Actions (.github/workflows/perplexity_review.yml)*
