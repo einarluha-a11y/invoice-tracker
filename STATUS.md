@@ -1,10 +1,10 @@
 # STATUS — Invoice Tracker Pipeline
 
-**Дата:** 2026-04-10 (обновлено 2026-04-10 UTC — Claude agent sync v21)
+**Дата:** 2026-04-10 (обновлено 2026-04-10 UTC — Claude agent sync v22)
 **Ветка:** main
 **DEPLOY_STATUS:** OK
-**PHASE:** WAITING
-**LAST_TASK:** Все BUGFIX rounds 1-5 ПРИНЯТО. Audit Paid: 0 ложных матчей. Pipeline стабилен.
+**PHASE:** BUGFIX ROUND 1 — DONE
+**LAST_TASK:** invoice-imap crash loop fix (477+ рестартов) — 2026-04-10.
 
 ## Текущее состояние системы
 
@@ -16,6 +16,13 @@
 - `watchdog` — online, мониторинг активен ✅
 
 ## Последние изменения (2026-04-10 UTC)
+
+### AGENT_SYNC 2026-04-10 UTC (sync v22)
+- BUGFIX ROUND 1: invoice-imap 477+ рестартов — ИСПРАВЛЕНО
+- Fixes: _keepAlive 60s→5s, self-healing обёртки, exponential backoff
+- PHASE: BUGFIX ROUND 1, DEPLOY_STATUS: OK
+- commit: 50cb3fa — pipeline: DEPLOY_STATUS OK — invoice-imap crash loop fixed
+
 
 ### AGENT_SYNC 2026-04-10 UTC (sync v21)
 - REVIEW WAITING ROUND 0: ПРИНЯТО — Perplexity подтвердил стабильность
