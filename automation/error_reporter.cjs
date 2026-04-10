@@ -72,12 +72,18 @@ async function reportError(errorCode, context, err) {
             if (totalSnap.data().count > MAX_SYSTEM_LOG_ENTRIES) {
                 const excess = Math.min(totalSnap.data().count - MAX_SYSTEM_LOG_ENTRIES, 100);
                 const oldSnap = await logsRef.orderBy('createdAt', 'asc').limit(excess).select('createdAt').get();
-                // Firestore batch limit is 500 ops — use small chunk to stay within transaction size
-                const CHUNK = 100;
+                // Batch size 10: avoids "Transaction too big" when documents have large message fields.
+                // Each batch wrapped in its own try/catch so one failed chunk doesn't abort pruning
+                // or propagate to the outer catch (which would fire the Dead-Man Switch).
+                const CHUNK = 10;
                 for (let i = 0; i < oldSnap.docs.length; i += CHUNK) {
-                    const batch = db.batch();
-                    oldSnap.docs.slice(i, i + CHUNK).forEach(doc => batch.delete(doc.ref));
-                    await batch.commit();
+                    try {
+                        const batch = db.batch();
+                        oldSnap.docs.slice(i, i + CHUNK).forEach(doc => batch.delete(doc.ref));
+                        await batch.commit();
+                    } catch (batchErr) {
+                        console.warn('[ErrorReporter] ⚠️  Pruning batch failed (non-fatal):', batchErr.message);
+                    }
                 }
             }
         } else {
