@@ -2,6 +2,7 @@
 Обновляется автоматически. Perplexity читает при генерации задач.
 
 ## 2026-04-10
+- 2026-04-10 UTC — ✅ SYNC: агент запущен. REVIEW BUGFIX ROUND 4 ПРИНЯТО (gRPC cold start fix → preferRest: true, 8-12с → 1-2с). Система стабильна. node --check OK. PHASE: WAITING. DEPLOY_STATUS: OK. Ожидаю новых задач от Einar/Perplexity.
 - 2026-04-10 UTC — ✅ SYNC: агент запущен. BUGFIX ROUND 3 закрыт (auth failure ban 30min + keepalive interval). REVIEW.md = ПРИНЯТО. node --check OK. PHASE: WAITING. DEPLOY_STATUS: OK. Ожидаю новых задач от Einar/Perplexity.
 - 2026-04-10 09:43 — ✅ Завершено: 2:False "timed out" warning after Firestore restore
 - 2026-04-10 UTC — ✅ SYNC: агент запущен. PHASE: WAITING. BUGFIX ROUND 3 уже закрыт (auth failure 30min ban + keepalive setInterval). node --check OK. DEPLOY_STATUS: OK. Ожидаю новых задач от Einar/Perplexity.
