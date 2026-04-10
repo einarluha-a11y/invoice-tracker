@@ -3,6 +3,7 @@
 
 ## 2026-04-10
 - 2026-04-10 UTC — ✅ SYNC v23: агент запущен. REVIEW WAITING раунд 0 ПРИНЯТО (Perplexity 13:09 UTC). Новых задач нет. PHASE: WAITING. ROUND: 0. node --check OK. DEPLOY_STATUS: OK. Система стабильна. Ожидаю новых задач от Einar.
+- 2026-04-10 UTC — ✅ SYNC v26: агент запущен. REVIEW 13:11 UTC — Perplexity вышел из роли, задач не выдал. PHASE: WAITING. ROUND: 0. DEPLOY_STATUS: OK. Система стабильна. Ожидаю новых задач от Einar.
 - 2026-04-10 UTC — ✅ SYNC v21: агент запущен. REVIEW WAITING раунд 0: Perplexity вышел из роли (13:07 UTC) — задание не выдано. PHASE: WAITING. ROUND: 0. node --check OK. DEPLOY_STATUS: OK. Система стабильна. Ожидаю новых задач от Einar.
 - 2026-04-10 UTC — ✅ SYNC: агент запущен. REVIEW WAITING раунд 0 ПРИНЯТО (Perplexity 13:06 UTC: статус корректен, система стабильна). STATUS.md обновлён по запросу Perplexity. PHASE: WAITING. ROUND: 0. node --check OK. DEPLOY_STATUS: OK. Ожидаю новых задач от Einar/Perplexity.
 - 2026-04-10 UTC — ✅ SYNC: агент запущен. PHASE: WAITING. REVIEW.md ПРИНЯТО (Perplexity: статус корректен, система стабильна). STATUS.md обновлён. node --check OK. DEPLOY_STATUS: OK. Ожидаю новых задач от Einar/Perplexity.
