@@ -36,7 +36,15 @@ if (require.main === module) {
             // Local file is ephemeral on Railway — Firestore is the only source of truth
             // that survives container restarts. Without this, rate-limited accounts would
             // be retried immediately on each restart, causing the crash loop.
-            await loadRateLimitsFromFirestore();
+            // Timeout guard: if Firestore hangs, don't block pollLoop forever.
+            const RESTORE_TIMEOUT_MS = 8000;
+            await Promise.race([
+                loadRateLimitsFromFirestore(),
+                new Promise(resolve => setTimeout(() => {
+                    console.warn('[imap-daemon] ⚠️  loadRateLimitsFromFirestore timed out — starting loops anyway');
+                    resolve();
+                }, RESTORE_TIMEOUT_MS)),
+            ]);
             pollLoop();
             auditLoop();
         });
