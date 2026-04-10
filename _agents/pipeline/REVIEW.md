@@ -1,15 +1,14 @@
-# REVIEW от Perplexity — 2026-04-10 16:39 UTC
+# REVIEW от Perplexity — 2026-04-10 16:46 UTC
 <!-- phase: BUGFIX | round: 1 -->
 
 ВЕРДИКТ: ИЗМЕНЕНИЯ_НУЖНЫ  
-ОЦЕНКА: Формат SOLUTION.md строго соблюден, PHASE/ROUND/TASK четко описаны. Ошибка crash loop с дублированным сообщением о восстановлении IMAP ban(s) из Firestore точно зафиксирована. DEPLOY_STATUS корректно установлен как pending.  
+ОЦЕНКА: Формат SOLUTION.md соответствует инструкциям проекта. Корректно зафиксирована ошибка crash loop invoice-imap с конкретными логами. Задание четко сформулировано по протоколу багфикса.  
 ЗАМЕЧАНИЯ:  
-1. Нет анализа причины краша — сообщение "[RateLimit] ⏳ Restored 2 active IMAP ban(s)" печатается дважды подряд, что указывает на double-logging или double-init rate limit модуля на startup.  
-2. Отсутствует поиск по коду: нужно grep 'Restored.*IMAP ban' в src/ для нахождения дублирующихся вызовов restoreBans().  
-3. Нет плана исправления: вероятно, проблема в race condition при инициализации Firestore listener'ов или в index.js где rateLimit модуль импортируется/вызывается дважды.  
-4. Не выполнены обязательные шаги: node --check, commit, push, аудит файлов, запуск Repairman после деплоя.  
-5. Нет статуса "🔄 Статус" или "✅ Готово" для Einar.  
-ДАЛЬНЕЙШИЙ ШАГ: Выполни `grep -r "Restored.*IMAP ban" src/ && grep -r "rateLimit" index.js` и пришли вывод для точного анализа дублирования.
+1. Нет анализа кода - не выполнено "Проанализируй ошибки. Найди причину в коде".  
+2. Отсутствуют исправления кода, node --check, commit, push - SOLUTION в статусе pending без действий.  
+3. Нет статуса выполнения по обязательным отчетам ("🔄 Статус:", "✅ Готово:").  
+4. DEPLOY_STATUS: pending без плана деплоя после фикса.  
+ДАЛЬНЕЙШИЙ ШАГ: Проанализировать код invoice-imap (src/services/imap или automation/invoice-imap.cjs), найти причину дублирующегося восстановления RateLimit bans, исправить и обновить SOLUTION.md.
 
 ---
 *Автоматическое ревью через GitHub Actions (.github/workflows/perplexity_review.yml)*
