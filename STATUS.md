@@ -1,10 +1,10 @@
 # STATUS — Invoice Tracker Pipeline
 
-**Дата:** 2026-04-10 (обновлено 2026-04-10 UTC — Claude agent sync v14)
+**Дата:** 2026-04-10 (обновлено 2026-04-10 UTC — Claude agent sync v15)
 **Ветка:** main
 **DEPLOY_STATUS:** OK
 **PHASE:** WAITING
-**LAST_TASK:** BUGFIX ROUND 5 (false timeout warning race condition fix — флаг `_firestoreResolved`, таймаут 15s→30s) — ПРИНЯТО.
+**LAST_TASK:** Audit Paid инвойсов — 0 ложных матчей, система чистая. Все BUGFIX rounds (1-5) ПРИНЯТО.
 
 ## Текущее состояние системы
 
@@ -16,6 +16,12 @@
 - `watchdog` — online, мониторинг активен ✅
 
 ## Последние изменения (2026-04-10 UTC)
+
+### AGENT_SYNC 2026-04-10 UTC (sync v15)
+- REVIEW WAITING ROUND 0 (Audit Paid): ПРИНЯТО — 0 ложных матчей, 82 без bank link (легаси)
+- `node repairman_agent.cjs --audit-paid --fix`: 136 проверено, 53 OK, 0 отозвано, 82 без bank link
+- PHASE: WAITING, DEPLOY_STATUS: OK
+- Итог pipeline: все BUGFIX rounds 1-5 ПРИНЯТО ✅
 
 ### AGENT_SYNC 2026-04-10 UTC (sync v14)
 - REVIEW ROUND 5: ПРИНЯТО — false timeout warning (race condition) устранён
@@ -99,6 +105,7 @@
 
 | Round | Статус | Комментарий |
 |-------|--------|-------------|
+| Audit Paid (0 ложных матчей) | ПРИНЯТО | 136 проверено, 0 reverted, 82 легаси без bank link |
 | BUGFIX ROUND 5 (false timeout race condition) | ПРИНЯТО | Флаг `_firestoreResolved` + таймаут 15s→30s, commit b6f69cb |
 | BUGFIX ROUND 4 (preferRest:true) | ПРИНЯТО | Firestore REST API вместо gRPC: cold start 8-12s→1-2s, commit f22935e |
 | BUGFIX ROUND 3 (Firestore restore timeout 15s) | ПРИНЯТО | Timeout увеличен 8s→15s для Railway cold start |
