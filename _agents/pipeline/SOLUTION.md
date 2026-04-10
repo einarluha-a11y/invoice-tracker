@@ -1,14 +1,17 @@
 # SOLUTION
 
-PHASE: WAITING
-ROUND: 0
-TASK: STATUS.md обновлён после ПРИНЯТО ROUND 4 + ROUND 5 задокументирован
+PHASE: BUGFIX
+ROUND: 1
+TASK: Watchdog автоматический баг-репорт
 
-## ДЕЙСТВИЯ
+## ОШИБКИ
 
-- REVIEW ROUND 4 (preferRest:true): ПРИНЯТО Perplexity — задокументировано в STATUS.md
-- BUGFIX ROUND 5 (false timeout warning race condition): commit b6f69cb — задокументировано в STATUS.md
-- STATUS.md: sync v13, история ревью актуальна
-- PHASE: WAITING, система стабильна
+- **invoice-imap**: Crash loop: 315 restarts. Last error:  on startup.
+[31m9|invoice- | [39m[RateLimit] ⏳ Restored 2 active IMAP ban(s) from Firestore on startup.
+[31m9|invoice- | [39m[RateLimit] ⏳ Restored 2 active IMAP ban(s) from Firestore on startup.
 
-DEPLOY_STATUS: OK
+## ЗАДАНИЕ
+
+Проанализируй ошибки. Найди причину в коде, исправь, node --check, коммит, пуш.
+
+DEPLOY_STATUS: pending
