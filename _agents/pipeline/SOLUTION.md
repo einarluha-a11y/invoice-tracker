@@ -3,4 +3,4 @@
 PHASE: WAITING
 ROUND: 0
 DEPLOY_STATUS: OK
-TASK: агент запущен, BACKLOG пуст, DEPLOY_STATUS: OK
+TASK: агент запущен, BACKLOG пуст, DEPLOY_STATUS: OK — ожидаю новых задач (sync v13)
