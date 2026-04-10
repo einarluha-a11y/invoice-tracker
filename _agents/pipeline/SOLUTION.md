@@ -2,6 +2,5 @@
 
 PHASE: WAITING
 ROUND: 0
-TASK: все задачи из BACKLOG выполнены — ожидаю новых
-
+TASK: WAITING sync v9 — автономный агент запущен, новых задач нет. STATUS.md актуален. Система стабильна. Ожидаю Einar/Perplexity.
 DEPLOY_STATUS: OK
