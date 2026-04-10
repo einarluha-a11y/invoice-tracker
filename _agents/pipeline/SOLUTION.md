@@ -2,5 +2,5 @@
 
 PHASE: WAITING
 ROUND: 0
-TASK: REVIEW WAITING раунд 0 ПРИНЯТО — STATUS.md синхронизирован. Ожидаю новых задач от Einar/Perplexity.
+TASK: REVIEW BUGFIX раунд 1 ПРИНЯТО — watchdog анализ подтверждён, STATUS.md синхронизирован (v3). Ожидаю новых задач от Einar/Perplexity.
 DEPLOY_STATUS: OK
