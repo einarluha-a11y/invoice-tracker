@@ -2,6 +2,8 @@
 Обновляется автоматически. Perplexity читает при генерации задач.
 
 ## 2026-04-10
+- 2026-04-10 19:30 UTC — ✅ SYNC: REVIEW WAITING раунд 0 ПРИНЯТО. STATUS.md обновлён по запросу Perplexity. PHASE: WAITING. ROUND: 0. Система стабильна. DEPLOY_STATUS: OK. Ожидаю новых задач от Einar/Perplexity.
+- 2026-04-10 19:00 UTC — ✅ SYNC: REVIEW WAITING раунд 0 ПРИНЯТО. PHASE: WAITING. ROUND: 0. Система стабильна. DEPLOY_STATUS: OK. Ожидаю новых задач от Einar/Perplexity.
 - 2026-04-10 18:32 UTC — ✅ SYNC: агент запущен. PHASE: WAITING. Конфликт SOLUTION.md устранён. node --check OK. DEPLOY_STATUS: OK. Ожидаю новых задач от Einar/Perplexity.
 - 2026-04-10 UTC — ✅ SYNC: агент запущен. PHASE: WAITING. Новых задач нет. node --check OK. DEPLOY_STATUS: OK. Ожидаю новых задач от Einar/Perplexity.
 - 2026-04-10 17:30 UTC — ✅ SYNC: агент запущен. PHASE: WAITING. Система стабильна: crash loop исправлен (safe err.message + Promise.race 8s timeout). Railway: Restored 2 IMAP bans. node --check OK. DEPLOY_STATUS: OK. Ожидаю новых задач от Einar.
