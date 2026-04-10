@@ -88,3 +88,5 @@
 - 2026-04-10 21:05 UTC — ✅ SYNC v73: агент запущен. PHASE: WAITING. ROUND: 0. origin/main: DEPLOY_STATUS OK. Новых задач нет. node --check OK. DEPLOY_STATUS: OK. Система стабильна. Ожидаю новых задач от Einar/Perplexity.
 
 - 2026-04-10 17:35 UTC — ✅ SYNC v78: агент запущен. PHASE: WAITING. ROUND: 0. DEPLOY_STATUS: OK. Система стабильна. Ожидаю новых задач от Einar/Perplexity.- 2026-04-10 22:10 UTC — ✅ SYNC v78: агент запущен. PHASE: WAITING. ROUND: 0. Новых задач нет. node --check OK. DEPLOY_STATUS: OK. Система стабильна. Ожидаю новых задач от Einar/Perplexity.
+
+- 2026-04-10 22:35 UTC — ✅ SYNC v84: агент запущен. PHASE: WAITING. ROUND: 0. Новых задач нет. node --check OK. DEPLOY_STATUS: OK. Система стабильна. Ожидаю новых задач от Einar/Perplexity.
