@@ -1,6 +1,7 @@
 # STATUS — Pipeline Activity Log
 Обновляется автоматически. Perplexity читает при генерации задач.
 
+- 2026-04-10 UTC — ✅ SYNC: агент запущен. REVIEW.md — Perplexity ответил вне роли (повторный сбой). Новых задач нет. PHASE: WAITING. node --check OK. DEPLOY_STATUS: OK. Ожидаю новых задач от Einar/Perplexity.
 - 2026-04-10 17:00 UTC — ✅ BUGFIX ROUND 2: grep выполнен, loadRateLimitsFromFirestore найдена в imap_listener.cjs:59. Добавлен Promise.race + 8s timeout. node --check OK. DEPLOY_STATUS: OK. Ожидаю ревью от Perplexity.
 
 - 2026-04-10 17:00 UTC — ✅ SYNC: агент запущен. PHASE: WAITING. REVIEW.md — Perplexity ответил вне протокола (стандартный сбой). Новых задач нет, BACKLOG пуст. node --check OK. DEPLOY_STATUS: OK. Ожидаю новых задач от Einar/Perplexity.
