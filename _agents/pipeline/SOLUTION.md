@@ -2,20 +2,16 @@
 
 PHASE: BUGFIX
 ROUND: 1
-TASK: invoice-imap crash loop — 1056 restarts
+TASK: Watchdog автоматический баг-репорт
 
-## АНАЛИЗ
+## ОШИБКИ
 
-**Первопричина**: `unhandledRejection` обработчик в `imap_daemon.cjs` передавал `reason` напрямую в `console.error`. В Node 18+ если reason — не стандартный объект, это могло вызвать повторный crash. Также: без `process.on('exit')` лога выход не фиксировался.
+- **invoice-imap**: Crash loop: 1060 restarts. Last error: estore on startup.
+[31m6|invoice- | [39mAutomated Invoice Processor Started. Checking every 2 minutes...
+[31m6|invoice- | [39m[RateLimit] ⏳ Restored 1 active IMAP ban(s) from Firestore on startup.
 
-**Исправлено в `3f90b55`**: безопасное приведение reason/err к строке (`instanceof Error ? .message : String(reason ?? 'unknown')`), добавлен `process.on('exit')` лог.
+## ЗАДАНИЕ
 
-**Дополнительно (`error_reporter.cjs`)**: при 1056 циклах ошибок коллекция `system_logs` разрослась → Firestore batch delete падал с "Transaction too big". Исправлено: обрезка сообщений до 4000 символов, `.select('createdAt')` при чтении старых записей, chunk 100 вместо 450, MAX 200 вместо 500.
+Проанализируй ошибки. Найди причину в коде, исправь, node --check, коммит, пуш.
 
-## РЕЗУЛЬТАТ
-
-- `imap_daemon.cjs`: stable с 2026-04-09 20:20 UTC, 0 новых рестартов
-- `error_reporter.cjs`: Firestore write-safety улучшена
-- `node --check`: OK
-
-DEPLOY_STATUS: OK
+DEPLOY_STATUS: pending
