@@ -1,36 +1,40 @@
 # SOLUTION
 
 PHASE: BUGFIX
-ROUND: 2
-TASK: False "timed out" warning after Firestore restore succeeds
+ROUND: 3
+TASK: invoice-imap crash loop — дополнительные исправления
 
-## АНАЛИЗ (ответ на REVIEW.md)
+## КОНТЕКСТ
 
-Проверен `automation/imap_daemon.cjs` + `automation/imap_listener.cjs`.
+Watchdog зафиксировал crash loop (304 рестарта). ROUND 1 и ROUND 2 закрыли часть проблем.
+В этом раунде найдены ещё два корневых дефекта и исправлены.
 
-Найдено в Railway логах:
-```
-[RateLimit] ⏳ Restored 2 active IMAP ban(s) from Firestore on startup.
-[imap-daemon] ⚠️  loadRateLimitsFromFirestore timed out — starting loops anyway
-```
+## АНАЛИЗ
 
-Оба сообщения появляются вместе — это баг: `Promise.race` завершается (Firestore успел),
-но `clearTimeout` не вызывался → таймер всё равно срабатывал → ложное предупреждение.
+### Дефект 1: Auth failure без rate-limit (коммит 49b7625)
+PM2 error log показал повторяющийся паттерн "AUTHENTICATIONFAILED" без rate limiting.
+Процесс ретраил каждые 2 мин → flood ошибок в Firestore system_logs →
+"Transaction too big" gRPC ошибки → gRPC crash loop.
 
-Баны на самом деле **загружались корректно** (первая строка подтверждает). Система работала,
-но false alarm в логах мог вводить в заблуждение.
+**Файл**: `automation/imap_listener.cjs`
+**Исправление**: добавлен `isAuthFailure` check (AUTHENTICATIONFAILED / "invalid credentials").
+При auth failure — 30-минутный бан (как у "too many connections").
 
-## ИСПРАВЛЕНИЕ
+### Дефект 2: Event-loop drain (коммит f3aa6d4)
+Когда все IMAP аккаунты rate-limited и Firestore queries резолвятся быстро,
+event loop пустеет → Node выходит с кодом 0 → PM2 рестартует → crash loop.
+Выход с кодом 0 не логировался (`if (code !== 0)`), поэтому не было видно.
 
-Файл: `automation/imap_daemon.cjs`
-
-Добавлен `clearTimeout(_restoreTimer)` в `.then()` после `loadRateLimitsFromFirestore()`.
-Теперь таймер отменяется при успешной загрузке, warning появляется только при реальном timeout.
+**Файл**: `automation/imap_daemon.cjs`
+**Исправления**:
+- `setInterval keepalive` (60s) — предотвращает event-loop drain
+- Exit handler логирует ВСЕ выходы (включая код 0)
 
 ## РЕЗУЛЬТАТ
 
 - `node --check` ✅
-- commit: `fix(imap): clear timeout when Firestore restore succeeds — suppress false 'timed out' warning`
-- push → main ✅
+- Коммиты: 49b7625, f3aa6d4 → main ✅
+- PM2 перезапущен: invoice-imap online (stable)
+- Railway: auto-deploy через push
 
 DEPLOY_STATUS: OK
