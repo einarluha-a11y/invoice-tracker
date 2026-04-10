@@ -1,6 +1,6 @@
 # STATUS — Invoice Tracker Pipeline
 
-**Дата:** 2026-04-10 (обновлено 2026-04-10T20:30:00Z — Claude agent sync v83)
+**Дата:** 2026-04-10 (обновлено 2026-04-10T20:50:00Z — Claude agent sync v84)
 **Ветка:** main
 **DEPLOY_STATUS:** OK
 **PHASE:** WAITING
