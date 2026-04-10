@@ -67,10 +67,37 @@ async function cleanupStaleServiceWorkers(): Promise<boolean> {
     return cleaned;
 }
 
-// Run cleanup before registering the new SW. If anything stale was removed,
-// reload once so the page loads a fresh bundle without any old worker in
-// the middle. Guard against reload loops via sessionStorage.
+// ── CANONICAL DOMAIN REDIRECT ───────────────────────────────────────────────
+// If this bundle is ever loaded from an old host (vercel.app, github.io,
+// custom domain aliases), redirect to the single source of truth. This
+// protects against stale PWAs, stale bookmarks, and typos. We only redirect
+// when hostname matches a known old host — we do NOT redirect when running
+// on localhost (dev) or on the canonical URL itself. The redirect preserves
+// pathname + hash so deep links still land on the right page.
+const CANONICAL_HOST = 'invoice-tracker-backend-production.up.railway.app';
+const OLD_HOST_MATCHERS = [
+    /\.vercel\.app$/,
+    /\.github\.io$/,
+    /invoice-tracker-blue/,
+];
+function redirectToCanonicalIfNeeded(): boolean {
+    if (typeof window === 'undefined') return false;
+    const host = window.location.hostname;
+    if (host === CANONICAL_HOST) return false;
+    if (host === 'localhost' || host === '127.0.0.1' || host === '') return false;
+    const matchesOld = OLD_HOST_MATCHERS.some(re => re.test(host));
+    if (!matchesOld) return false;
+    const target = `https://${CANONICAL_HOST}${window.location.pathname}${window.location.search}${window.location.hash}`;
+    console.warn(`[canonical redirect] ${host} → ${CANONICAL_HOST}`);
+    window.location.replace(target);
+    return true;
+}
+
+// Run cleanup + canonical redirect before registering the new SW. If anything
+// stale was removed, reload once so the page loads a fresh bundle without
+// any old worker in the middle. Guard against reload loops via sessionStorage.
 (async () => {
+    if (redirectToCanonicalIfNeeded()) return;
     const RELOAD_KEY = 'sw-cleanup-reloaded';
     const cleaned = await cleanupStaleServiceWorkers();
     if (cleaned && !sessionStorage.getItem(RELOAD_KEY)) {
