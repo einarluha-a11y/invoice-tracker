@@ -2,4 +2,8 @@
 
 PHASE: WAITING
 ROUND: 0
-TASK: все задачи из BACKLOG выполнены — ожидаю новых
+DEPLOY_STATUS: OK
+TASK: STATUS.md синхронизирован (v21) — система стабильна, REVIEW ПРИНЯТО
+node --check: OK
+REVIEW: ПРИНЯТО (Perplexity 2026-04-10 13:07 UTC — статус корректен, система стабильна)
+STATUS_SYNC: v21 — 2026-04-10 UTC
