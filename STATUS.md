@@ -1,10 +1,10 @@
 # STATUS — Invoice Tracker Pipeline
 
-**Дата:** 2026-04-10 (обновлено 2026-04-10 UTC — Claude agent sync v16)
+**Дата:** 2026-04-10 (обновлено 2026-04-10 UTC — Claude agent sync v17)
 **Ветка:** main
 **DEPLOY_STATUS:** OK
 **PHASE:** WAITING
-**LAST_TASK:** Perplexity ПРИНЯТО — audit Paid (0 ложных матчей). Pipeline стабилен. Ожидание новых задач.
+**LAST_TASK:** Все BUGFIX rounds 1-5 ПРИНЯТО. Audit Paid: 0 ложных матчей. Pipeline стабилен.
 
 ## Текущее состояние системы
 
