@@ -2,4 +2,5 @@
 
 PHASE: WAITING
 ROUND: 0
-TASK: все задачи из BACKLOG выполнены — ожидаю новых
+TASK: REVIEW WAITING раунд 0 ПРИНЯТО — STATUS.md синхронизирован. Ожидаю новых задач от Einar/Perplexity.
+DEPLOY_STATUS: OK
