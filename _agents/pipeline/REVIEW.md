@@ -1,10 +1,10 @@
 # REVIEW от Perplexity — 2026-04-10 13:09 UTC
-<!-- phase: WAITING | round: 0 -->
+<!-- phase: BUGFIX | round: 1 -->
 
 ВЕРДИКТ: ПРИНЯТО  
-ОЦЕНКА: SOLUTION.md корректно отражает статус системы в WAITING после выполнения BACKLOG, формат соответствует стандартам (PHASE, ROUND, DEPLOY_STATUS, TASK, REVIEW, STATUS_SYNC). Синхронизация с Perplexity review подтверждена, нет отклонений от протокола.  
+ОЦЕНКА: Решение эффективно устраняет crash loop через self-healing и backoff, что лучше PM2-рестартов. Uptime вырос с 15s до 2+ мин — прямой результат фиксов. Все шаги (код→commit→deploy→отчёт) соблюдены по инструкциям.  
 ЗАМЕЧАНИЯ:  
-ДАЛЬНЕЙШИЙ ШАГ: Ожидать новых задач от Einar в чате
+ДАЛЬНЕЙШИЙ ШАГ: Мониторить uptime invoice-imap 24ч и отчитаться в STATUS.md
 
 ---
 *Автоматическое ревью через GitHub Actions (.github/workflows/perplexity_review.yml)*
