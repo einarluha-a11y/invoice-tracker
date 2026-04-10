@@ -2,6 +2,7 @@
 Обновляется автоматически. Perplexity читает при генерации задач.
 
 ## 2026-04-10
+- 2026-04-10 09:43 — ✅ Завершено: 2:False "timed out" warning after Firestore restore
 - 2026-04-10 09:42 — ✅ Завершено: 0:все задачи из BACKLOG выполнены — ожидаю новых
 - 2026-04-10 19:45 UTC — ✅ SYNC: REVIEW BUGFIX ROUND 2 ПРИНЯТО (Perplexity: Promise.race + 8s timeout логично, crash loop предотвращён). STATUS.md синхронизирован по запросу Perplexity. PHASE: WAITING. DEPLOY_STATUS: OK. Ожидаю новых задач от Einar/Perplexity.
 - 2026-04-10 20:05 UTC — ✅ SYNC: REVIEW WAITING раунд 0 ПРИНЯТО. STATUS.md обновлён. PHASE: WAITING. ROUND: 0. DEPLOY_STATUS: OK. Ожидаю новых задач от Einar/Perplexity.
