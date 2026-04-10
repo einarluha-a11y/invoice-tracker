@@ -1,6 +1,6 @@
 # STATUS — Invoice Tracker Pipeline
 
-**Дата:** 2026-04-10 (обновлено 2026-04-10T17:20:00Z — Claude agent sync v41)
+**Дата:** 2026-04-10 (обновлено 2026-04-10T19:30:00Z — Claude agent sync v47)
 **Ветка:** main
 **DEPLOY_STATUS:** OK
 **PHASE:** WAITING
@@ -16,6 +16,20 @@
 - `watchdog` — online, мониторинг активен ✅
 
 ## Последние изменения (2026-04-10 UTC)
+
+### AGENT_SYNC 2026-04-10 UTC (sync v47)
+- Agent запущен, SOLUTION.md прочитан: PHASE WAITING, ROUND 0
+- REVIEW от Perplexity: ПРИНЯТО — ожидание новых задач логично
+- REVIEW запрашивал обновление STATUS.md — выполнено
+- LAST_SYNC обновлён: 2026-04-10T19:30:00Z
+- PHASE: WAITING, DEPLOY_STATUS: OK
+
+### AGENT_SYNC 2026-04-10 UTC (sync v46)
+- Agent запущен, SOLUTION.md прочитан: PHASE WAITING
+- REVIEW от Perplexity: не распознал формат pipeline (отказался от роли reviewer)
+- Новых задач нет — система стабильна
+- LAST_SYNC обновлён: 2026-04-10T19:05:00Z
+- PHASE: WAITING, DEPLOY_STATUS: OK
 
 ### AGENT_SYNC 2026-04-10 UTC (sync v41)
 - Agent запущен, SOLUTION.md прочитан: PHASE WAITING, REVIEW ПРИНЯТО
