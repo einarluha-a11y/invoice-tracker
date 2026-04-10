@@ -2,16 +2,17 @@
 
 PHASE: BUGFIX
 ROUND: 1
-TASK: Watchdog автоматический баг-репорт
+TASK: PM2 автоматический баг-репорт — критические ошибки
 
-## ОШИБКИ
+## ОШИБКИ В PM2 ЛОГАХ
 
-- **invoice-imap**: Crash loop: 475 restarts. Last error:  on startup.
-[31m9|invoice- | [39m[RateLimit] ⏳ Restored 1 active IMAP ban(s) from Firestore on startup.
-[31m9|invoice- | [39m[RateLimit] ⏳ Restored 1 active IMAP ban(s) from Firestore on startup.
+- **invoice-imap**: [31m9|invoice- | [39m[Dead-Man Switch] Firestore write crashed. Escalating to external webhook... request to https://firestore.googleapis.com/v1/projects/invoice-tracker-xyz/databases/(default)/docu
 
 ## ЗАДАНИЕ
 
-Проанализируй ошибки. Найди причину в коде, исправь, node --check, коммит, пуш.
+Проанализируй ошибки выше. Найди причину в коде, исправь, проверь syntax (node --check), закоммить и запуши.
+После исправления добавь DEPLOY_STATUS: OK в конец этого файла.
 
-DEPLOY_STATUS: pending
+## Верификация
+- `node --check` всех изменённых файлов
+- PM2 процессы стабильны (0 рестартов за 1 минуту)
