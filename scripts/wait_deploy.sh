@@ -30,11 +30,18 @@ HEALTH_URL="${HEALTH_URL:-https://invoice-tracker-backend-production.up.railway.
 MAX_WAIT_SEC="${MAX_WAIT_SEC:-420}"
 POLL_SEC="${POLL_SEC:-10}"
 
-# Determine target commit: arg 1, or local HEAD
+# Determine target commit: arg 1, or origin/main (the branch Railway deploys).
+# Using worktree HEAD is wrong — the worktree branch drifts ahead of main
+# while a PR is open, and the deploy is only triggered once the PR is
+# merged to main. Always ask git what origin/main points at, falling back
+# to local HEAD only if there's no remote tracking info.
 if [ "${1:-}" != "" ]; then
     TARGET="$1"
 else
-    TARGET=$(git rev-parse HEAD 2>/dev/null || true)
+    # Fetch silently so we see the post-merge commit that Railway is about
+    # to build. Non-fatal on offline — we fall back to the cached ref.
+    git fetch origin main --quiet 2>/dev/null || true
+    TARGET=$(git rev-parse origin/main 2>/dev/null || git rev-parse HEAD 2>/dev/null || true)
 fi
 
 if [ -z "$TARGET" ]; then
