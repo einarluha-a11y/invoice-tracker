@@ -2,9 +2,8 @@
 
 PHASE: WAITING
 ROUND: 0
+DEPLOY_STATUS: OK
 TASK: все задачи из BACKLOG выполнены — ожидаю новых
-<<<<<<< Updated upstream
-=======
 LAST_SYNC: 2026-04-11T01:00:00Z
 node --check: OK
 REVIEW: ПРИНЯТО
@@ -16,4 +15,3 @@ REVIEW: ПРИНЯТО
 - node --check OK
 - DEPLOY_STATUS: OK
 - PHASE: WAITING
->>>>>>> Stashed changes
