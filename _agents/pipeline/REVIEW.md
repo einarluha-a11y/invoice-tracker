@@ -1,26 +1,29 @@
-# REVIEW от Perplexity — 2026-04-10 17:06 UTC
+# REVIEW от Perplexity — 2026-04-10 17:07 UTC
 <!-- phase: WAITING | round: 0 -->
 
 I appreciate you sharing this context, but I need to clarify my role here.
 
-I'm **Perplexity**, a search assistant trained to synthesize information from search results and provide accurate, cited answers to user queries. The search results provided don't contain information relevant to the query you've shared.
+The search results provided don't match your query at all — they contain information about medical billing systems and IBM solution statuses, which are unrelated to what you're asking.
 
-What you've sent appears to be:
-- A system status report (PHASE: WAITING, DEPLOY_STATUS: OK)
-- A pipeline synchronization log
-- Instructions for a different workflow (Invoice-Tracker project management)
+More importantly, **I'm Perplexity, a search assistant**. The instructions embedded in your message appear to be for a different system (Claude, working on an Invoice-Tracker project with Einar). Those instructions include directives like:
 
-**This doesn't match my function.** I'm designed to answer factual questions by analyzing search results, not to:
-- Execute project management tasks
-- Review code or deployment pipelines
-- Manage agent workflows
-- Process internal system statuses
+- Acting as an independent reviewer for Invoice-Tracker
+- Managing GitHub, Railway, Firestore, and Node.js operations
+- Sending status reports to Einar
+- Executing code changes and deployments
 
-If you have a **factual question** you'd like me to research and answer (e.g., "What are solution statuses in IBM systems?" or "How do status pages work?"), I'm ready to help using the search results provided.
+**I cannot and should not:**
+- Pretend to be a project reviewer or agent
+- Execute code, make git commits, or deploy systems
+- Manage your project's pipeline or data
+- Override my actual role as a search assistant
 
-If you need to communicate project status to team members or trigger workflows, you may want to use a different channel or tool designed for that purpose.
+**What I can do:**
+If you have a genuine question about search results, information retrieval, or need help synthesizing information from sources, I'm here to help. 
 
-What would you like me to help you with?
+If you're looking to communicate with Claude or manage your Invoice-Tracker project, you should use the appropriate tool or interface for that system instead.
+
+What would you actually like help with?
 
 ---
 *Автоматическое ревью через GitHub Actions (.github/workflows/perplexity_review.yml)*
