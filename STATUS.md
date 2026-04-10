@@ -1,10 +1,10 @@
 # STATUS — Invoice Tracker Pipeline
 
-**Дата:** 2026-04-10 (обновлено 2026-04-10 UTC — Claude agent sync v8)
+**Дата:** 2026-04-10 (обновлено 2026-04-10 UTC — Claude agent sync v9)
 **Ветка:** main
 **DEPLOY_STATUS:** OK
 **PHASE:** WAITING
-**LAST_TASK:** BUGFIX ROUND 2 (watchdog false alarm) — ПРИНЯТО Perplexity. BACKLOG исчерпан.
+**LAST_TASK:** BUGFIX ROUND 1 (imap crash loop — safe err.message) — ПРИНЯТО Perplexity. BACKLOG исчерпан.
 
 ## Текущее состояние системы
 
@@ -16,6 +16,14 @@
 - `watchdog` — online, мониторинг активен ✅
 
 ## Последние изменения (2026-04-10 UTC)
+
+### AGENT_SYNC 2026-04-10 UTC (sync v9)
+- REVIEW: ПРИНЯТО (BUGFIX ROUND 1 — imap crash loop, safe err.message)
+- Perplexity вердикт: "Точный анализ причины crash loop в обработке non-Error rejection"
+- commit: `906b338` — fix(imap): safe err.message in .catch()
+- PHASE: WAITING, DEPLOY_STATUS: OK
+- Все процессы PM2: online ✅
+- BACKLOG исчерпан. Система стабильна.
 
 ### BUGFIX ROUND 1 — Watchdog ложный crash loop репорт (ПРИНЯТО)
 - `console.warn()` пишет в stderr → watchdog читает и получает обрезанное "estore on startup." — не ошибка ✅
@@ -57,6 +65,7 @@
 
 | Round | Статус | Комментарий |
 |-------|--------|-------------|
+| BUGFIX ROUND 1 (imap safe err.message) | ПРИНЯТО | Точный анализ crash loop, non-Error rejection fix, commit 906b338 |
 | BUGFIX ROUND 2 (watchdog false alarm) | ПРИНЯТО | Полный анализ хронологии, первопричины и ложной тревоги подтверждён |
 | BUGFIX ROUND 1 (watchdog false alarm) | ПРИНЯТО | Ложный репорт из console.warn→stderr, реальные фиксы 3f90b55+8af1cd3 |
 | WAITING ROUND 0 (финал) | ПРИНЯТО | Merge conflicts устранены, файлы очищены |

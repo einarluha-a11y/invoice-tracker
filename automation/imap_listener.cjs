@@ -683,7 +683,7 @@ async function checkAndRunFlagTasks() {
 }
 
 // Overlap-safe IMAP polling daemon
-console.error('Automated Invoice Processor Started. Checking every 2 minutes...');
+console.log('Automated Invoice Processor Started. Checking every 2 minutes...');
 async function pollLoop() {
     while (true) {
         try {
