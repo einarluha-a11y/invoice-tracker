@@ -1,10 +1,10 @@
 # STATUS — Invoice Tracker Pipeline
 
-**Дата:** 2026-04-10 (обновлено 2026-04-10 UTC — Claude agent sync v13)
+**Дата:** 2026-04-10 (обновлено 2026-04-10 UTC — Claude agent sync v14)
 **Ветка:** main
 **DEPLOY_STATUS:** OK
 **PHASE:** WAITING
-**LAST_TASK:** BUGFIX ROUND 5 (false timeout warning race condition fix — флаг `_firestoreResolved`, таймаут 15s→30s) — DEPLOY_STATUS: OK.
+**LAST_TASK:** BUGFIX ROUND 5 (false timeout warning race condition fix — флаг `_firestoreResolved`, таймаут 15s→30s) — ПРИНЯТО.
 
 ## Текущее состояние системы
 
@@ -16,6 +16,14 @@
 - `watchdog` — online, мониторинг активен ✅
 
 ## Последние изменения (2026-04-10 UTC)
+
+### AGENT_SYNC 2026-04-10 UTC (sync v14)
+- REVIEW ROUND 5: ПРИНЯТО — false timeout warning (race condition) устранён
+- Фикс: флаг `_firestoreResolved` + таймаут 15s→30s в `automation/imap_daemon.cjs`
+- Warning теперь появляется только если Firestore реально не ответил за 30s
+- commit: `b6f69cb` — fix(imap): DEPLOY_STATUS: OK — eliminate false timeout warning
+- PHASE: WAITING, DEPLOY_STATUS: OK
+- Система стабильна. Ожидание новых задач от Einar.
 
 ### AGENT_SYNC 2026-04-10 UTC (sync v13)
 - REVIEW ROUND 4: ПРИНЯТО (preferRest:true — Firestore REST API, cold start 8-12s→1-2s)
@@ -91,7 +99,7 @@
 
 | Round | Статус | Комментарий |
 |-------|--------|-------------|
-| BUGFIX ROUND 5 (false timeout race condition) | DEPLOY_STATUS: OK | Флаг `_firestoreResolved` + таймаут 15s→30s, commit b6f69cb |
+| BUGFIX ROUND 5 (false timeout race condition) | ПРИНЯТО | Флаг `_firestoreResolved` + таймаут 15s→30s, commit b6f69cb |
 | BUGFIX ROUND 4 (preferRest:true) | ПРИНЯТО | Firestore REST API вместо gRPC: cold start 8-12s→1-2s, commit f22935e |
 | BUGFIX ROUND 3 (Firestore restore timeout 15s) | ПРИНЯТО | Timeout увеличен 8s→15s для Railway cold start |
 | BUGFIX ROUND 1 (imap safe err.message) | ПРИНЯТО | Точный анализ crash loop, non-Error rejection fix, commit 906b338 |
