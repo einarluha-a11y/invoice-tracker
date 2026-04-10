@@ -43,7 +43,7 @@ if (require.main === module) {
             // that survives container restarts. Without this, rate-limited accounts would
             // be retried immediately on each restart, causing the crash loop.
             // Timeout guard: if Firestore hangs, don't block pollLoop forever.
-            const RESTORE_TIMEOUT_MS = 8000;
+            const RESTORE_TIMEOUT_MS = 15000;
             let _restoreTimer;
             await Promise.race([
                 loadRateLimitsFromFirestore().then(r => { clearTimeout(_restoreTimer); return r; }),
