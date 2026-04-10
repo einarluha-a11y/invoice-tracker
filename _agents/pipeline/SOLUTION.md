@@ -1,5 +1,7 @@
 # SOLUTION
 
 PHASE: WAITING
-ROUND: 0
+ROUND: 1
+LAST_SYNC: 2026-04-10T13:12:00Z
+DEPLOY_STATUS: OK
 TASK: все задачи из BACKLOG выполнены — ожидаю новых
