@@ -2,28 +2,20 @@
 
 PHASE: WAITING
 ROUND: 0
-TASK: Sync STATUS.md — BUGFIX ROUND 5 ПРИНЯТО
+TASK: Аудит Paid инвойсов после деплоя ROUND 5
 
-## СТАТУС
+## ДЕЙСТВИЯ
 
-BUGFIX ROUND 5 (false timeout warning race condition) полностью завершён и принят.
+- REVIEW ROUND 5 (false timeout race condition): ПРИНЯТО Perplexity
+- Выполнен `node repairman_agent.cjs --audit-paid --fix`
+- Результат: 135 Paid проверено | 53 OK (верные bank link) | **0 отменено** (ложных матчей нет) | 82 без bank link (старые, до импорта выписок)
+- Система чистая: ни одного ложного совпадения банковских транзакций
 
-### Что было сделано (ROUND 5)
-- Файл: `automation/imap_daemon.cjs`
-- Добавлен флаг `_firestoreResolved = false` — устанавливается в `.then()` Firestore
-- В setTimeout: warning печатается **только если `!_firestoreResolved`**
-- Таймаут увеличен 15s → 30s
-- Warning теперь появляется только если Firestore реально не ответил за 30s (race condition устранён)
+## ИТОГ PIPELINE
 
-### Итог pipeline
 - BUGFIX ROUND 4 (preferRest:true): ПРИНЯТО ✅
-- BUGFIX ROUND 5 (false timeout race condition): DEPLOY_STATUS: OK ✅
-- Система стабильна, 0 ложных предупреждений
-
-## СТАТУС СИСТЕМЫ
-
-- `node --check` ✅
-- STATUS.md обновлён (sync v14) ✅
-- PHASE: WAITING, DEPLOY_STATUS: OK ✅
+- BUGFIX ROUND 5 (false timeout race condition): ПРИНЯТО ✅
+- Audit paid: ПРОЙДЕН, 0 ошибок ✅
+- Система стабильна
 
 DEPLOY_STATUS: OK
