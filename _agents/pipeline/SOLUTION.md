@@ -1,40 +1,43 @@
 # SOLUTION
 
 PHASE: BUGFIX
-ROUND: 3
-TASK: invoice-imap crash loop — дополнительные исправления
-
-## КОНТЕКСТ
-
-Watchdog зафиксировал crash loop (304 рестарта). ROUND 1 и ROUND 2 закрыли часть проблем.
-В этом раунде найдены ещё два корневых дефекта и исправлены.
+ROUND: 4
+TASK: Firestore restore timeout too short for Railway cold start
 
 ## АНАЛИЗ
 
-### Дефект 1: Auth failure без rate-limit (коммит 49b7625)
-PM2 error log показал повторяющийся паттерн "AUTHENTICATIONFAILED" без rate limiting.
-Процесс ретраил каждые 2 мин → flood ошибок в Firestore system_logs →
-"Transaction too big" gRPC ошибки → gRPC crash loop.
+ROUND 2 добавил `clearTimeout(_restoreTimer)` — но warning `loadRateLimitsFromFirestore timed out`
+продолжает появляться в каждом деплое (09:41, 09:43, 09:45 UTC).
 
-**Файл**: `automation/imap_listener.cjs`
-**Исправление**: добавлен `isAuthFailure` check (AUTHENTICATIONFAILED / "invalid credentials").
-При auth failure — 30-минутный бан (как у "too many connections").
+Причина: Railway cold start — первый Firestore запрос устанавливает gRPC соединение,
+это занимает > 8s. Таймаут срабатывал раньше чем Firestore успевал ответить.
 
-### Дефект 2: Event-loop drain (коммит f3aa6d4)
-Когда все IMAP аккаунты rate-limited и Firestore queries резолвятся быстро,
-event loop пустеет → Node выходит с кодом 0 → PM2 рестартует → crash loop.
-Выход с кодом 0 не логировался (`if (code !== 0)`), поэтому не было видно.
+Подтверждение: в логах обоих последних деплоев:
+```
+[RateLimit] ⏳ Restored 2 active IMAP ban(s) from Firestore on startup.
+[imap-daemon] ⚠️  loadRateLimitsFromFirestore timed out — starting loops anyway
+```
 
-**Файл**: `automation/imap_daemon.cjs`
-**Исправления**:
-- `setInterval keepalive` (60s) — предотвращает event-loop drain
-- Exit handler логирует ВСЕ выходы (включая код 0)
+Оба сообщения — значит Firestore отвечал, но позже 8s.
+
+## ИСПРАВЛЕНИЕ
+
+Файл: `automation/imap_daemon.cjs`
+
+`RESTORE_TIMEOUT_MS`: **8000 → 15000** (8s → 15s)
+
+Достаточно для Railway gRPC cold start, не блокирует запуск надолго.
+
+## СТАТУС СИСТЕМЫ
+
+- Нет crash loop с 09:45 UTC ✅
+- Баны восстанавливаются из Firestore ✅
+- invoice-imap стабилен ✅
 
 ## РЕЗУЛЬТАТ
 
 - `node --check` ✅
-- Коммиты: 49b7625, f3aa6d4 → main ✅
-- PM2 перезапущен: invoice-imap online (stable)
-- Railway: auto-deploy через push
+- commit: `fix(imap): increase Firestore restore timeout 8s→15s (cold start on Railway takes >8s)`
+- push → main ✅
 
 DEPLOY_STATUS: OK
