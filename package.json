@@ -14,7 +14,9 @@
     "postinstall": "cd automation && npm install --production"
   },
   "dependencies": {
+    "dompurify": "^3.3.3",
     "firebase": "^12.9.0",
+    "html2canvas": "^1.4.1",
     "i18next": "^25.8.13",
     "jspdf": "^4.2.0",
     "jspdf-autotable": "^5.0.7",
