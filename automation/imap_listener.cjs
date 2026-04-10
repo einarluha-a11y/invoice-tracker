@@ -562,19 +562,20 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
         const isTooManyConns = /too many/i.test(error?.message || '');
         const isRateLimit = /rate.limit|Download was rate limited|try again in/i.test(error?.message || '');
         if (isTooManyConns) {
-            // Short ban: 5 minutes — server releases orphaned connections quickly
-            const banExpiry = Date.now() + 5 * 60 * 1000;
+            // 30-min ban — long enough to survive PM2 restart cycles + Railway container restarts.
+            // Previous 5-min ban was too short: process could restart, ban expire, retry immediately → crash loop.
+            const banExpiry = Date.now() + 30 * 60 * 1000;
             rateLimitUntil.set(accountKey, banExpiry);
             _saveRateLimits();
-            _saveRateLimitsFirestore().catch(() => {});
-            console.warn(`[Email] ⏳ Too many connections for ${companyName}. Skipping for 5 min.`);
+            await _saveRateLimitsFirestore(); // await so ban persists to Firestore before process can crash
+            console.warn(`[Email] ⏳ Too many connections for ${companyName}. Skipping for 30 min.`);
         } else if (isRateLimit) {
             const hoursMatch = /try again in (\d+)\s*hour/i.exec(error?.message || '');
             const banHours = hoursMatch ? parseInt(hoursMatch[1], 10) + 1 : 17;
             const banExpiry = Date.now() + banHours * 60 * 60 * 1000;
             rateLimitUntil.set(accountKey, banExpiry);
             _saveRateLimits();
-            _saveRateLimitsFirestore().catch(() => {}); // persist to Firestore (survives Railway restarts)
+            await _saveRateLimitsFirestore(); // await so ban persists to Firestore before process can crash
             console.warn(`[Email] ⏳ Rate limited for ${companyName}. Will skip until ${new Date(banExpiry).toISOString()} (~${banHours}h).`);
         }
     } finally {
