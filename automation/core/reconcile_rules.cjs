@@ -25,7 +25,11 @@ const { cleanNum } = require('./utils.cjs');
 // to genuine underpayments.
 const BANK_FEE_TOLERANCE = 0.50;
 
-const LEGAL_SUFFIXES = /\b(o[uü]|as|sa|sia|sp\.?\s*z\s*o\.?\s*o\.?|gmbh|llc|ltd|inc|ag|bv|srl|spa)\b/gi;
+// Legal entity suffixes stripped before vendor name comparison.
+// Includes: Estonian (OÜ), Latvian (SIA), Lithuanian (UAB, MB), Polish
+// (Sp. z o.o.), German (GmbH, AG), common English (LLC, Ltd, Inc, BV),
+// Italian (SRL, SpA). MB = Mažoji Bendrija, the LT counterpart of OÜ.
+const LEGAL_SUFFIXES = /\b(o[uü]|as|sa|sia|uab|mb|sp\.?\s*z\s*o\.?\s*o\.?|gmbh|llc|ltd|inc|ag|bv|srl|spa)\b/gi;
 const CITIES = /\b(tallinn|tartu|narva|p[aä]rnu|kohtla[\s-]?j[aä]rve|warsaw|warszawa|riga|vilnius|helsinki|stockholm|moscow|kiev|kyiv)\b/gi;
 const VENDOR_STOPWORDS = new Set([
     'logistics', 'transport', 'trans', 'cargo', 'freight', 'services', 'service',
