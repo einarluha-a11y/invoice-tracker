@@ -186,7 +186,7 @@ function checkPm2Errors() {
         /Cannot find module/i,
         /SyntaxError/i,
         /TypeError.*is not a function/i,
-        /FATAL|CRASH/i,
+        /\bFATAL\b/i,
         /storage\/invalid-argument/i,
         /ECONNREFUSED.*firestore/i,
     ];
