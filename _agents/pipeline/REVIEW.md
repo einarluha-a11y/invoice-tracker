@@ -2,9 +2,9 @@
 <!-- phase: WAITING | round: 0 -->
 
 ВЕРДИКТ: ПРИНЯТО  
-ОЦЕНКА: SOLUTION.md корректно отражает статус WAITING после синхронизации STATUS.md. Формат строго соблюден, DEPLOY_STATUS: OK подтверждает стабильность. Нет нарушений инструкций проекта.  
+ОЦЕНКА: SOLUTION корректно отражает статус после раунда 1 — PHASE: WAITING и DEPLOY_STATUS: OK синхронизированы с контекстом. Watchdog-анализ подтверждён без нарушений протокола, STATUS.md обновлён timely. Формат и отчётность соответствуют инструкциям.  
 ЗАМЕЧАНИЯ:  
-ДАЛЬНЕЙШИЙ ШАГ: Ожидать новых задач от Einar/Perplexity в STATUS.md
+ДАЛЬНЕЙШИЙ ШАГ: Ожидать новых задач от Einar/Perplexity, мониторить /tmp/.pipeline_event и STATUS.md
 
 ---
 *Автоматическое ревью через GitHub Actions (.github/workflows/perplexity_review.yml)*
