@@ -1,6 +1,6 @@
 # STATUS — Invoice Tracker Pipeline
 
-**Дата:** 2026-04-10 (обновлено 2026-04-10 UTC — Claude agent sync v24)
+**Дата:** 2026-04-10 (обновлено 2026-04-10 UTC — Claude agent sync v25)
 **Ветка:** main
 **DEPLOY_STATUS:** OK
 **PHASE:** BUGFIX ROUND 1
@@ -16,6 +16,12 @@
 - `watchdog` — online, мониторинг активен ✅
 
 ## Последние изменения (2026-04-10 UTC)
+
+### AGENT_SYNC 2026-04-10 UTC (sync v25)
+- BUGFIX ROUND 1: мониторинг invoice-imap uptime 24ч (REVIEW ПРИНЯТО)
+- invoice-imap online с 13:09:55 UTC, 0 крашей с момента фикса
+- Следующий отчёт: 2026-04-11 13:09 UTC
+- PHASE: BUGFIX ROUND 1, DEPLOY_STATUS: OK
 
 ### AGENT_SYNC 2026-04-10 UTC (sync v24)
 - WAITING: нет новых задач, ожидаем задания от Einar
