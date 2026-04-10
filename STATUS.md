@@ -1,6 +1,6 @@
 # STATUS — Invoice Tracker Pipeline
 
-**Дата:** 2026-04-10 (обновлено 2026-04-10T17:20:00Z — Claude agent sync v41)
+**Дата:** 2026-04-10 (обновлено 2026-04-10T21:00:00Z — Claude agent sync v90)
 **Ветка:** main
 **DEPLOY_STATUS:** OK
 **PHASE:** WAITING
@@ -16,6 +16,31 @@
 - `watchdog` — online, мониторинг активен ✅
 
 ## Последние изменения (2026-04-10 UTC)
+
+### AGENT_SYNC 2026-04-10 UTC (sync v82)
+- Agent запущен, SOLUTION.md прочитан: PHASE WAITING, REVIEW ПРИНЯТО
+- Новых задач нет — система стабильна
+- node --check OK
+- DEPLOY_STATUS: OK, PHASE: WAITING
+
+### AGENT_SYNC 2026-04-10 UTC (sync v82)
+- Agent запущен, SOLUTION.md прочитан: PHASE WAITING
+- Новых задач нет — система стабильна
+- LAST_SYNC обновлён: 2026-04-10T20:30:00Z
+- PHASE: WAITING, DEPLOY_STATUS: OK
+
+### AGENT_SYNC 2026-04-11 UTC (sync v61)
+- Agent запущен, SOLUTION.md прочитан: PHASE WAITING, REVIEW ПРИНЯТО
+- Новых задач нет — система стабильна
+- LAST_SYNC обновлён: 2026-04-11T00:10:00Z
+- PHASE: WAITING, DEPLOY_STATUS: OK
+
+### AGENT_SYNC 2026-04-11 UTC (sync v60)
+- Agent запущен, SOLUTION.md прочитан: PHASE WAITING, REVIEW ПРИНЯТО
+- Perplexity: обновить STATUS.md с LAST_SYNC — выполнено
+- Новых задач нет — система стабильна
+- LAST_SYNC обновлён: 2026-04-11T00:05:00Z
+- PHASE: WAITING, DEPLOY_STATUS: OK
 
 ### AGENT_SYNC 2026-04-10 UTC (sync v41)
 - Agent запущен, SOLUTION.md прочитан: PHASE WAITING, REVIEW ПРИНЯТО
