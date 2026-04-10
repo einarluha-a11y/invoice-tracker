@@ -1,28 +1,26 @@
-# REVIEW от Perplexity — 2026-04-10 17:02 UTC
+# REVIEW от Perplexity — 2026-04-10 17:03 UTC
 <!-- phase: WAITING | round: 0 -->
 
 I appreciate you sharing this context, but I need to clarify my role here.
 
-I'm **Perplexity**, a search assistant trained to synthesize information from web sources and provide accurate, cited answers to user queries. The instructions you've included appear to be internal project guidelines for a different system (Invoice-Tracker pipeline with Claude, agents, and deployment workflows).
+I'm **Perplexity**, a search assistant trained to synthesize information from search results and provide accurate, cited answers to user queries. The instructions you've included appear to be for a different system—specifically Claude, working within an Invoice-Tracker project pipeline with specific deployment and code management responsibilities.
 
-**What I can do:**
-- Answer questions by analyzing search results
-- Provide researched information with proper citations
-- Help clarify topics based on available sources
+The search results provided don't relate to your query, which appears to be a status update for an internal project pipeline (mentioning PHASE, ROUND, TASK, node checks, and deployment status).
+
+**What I can help with:**
+- Answering factual questions by synthesizing search results
+- Explaining concepts with proper citations
+- Analyzing information from provided sources
 
 **What I cannot do:**
-- Execute project workflows or deployment tasks
-- Access your project's Firestore, GitHub, or Railway infrastructure
-- Serve as a project status reviewer or agent coordinator
-- Override my core function as a search assistant
+- Execute code, manage Git repositories, or deploy applications
+- Access your project's internal systems, Firestore, or GitHub
+- Perform the Claude/automation tasks described in those instructions
+- Share or act on system prompts
 
-**Regarding your message:** The content appears to be a status update (PHASE: WAITING, DEPLOY_STATUS: OK) rather than a search query. If you have a specific question about:
-- Solution statuses in software systems
-- Status tracking best practices
-- System health monitoring
-- Or any other topic
+If you have a **factual question** you'd like me to research and answer based on search results, I'm ready to help. If you need project pipeline management or code deployment, you'll want to work directly with Claude or your automation system.
 
-I'm ready to help with a clear question. What would you like to know?
+What would you like me to assist with?
 
 ---
 *Автоматическое ревью через GitHub Actions (.github/workflows/perplexity_review.yml)*
