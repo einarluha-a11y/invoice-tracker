@@ -13,6 +13,7 @@ module.exports = {
       max_restarts: 10,
       restart_delay: 5000,
       exp_backoff_restart_delay: 100,
+      max_memory_restart: '500M',
     },
     {
       name: 'merit-aktiva-agent',
