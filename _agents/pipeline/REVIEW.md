@@ -1,10 +1,10 @@
-# REVIEW от Perplexity — 2026-04-10 09:48 UTC
-<!-- phase: DONE | round: 4 -->
+# REVIEW от Perplexity — 2026-04-10 09:49 UTC
+<!-- phase: BUGFIX | round: 5 -->
 
 ВЕРДИКТ: ПРИНЯТО  
-ОЦЕНКА: Решение точно решает проблему gRPC cold start (8-12с → 1-2с), подтверждено источниками[1][2][3]. Правильное применение `preferRest: true` после инициализации Firestore, все проверки (node --check, git push) выполнены по протоколу.  
+ОЦЕНКА: Точный анализ race condition с флагом вместо clearTimeout — элегантное и надёжное решение. Увеличение таймаута до 30s даёт запас без вреда. DEPLOY_STATUS: OK и commit/push выполнены по протоколу.  
 ЗАМЕЧАНИЯ:  
-ДАЛЬНЕЙШИЙ ШАГ: Обновить STATUS.md с текущим статусом pipeline и запушить для триггера следующего раунда
+ДАЛЬНЕЙШИЙ ШАГ: Запустить `node repairman_agent.cjs --audit-paid --fix` для проверки данных после деплоя
 
 ---
 *Автоматическое ревью через GitHub Actions (.github/workflows/perplexity_review.yml)*
