@@ -556,11 +556,13 @@ async function validateAndTeach(invoiceData, companyId) {
 
     // ── 2. Examples — fallback to VAT/RegNo search if name search found nothing ──
     let examples = examplesResult;
+    let examplesMatchedByIdentifiers = false;
     if (examples.length === 0) {
         try {
             examples = await findExamplesByIdentifiers(invoice);
             if (examples.length > 0) {
                 debug(`[Teacher] Found ${examples.length} example(s) by VAT/RegNo/patterns match`);
+                examplesMatchedByIdentifiers = true;
             }
         } catch { /* no match — proceed without examples */ }
     }
@@ -605,16 +607,22 @@ async function validateAndTeach(invoiceData, companyId) {
     if (bestExample) {
         const gt = bestExample.groundTruth || {};
 
-        // Vendor name: example wins only if names are related (share tokens) or invoice has no vendor
+        // Vendor name: example wins if matched by strong identifiers (VAT/regCode/invoiceId),
+        // OR if names share tokens, OR if invoice has no vendor at all.
+        // When matched by identifiers, brand logos ("Kookon Nutilaod") must be overridden
+        // by the official legal entity name from the example ("Allstore Assets OÜ").
         if (gt.vendorName && !isEmpty(gt.vendorName) && invoice.vendorName !== gt.vendorName) {
             const invTokens = (invoice.vendorName || '').toLowerCase().replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter(t => t.length > 2);
             const exTokens = gt.vendorName.toLowerCase().replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter(t => t.length > 2);
             const hasOverlap = isEmpty(invoice.vendorName) || invTokens.some(t => exTokens.some(e => e.includes(t) || t.includes(e)));
-            if (!hasOverlap) {
-                debug(`[Teacher] ⚠️ Skipping vendorName from example: "${gt.vendorName}" ≠ "${invoice.vendorName}" (no token overlap)`);
+            // Trust identifier match (VAT/regCode are unique) over token overlap heuristic
+            const shouldOverride = hasOverlap || examplesMatchedByIdentifiers;
+            if (!shouldOverride) {
+                debug(`[Teacher] ⚠️ Skipping vendorName from example: "${gt.vendorName}" ≠ "${invoice.vendorName}" (no token overlap, no identifier match)`);
             } else {
                 if (!isEmpty(invoice.vendorName)) {
-                    corrections.push(`Corrected vendorName: ${invoice.vendorName} → ${gt.vendorName} (from example)`);
+                    const source = examplesMatchedByIdentifiers ? 'identifier match' : 'token overlap';
+                    corrections.push(`Corrected vendorName: ${invoice.vendorName} → ${gt.vendorName} (example via ${source})`);
                 } else {
                     corrections.push(`Filled vendorName from example: ${gt.vendorName}`);
                 }
