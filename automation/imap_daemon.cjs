@@ -26,7 +26,10 @@ if (require.main === module) {
     // → pollLoop never called → event loop empty → Node exits → PM2 restarts → crash loop.
     checkAndRunFlagTasks()
         .catch(err => {
-            console.error('[imap-daemon] ⚠️  Flag tasks failed (non-fatal, starting loops anyway):', err.message);
+            // Use safe stringify — err may be null/non-Error (same pattern as unhandledRejection handler).
+            // If .catch() itself throws, .then() is never called → pollLoop never starts → crash loop.
+            const msg = (err instanceof Error) ? err.message : String(err ?? 'unknown');
+            console.error('[imap-daemon] ⚠️  Flag tasks failed (non-fatal, starting loops anyway):', msg);
         })
         .then(async () => {
             // Restore IMAP bans from Firestore before first poll.
