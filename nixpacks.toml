@@ -1,2 +1,9 @@
 [phases.setup]
 aptPkgs = ["graphicsmagick", "ghostscript"]
+
+# Frontend build — Nixpacks would auto-detect `npm run build` from
+# package.json, but we make it explicit here because the build output
+# (dist/) is now served by the same Railway container that hosts the API.
+# If this phase doesn't run, the API still starts but serves a 503 at /.
+[phases.build]
+cmds = ["npm run build"]
