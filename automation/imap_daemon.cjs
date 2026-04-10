@@ -10,8 +10,14 @@ process.on('uncaughtException', (err) => {
     console.error('[imap-daemon] ⚠️  Uncaught exception (not crashing):', msg);
 });
 process.on('exit', (code) => {
-    if (code !== 0) console.error('[imap-daemon] 🔴 Process exiting with code', code);
+    // Log ALL exits — including clean 0 exits that may indicate event-loop drain.
+    console.error('[imap-daemon] 🔴 Process exiting with code', code);
 });
+
+// Keepalive: prevents event-loop drain when all IMAP accounts are rate-limited
+// and async ops complete too fast (Firebase calls return immediately on network flap).
+// Without this: event loop empties → Node exits (code 0) → PM2 restarts → crash loop.
+const _keepAlive = setInterval(() => {}, 60000);
 
 // Modules
 const { checkEmailForInvoices, pollAllCompanyInboxes, checkAndRunFlagTasks, pollLoop, loadRateLimitsFromFirestore } = require('./imap_listener.cjs');
