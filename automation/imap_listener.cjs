@@ -561,6 +561,7 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
         // will skip this account on the next poll cycle until the ban expires.
         const isTooManyConns = /too many/i.test(error?.message || '');
         const isRateLimit = /rate.limit|Download was rate limited|try again in/i.test(error?.message || '');
+        const isAuthFailure = /invalid credentials|authentication failed/i.test(error?.message || '') || error?.textCode === 'AUTHENTICATIONFAILED';
         if (isTooManyConns) {
             // 30-min ban — long enough to survive PM2 restart cycles + Railway container restarts.
             // Previous 5-min ban was too short: process could restart, ban expire, retry immediately → crash loop.
@@ -569,6 +570,14 @@ async function checkEmailForInvoices(imapConfig, companyName = "Default", compan
             _saveRateLimits();
             await _saveRateLimitsFirestore(); // await so ban persists to Firestore before process can crash
             console.warn(`[Email] ⏳ Too many connections for ${companyName}. Skipping for 30 min.`);
+        } else if (isAuthFailure) {
+            // Auth failure: ban 30 min to avoid hammering server every 2 min and flooding Firestore
+            // with error reports → "Transaction too big" errors → gRPC crash loop.
+            const banExpiry = Date.now() + 30 * 60 * 1000;
+            rateLimitUntil.set(accountKey, banExpiry);
+            _saveRateLimits();
+            await _saveRateLimitsFirestore();
+            console.warn(`[Email] ⏳ Auth failure for ${companyName}. Skipping for 30 min (check credentials).`);
         } else if (isRateLimit) {
             const hoursMatch = /try again in (\d+)\s*hour/i.exec(error?.message || '');
             const banHours = hoursMatch ? parseInt(hoursMatch[1], 10) + 1 : 17;
