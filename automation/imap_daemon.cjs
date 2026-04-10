@@ -13,6 +13,12 @@ process.on('exit', (code) => {
     // Log ALL exits — including clean 0 exits that may indicate event-loop drain.
     console.error('[imap-daemon] 🔴 Process exiting with code', code);
 });
+// SIGTERM handler: PM2 sends SIGTERM on restart/stop. Logging distinguishes intentional
+// restarts (SIGTERM → code 0) from unexpected event-loop drain (code 0, no signal log).
+process.on('SIGTERM', () => {
+    console.error('[imap-daemon] 🟡 Received SIGTERM — PM2 restart/stop, exiting cleanly');
+    process.exit(0);
+});
 
 // Keepalive: prevents event-loop drain when all IMAP accounts are rate-limited
 // and async ops complete too fast (Firebase calls return immediately on network flap).
