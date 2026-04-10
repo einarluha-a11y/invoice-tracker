@@ -2,5 +2,5 @@
 
 PHASE: WAITING
 ROUND: 0
-TASK: WAITING sync v19 — агент запущен, BACKLOG пуст, DEPLOY_STATUS: OK
 DEPLOY_STATUS: OK
+TASK: WAITING sync v21 — агент запущен, BACKLOG пуст, DEPLOY_STATUS: OK
