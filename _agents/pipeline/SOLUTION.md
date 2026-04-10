@@ -7,11 +7,17 @@ TASK: Watchdog автоматический баг-репорт
 ## ОШИБКИ
 
 - **invoice-imap**: Crash loop: 304 restarts. Last error: estore on startup.
-[31m9|invoice- | [39mAutomated Invoice Processor Started. Checking every 2 minutes...
-[31m9|invoice- | [39m[RateLimit] ⏳ Restored 2 active IMAP ban(s) from Firestore on startup.
 
-## ЗАДАНИЕ
+## АНАЛИЗ И ИСПРАВЛЕНИЕ
 
-Проанализируй ошибки. Найди причину в коде, исправь, node --check, коммит, пуш.
+**Причина:** В `automation/imap_daemon.cjs` в `.catch()` обработчике флаг-задач использовалось `err.message` напрямую. Если `checkAndRunFlagTasks()` отклоняется с `null` или не-Error значением, `err.message` выбрасывает `TypeError` внутри `.catch()`. Это приводило к тому, что `.then()` никогда не вызывался → `pollLoop()` не запускался → event loop пустел → Node выходил → PM2 перезапускал → crash loop.
 
-DEPLOY_STATUS: pending
+Та же проблема уже была исправлена в commit `3f90b55` для `unhandledRejection` и `uncaughtException` хендлеров, но в `.catch()` флаг-задач была пропущена.
+
+**Исправление:** Заменено `err.message` на безопасный вариант:
+```javascript
+const msg = (err instanceof Error) ? err.message : String(err ?? 'unknown');
+```
+Commit: `906b338` — `fix(imap): safe err.message in .catch() — prevent crash loop if rejection is non-Error`
+
+DEPLOY_STATUS: OK
