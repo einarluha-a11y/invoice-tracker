@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useCompanies } from '../hooks/useCompanies';
-import { doc, setDoc, onSnapshot, serverTimestamp, collection, getDocs, updateDoc } from 'firebase/firestore';
+import { doc, setDoc, onSnapshot, serverTimestamp, collection, getDocs, updateDoc, addDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { authHeaders } from '../data/api';
 import { useAuth } from '../context/AuthContext';
@@ -81,6 +81,75 @@ export function Settings({ onBack }: SettingsProps) {
     const [newRuleText, setNewRuleText] = useState<string>('');
     const [editingRuleIdx, setEditingRuleIdx] = useState<number | null>(null);
     const [editingRuleText, setEditingRuleText] = useState<string>('');
+
+    // ── Brand → Legal entity aliases (A4) ───────────────────────────────────
+    type BrandAlias = {
+        id: string;
+        brand: string;
+        legalName: string;
+        regCode?: string;
+        vatNumber?: string;
+        source?: string;
+    };
+    const [brandAliases, setBrandAliases] = useState<BrandAlias[]>([]);
+    const [brandLoading, setBrandLoading] = useState(true);
+    const [showBrands, setShowBrands] = useState(false);
+    const [newBrand, setNewBrand] = useState({ brand: '', legalName: '', regCode: '', vatNumber: '' });
+
+    useEffect(() => {
+        if (!db) return;
+        return onSnapshot(collection(db, 'brand_aliases'), (snap) => {
+            const list: BrandAlias[] = [];
+            snap.forEach(d => {
+                const data = d.data();
+                if (data.brand && data.legalName) {
+                    list.push({
+                        id: d.id,
+                        brand: data.brand,
+                        legalName: data.legalName,
+                        regCode: data.regCode || '',
+                        vatNumber: data.vatNumber || '',
+                        source: data.source || 'manual',
+                    });
+                }
+            });
+            list.sort((a, b) => a.brand.localeCompare(b.brand));
+            setBrandAliases(list);
+            setBrandLoading(false);
+        });
+    }, []);
+
+    const handleAddBrandAlias = async () => {
+        if (!db) return;
+        const brand = newBrand.brand.trim();
+        const legalName = newBrand.legalName.trim();
+        if (!brand || !legalName) return;
+        try {
+            await addDoc(collection(db, 'brand_aliases'), {
+                brand,
+                legalName,
+                regCode: newBrand.regCode.trim() || null,
+                vatNumber: newBrand.vatNumber.trim() || null,
+                source: 'manual',
+                createdAt: serverTimestamp(),
+            });
+            setNewBrand({ brand: '', legalName: '', regCode: '', vatNumber: '' });
+        } catch (e) {
+            console.error('Failed to add brand alias', e);
+            alert('Failed: ' + e);
+        }
+    };
+
+    const handleDeleteBrandAlias = async (id: string) => {
+        if (!db) return;
+        if (!window.confirm('Delete this brand alias?')) return;
+        try {
+            await deleteDoc(doc(db, 'brand_aliases', id));
+        } catch (e) {
+            console.error('Failed to delete brand alias', e);
+            alert('Failed: ' + e);
+        }
+    };
 
     useEffect(() => {
         if (!db) return;
@@ -409,6 +478,80 @@ export function Settings({ onBack }: SettingsProps) {
                                 }}>
                                 {t('settingsPage.addRuleBtn') || 'Save rule'}
                             </button>
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* ── BRAND ALIASES SECTION (A4) ──────────────────────────────── */}
+            <div className="table-container" style={{ padding: '2rem', marginBottom: '2rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                        <h3>Brand → Legal entity</h3>
+                        <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', margin: '0.3rem 0 0 0' }}>
+                            Marketing brand on the invoice → official legal entity in accounting (e.g. "Kookon Nutilaod" → "Allstore Assets OÜ").
+                        </p>
+                    </div>
+                    <button onClick={() => setShowBrands(!showBrands)} style={{
+                        background: showBrands ? 'var(--surface-color)' : 'transparent',
+                        border: '1px solid var(--border-color)', color: 'var(--primary-color)',
+                        padding: '0.4rem 0.8rem', borderRadius: '4px', cursor: 'pointer'
+                    }}>
+                        {showBrands ? 'Hide' : 'Manage'} {brandAliases.length > 0 ? `(${brandAliases.length})` : ''}
+                    </button>
+                </div>
+
+                {showBrands && (
+                    <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid var(--border-color)' }}>
+                        {brandLoading ? (
+                            <div className="loader">Loading…</div>
+                        ) : brandAliases.length === 0 ? (
+                            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+                                No brand aliases yet. Add one below.
+                            </p>
+                        ) : (
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9rem', marginBottom: '1rem' }}>
+                                <thead>
+                                    <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
+                                        <th style={{ textAlign: 'left', padding: '0.5rem', color: 'var(--text-secondary)' }}>Brand</th>
+                                        <th style={{ textAlign: 'left', padding: '0.5rem', color: 'var(--text-secondary)' }}>Legal entity</th>
+                                        <th style={{ textAlign: 'left', padding: '0.5rem', color: 'var(--text-secondary)' }}>Reg code</th>
+                                        <th style={{ textAlign: 'left', padding: '0.5rem', color: 'var(--text-secondary)' }}>VAT</th>
+                                        <th style={{ padding: '0.5rem' }}></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {brandAliases.map(b => (
+                                        <tr key={b.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                                            <td style={{ padding: '0.5rem', fontWeight: 600 }}>{b.brand}</td>
+                                            <td style={{ padding: '0.5rem' }}>{b.legalName}</td>
+                                            <td style={{ padding: '0.5rem', color: 'var(--text-secondary)' }}>{b.regCode || '—'}</td>
+                                            <td style={{ padding: '0.5rem', color: 'var(--text-secondary)' }}>{b.vatNumber || '—'}</td>
+                                            <td style={{ padding: '0.5rem', textAlign: 'right' }}>
+                                                <button onClick={() => handleDeleteBrandAlias(b.id)} style={{
+                                                    color: 'var(--status-overdue-text)', border: '1px solid currentColor',
+                                                    background: 'transparent', padding: '0.3rem 0.7rem', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem'
+                                                }}>Delete</button>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        )}
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr auto', gap: '0.5rem', alignItems: 'end', paddingTop: '1rem', borderTop: '1px dashed var(--border-color)' }}>
+                            <input type="text" placeholder="Brand (e.g. Kookon Nutilaod)" className="search-input"
+                                value={newBrand.brand} onChange={e => setNewBrand({ ...newBrand, brand: e.target.value })} />
+                            <input type="text" placeholder="Legal entity (e.g. Allstore Assets OÜ)" className="search-input"
+                                value={newBrand.legalName} onChange={e => setNewBrand({ ...newBrand, legalName: e.target.value })} />
+                            <input type="text" placeholder="Reg code (optional)" className="search-input"
+                                value={newBrand.regCode} onChange={e => setNewBrand({ ...newBrand, regCode: e.target.value })} />
+                            <input type="text" placeholder="VAT (optional)" className="search-input"
+                                value={newBrand.vatNumber} onChange={e => setNewBrand({ ...newBrand, vatNumber: e.target.value })} />
+                            <button onClick={handleAddBrandAlias} style={{
+                                background: 'var(--header-accent)', color: 'white', border: 'none',
+                                padding: '0.6rem 1.2rem', borderRadius: '4px', cursor: 'pointer', fontWeight: 500
+                            }}>Add</button>
                         </div>
                     </div>
                 )}

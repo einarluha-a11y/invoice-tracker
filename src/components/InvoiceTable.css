@@ -421,3 +421,33 @@ tr:hover {
     from { transform: rotate(0deg); }
     to   { transform: rotate(360deg); }
 }
+
+/* Phase 1 — extraction quality / anomaly badges next to vendor name */
+.quality-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    font-size: 0.75rem;
+    line-height: 1;
+    cursor: help;
+    user-select: none;
+}
+.quality-badge-confidence {
+    background: rgba(255, 193, 7, 0.18);
+    border: 1px solid rgba(255, 193, 7, 0.5);
+}
+.quality-badge-anomaly {
+    background: rgba(220, 53, 69, 0.18);
+    border: 1px solid rgba(220, 53, 69, 0.5);
+}
+.quality-badge-low-ocr {
+    background: rgba(108, 117, 125, 0.18);
+    border: 1px solid rgba(108, 117, 125, 0.5);
+}
+.quality-badge-vies {
+    background: rgba(220, 53, 69, 0.25);
+    border: 1px solid rgba(220, 53, 69, 0.6);
+}

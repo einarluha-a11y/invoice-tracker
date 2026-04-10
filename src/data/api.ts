@@ -132,6 +132,19 @@ export const subscribeToInvoices = (
                 originalForeignAmount: data.originalForeignAmount || undefined,
                 archived: data.archived === true,
                 deletedAt: data.deletedAt || undefined,
+                // Phase 1 — confidence + anomaly metadata
+                confidenceScores: data.confidenceScores || undefined,
+                minFieldConfidence: typeof data.minFieldConfidence === 'number' ? data.minFieldConfidence : undefined,
+                avgFieldConfidence: typeof data.avgFieldConfidence === 'number' ? data.avgFieldConfidence : undefined,
+                lowConfidenceFields: data.lowConfidenceFields || undefined,
+                extractionQuality: data.extractionQuality || undefined,
+                anomalyScore: typeof data.anomalyScore === 'number' ? data.anomalyScore : undefined,
+                anomalyReasons: data.anomalyReasons || undefined,
+                anomalyZScore: typeof data.anomalyZScore === 'number' ? data.anomalyZScore : undefined,
+                viesStatus: data.viesStatus || undefined,
+                contentHash: data.contentHash || undefined,
+                docIndex: typeof data.docIndex === 'number' ? data.docIndex : undefined,
+                docCount: typeof data.docCount === 'number' ? data.docCount : undefined,
             });
         });
 
@@ -254,6 +267,11 @@ async function saveTeacherExample(invoiceId: string, vendorName: string, d: Reco
         fileUrl:    d.fileUrl    || d.downloadUrl || null,
         stagingId:  d.stagingId  || null,  // → raw_documents → storageUrl (original PDF)
         companyId:  d.companyId  || null,
+        // C2: continuous learning loop — every manual edit becomes a verified
+        // ground-truth example. Confidence 1.0 means Teacher should trust this
+        // unconditionally over any heuristic from Scout/regex.
+        verifiedByHuman: true,
+        confidence: 1.0,
         updatedAt:  serverTimestamp(),
     };
     if (!existingExample.exists()) {

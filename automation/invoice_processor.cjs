@@ -10,7 +10,8 @@ const { admin, db, bucket } = require('./core/firebase.cjs');
 // Staging layer — saves raw docs before processing for re-run without IMAP
 const { stageDocument, markStagingResult } = require('./core/staging.cjs');
 // Number parsing — single source of truth for European/US decimal formats
-const { cleanNum } = require('./core/utils.cjs');
+const { cleanNum, computeContentHash } = require('./core/utils.cjs');
+const { inspectVendorFields } = require('./core/self_invoice_guard.cjs');
 // Merit Aktiva sync — sends invoices automatically
 const { syncInvoiceToMerit } = require('./merit_sync.cjs');
 const debug = (...a) => process.env.DEBUG && console.log(...a);
@@ -82,27 +83,27 @@ async function writeToFirestore(dataArray) {
                 throw new Error(`FILE_INTEGRITY_BLOCK: No fileUrl for ${vendorName} / ${invoiceId}. Record not saved.`);
             }
 
-            // --- SELF-INVOICE GUARD (last-resort check before write) ---
+            // --- SELF-INVOICE GUARD (last-resort check before write — B3 unified) ---
             // Receiver companies (Global Technics, Ideacom, ...) can never be the vendor.
             // If Teacher/Accountant guards missed it, this final check catches the case.
+            // Uses the shared inspector — same rules as Teacher and Accountant.
             try {
                 const companiesSnap = await db.collection('companies').get();
-                const invVat = (data.supplierVat || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-                const invReg = (data.supplierRegistration || '').replace(/[^0-9]/g, '');
-                const invName = (vendorName || '').toLowerCase().replace(/[^a-zöäüõ0-9]/g, '');
-                for (const cd of companiesSnap.docs) {
-                    const c = cd.data();
-                    const cVat = (c.vat || '').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
-                    const cReg = (c.regCode || '').replace(/[^0-9]/g, '');
-                    const cName = (c.name || '').toLowerCase().replace(/[^a-zöäüõ0-9]/g, '');
-                    const vatLeak = cVat && invVat && (cVat === invVat || invVat.endsWith(cReg || 'XXXXXX'));
-                    const regLeak = cReg && invReg && cReg === invReg;
-                    const nameLeak = cName && invName && invName.length > 3 &&
-                        (cName === invName || invName.includes(cName) || cName.includes(invName));
-                    if (vatLeak || regLeak || nameLeak) {
-                        console.error(`[Firestore] 🛑 SELF-INVOICE GUARD: Buyer data leaked into vendor fields for ${vendorName}/${invoiceId} (matches ${c.name}). Record rejected.`);
-                        throw new Error(`SELF_INVOICE_GUARD: Buyer "${c.name}" data in vendor fields`);
-                    }
+                const receivers = companiesSnap.docs.map(d => d.data());
+                // Pass the about-to-be-written vendor fields (note: vendorName came from
+                // `data.vendorName || 'Unknown Vendor'` above, which we want to validate too)
+                const probe = {
+                    vendorName,
+                    supplierVat: data.supplierVat,
+                    supplierRegistration: data.supplierRegistration,
+                };
+                const report = inspectVendorFields(probe, receivers);
+                if (report.leaked) {
+                    console.error(
+                        `[Firestore] 🛑 SELF-INVOICE GUARD: Buyer data leaked into vendor fields for ` +
+                        `${vendorName}/${invoiceId} (matches ${report.matchedCompanyName}). Record rejected.`
+                    );
+                    throw new Error(`SELF_INVOICE_GUARD: Buyer "${report.matchedCompanyName}" data in vendor fields`);
                 }
             } catch (guardErr) {
                 if (guardErr.message && guardErr.message.startsWith('SELF_INVOICE_GUARD')) {
@@ -120,7 +121,29 @@ async function writeToFirestore(dataArray) {
             let isDuplicate = false;
             let existingDocId = null;
 
-            // 0. Check by file source: if same file was already saved → duplicate.
+            // 0a. A6 — Content hash dedup (most reliable, byte-exact).
+            // Scans for same SHA-256 of the PDF across this company. For multi-doc
+            // PDFs, contentHash is shared, so we also filter by docIndex so three
+            // invoices from one 3-page PDF each get their own record.
+            if (data.contentHash) {
+                let q = invoicesRef.where('contentHash', '==', data.contentHash);
+                if (data.companyId) q = q.where('companyId', '==', data.companyId);
+                const hashSnap = await q.limit(10).get();
+                for (const d of hashSnap.docs) {
+                    const existing = d.data();
+                    // Multi-doc guard: only consider it a duplicate if the docIndex matches
+                    // (or both are single-doc / undefined).
+                    const sameIndex = (existing.docIndex ?? null) === (data.docIndex ?? null);
+                    if (sameIndex) {
+                        debug(`[Firestore] Duplicate caught by contentHash: ${data.contentHash.slice(0,12)}... (existing doc ${d.id})`);
+                        isDuplicate = true;
+                        existingDocId = d.id;
+                        break;
+                    }
+                }
+            }
+
+            // 0b. Check by file source: if same file was already saved → duplicate.
             // Denorm fileBasename as indexed field for O(1) lookup via composite index
             // (companyId, fileBasename). Falls back to full scan for legacy records
             // that don't have the field yet.
@@ -160,7 +183,7 @@ async function writeToFirestore(dataArray) {
                 }
             }
 
-            // 1. Check by Invoice ID + Vendor Name + Company
+            // 1a. Check by Invoice ID + Vendor Name + Company
             if (!isDuplicate && data.invoiceId) {
                 const idQuerySnap = await invoicesRef.where('invoiceId', '==', invoiceId).get();
                 for (const doc of idQuerySnap.docs) {
@@ -285,7 +308,26 @@ async function writeToFirestore(dataArray) {
                 fileUrl: data.fileUrl || null,
                 fileBasename: currentFileBasename || null,  // Indexed for O(1) dedup via (companyId, fileBasename)
                 stagingId: data.stagingId || null,  // Link to raw_documents entry for source tracing
-                rawText: (data._rawText || '').slice(0, 50000) || null  // Full text for Repairman re-extraction
+                rawText: (data._rawText || '').slice(0, 50000) || null,  // Full text for Repairman re-extraction
+                // A6: SHA-256 of source PDF for idempotency (indexed)
+                contentHash: data.contentHash || null,
+                // A2: docIndex/docCount — present only on multi-invoice PDFs
+                docIndex: data.docIndex ?? null,
+                docCount: data.docCount ?? null,
+                // A1: per-field Azure confidence scores and aggregates
+                confidenceScores: data.confidenceScores || null,
+                minFieldConfidence: typeof data.minFieldConfidence === 'number' ? data.minFieldConfidence : null,
+                avgFieldConfidence: typeof data.avgFieldConfidence === 'number' ? data.avgFieldConfidence : null,
+                lowConfidenceFields: Array.isArray(data.lowConfidenceFields) ? data.lowConfidenceFields : [],
+                // A5: extraction quality from Azure (high | medium | low)
+                extractionQuality: data.extractionQuality || null,
+                // C1: anomaly detection score and reasons
+                anomalyScore: typeof data.anomalyScore === 'number' ? data.anomalyScore : null,
+                anomalyReasons: Array.isArray(data.anomalyReasons) ? data.anomalyReasons : [],
+                anomalyZScore: typeof data.anomalyZScore === 'number' ? data.anomalyZScore : null,
+                // B1: VIES validation outcome (valid | invalid | unverified)
+                viesStatus: data.viesStatus || null,
+                viesValidation: data.viesValidation || null
             });
             delete data._rawText;  // Clean up internal field after saving
 
@@ -383,9 +425,19 @@ async function writeToFirestore(dataArray) {
  * @returns {Array|null} Parsed invoice data array, or null if extraction failed
  */
 async function scoutTeacherPipeline(content, mimeType, companyId, customRules) {
+    // A6: Compute idempotency hash once on the raw buffer, attach to every
+    // invoice produced by this file. Multi-doc PDFs share the same hash —
+    // dedup in writeToFirestore must take (contentHash, docIndex) together.
+    const contentHash = computeContentHash(content);
+
     // Step 1: Scout — DocAI + multilingual regex
     const tempParsed = await processInvoiceWithDocAI(content, mimeType, null, customRules || '');
     if (!tempParsed || tempParsed.length === 0) return null;
+
+    // Stamp hash on every extracted invoice for downstream dedup.
+    for (const inv of tempParsed) {
+        inv.contentHash = contentHash;
+    }
 
     // Step 2: Teacher — validate and fill from Charter + examples
     try {
