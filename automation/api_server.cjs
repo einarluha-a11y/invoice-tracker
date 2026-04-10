@@ -146,11 +146,21 @@ app.get('/api/pdf-proxy', requireRole(['user', 'admin', 'master']), async (req, 
 // "Invoice Automation Bot is Active" was removed when the frontend moved
 // from GitHub Pages onto Railway.
 
+// ── STATIC FRONTEND (Vite SPA) ─────────────────────────────────────────────
+// Resolved BEFORE /health so the health handler can report hasFrontend.
+// Earlier versions of this file declared `hasFrontend` after the /health
+// handler; because `const` has no hoisting, the handler crashed in the
+// Temporal Dead Zone on every invocation — Railway's healthcheck then
+// marked the deployment FAILED and rolled back. Keep this order.
+const DIST_DIR = path.resolve(__dirname, '..', 'dist');
+const INDEX_HTML = path.join(DIST_DIR, 'index.html');
+const hasFrontend = fs.existsSync(INDEX_HTML);
+
 app.get('/health', (req, res) => {
-    // Railway injects these envs during build. Having them in /health lets
-    // local tooling (scripts/wait_deploy.sh) poll for the exact commit hash
-    // without guessing from logs. If the env isn't set (dev/localhost), we
-    // fall back to reading from the generated file if one exists.
+    // Railway injects these envs at build time. Exposing them in /health
+    // lets scripts/wait_deploy.sh poll for the exact commit hash without
+    // guessing from logs. If the env isn't set (dev/localhost), we fall
+    // back to 'unknown'.
     const commit = process.env.RAILWAY_GIT_COMMIT_SHA
                 || process.env.GIT_COMMIT_SHA
                 || 'unknown';
@@ -169,16 +179,6 @@ app.get('/health', (req, res) => {
         hasFrontend,
     });
 });
-
-// ── STATIC FRONTEND (Vite SPA) ─────────────────────────────────────────────
-// Serves the React app from ../dist. Previously hosted on GitHub Pages and
-// Vercel, now consolidated onto Railway so there's a single source of truth
-// per deployment. Nixpacks runs `npm run build` automatically because we
-// have a `build` script in package.json — the `dist` folder lands at the
-// repo root alongside `automation/`.
-const DIST_DIR = path.resolve(__dirname, '..', 'dist');
-const INDEX_HTML = path.join(DIST_DIR, 'index.html');
-const hasFrontend = fs.existsSync(INDEX_HTML);
 
 if (hasFrontend) {
     // Immutable hashed assets can be cached aggressively; index.html must
