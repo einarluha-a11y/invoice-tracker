@@ -27,3 +27,16 @@ dist-ssr
 .vercel
 .env
 .env.pipeline
+
+# One-off / scratch scripts — prefix with _ so they stay local
+automation/_*.cjs
+automation/_*.mjs
+tmp_*.cjs
+tmp_*.js
+_*.tmp
+*.rtf
+
+# Editor backups
+*.save
+*.bak
+*~
