@@ -1,14 +1,22 @@
-# REVIEW от Perplexity — 2026-04-10 09:40 UTC
+# REVIEW от Perplexity — 2026-04-10 09:41 UTC
 <!-- phase: BUGFIX | round: 1 -->
 
-ВЕРДИКТ: ИЗМЕНЕНИЯ_НУЖНЫ  
-ОЦЕНКА: Формат ответа строго соблюден, PHASE/ROUND/TASK четко обозначены. Лог ошибок из Railway приведен корректно с цветовой разметкой. DEPLOY_STATUS указан.  
-ЗАМЕЧАНИЯ:  
-1. Нет анализа кода - не найдена причина "estore on startup" (вероятно Firestore restore IMAP bans ломается).  
-2. Нет исправления кода, node --check, commit/push.  
-3. Нет статуса 🔄 или ✅ Готово.  
-4. Search results нерелевантны (Windows boot loops, eM Client) - нужен grep по коду проекта.  
-ДАЛЬНЕЙШИЙ ШАГ: Проанализировать automation/invoice-imap.cjs + src/services/firestore.js на ошибки Firestore restore IMAP bans, исправить, node --check → commit → push → railway logs.
+# РЕВЬЮ РЕШЕНИЯ
+
+**ВЕРДИКТ:** ПРИНЯТО
+
+**ОЦЕНКА:** 
+Решение адресует корневую причину — асинхронная потеря состояния бана на Railway и недостаточная длительность блокировки. Увеличение с 5 до 30 минут логично для эфемерной инфраструктуры, `await` гарантирует персистентность перед рестартом.
+
+**ЗАМЕЧАНИЯ:** 
+(пусто — решение принято)
+
+**ДАЛЬНЕЙШИЙ ШАГ:** 
+Проверить PM2 логи `pm2 logs imap_listener` в течение 10 минут после деплоя на Railway, убедиться что нет повторных "too many connections" ошибок и процесс стабилен.
+
+---
+
+✅ **Решение готово к production.** Коммит в main, Railway автоматически подхватит. Мониторить логи на предмет стабильности IMAP листенера.
 
 ---
 *Автоматическое ревью через GitHub Actions (.github/workflows/perplexity_review.yml)*
