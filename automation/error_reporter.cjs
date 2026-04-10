@@ -52,24 +52,28 @@ async function reportError(errorCode, context, err) {
 
     // Attempt to broadcast securely to the Firestore UI dashboard
     // TTL: keep only the most recent MAX_SYSTEM_LOG_ENTRIES entries (oldest deleted on write)
-    const MAX_SYSTEM_LOG_ENTRIES = 500;
+    const MAX_SYSTEM_LOG_ENTRIES = 200;
     try {
         if (db) {
             const logsRef = db.collection('system_logs');
+            // Truncate message to avoid oversized documents (Firestore 1 MiB doc limit)
+            const safeMessage = message.length > 4000 ? message.slice(0, 4000) + '…[truncated]' : message;
             await logsRef.add({
                 errorCode,
                 context,
-                message,
+                message: safeMessage,
                 timestamp,
                 createdAt: admin.firestore.FieldValue.serverTimestamp()
             });
-            // Prune oldest entries when collection exceeds the cap
+            // Prune oldest entries when collection exceeds the cap.
+            // Use .select('createdAt') to fetch minimal field data — avoids "Transaction too big"
+            // when documents have large message fields.
             const totalSnap = await logsRef.count().get();
             if (totalSnap.data().count > MAX_SYSTEM_LOG_ENTRIES) {
-                const excess = Math.min(totalSnap.data().count - MAX_SYSTEM_LOG_ENTRIES, 450);
-                const oldSnap = await logsRef.orderBy('createdAt', 'asc').limit(excess).get();
-                // Firestore batch limit is 500 ops — split into chunks to avoid INVALID_ARGUMENT
-                const CHUNK = 450;
+                const excess = Math.min(totalSnap.data().count - MAX_SYSTEM_LOG_ENTRIES, 100);
+                const oldSnap = await logsRef.orderBy('createdAt', 'asc').limit(excess).select('createdAt').get();
+                // Firestore batch limit is 500 ops — use small chunk to stay within transaction size
+                const CHUNK = 100;
                 for (let i = 0; i < oldSnap.docs.length; i += CHUNK) {
                     const batch = db.batch();
                     oldSnap.docs.slice(i, i + CHUNK).forEach(doc => batch.delete(doc.ref));
@@ -79,8 +83,8 @@ async function reportError(errorCode, context, err) {
         } else {
              console.error('[Dead-Man Switch] Firestore connection is totally offline. UI logging bypassed.');
         }
-    } catch (fsErr) { 
-        console.error('[Dead-Man Switch] Firestore write crashed. Escalating to external webhook...', fsErr.message); 
+    } catch (fsErr) {
+        console.error('[Dead-Man Switch] Firestore write crashed. Escalating to external webhook...', fsErr.message);
     }
 
     console.error(`[ErrorReporter] 🚨 ${errorCode}: ${context} — ${message}`);
