@@ -44,12 +44,15 @@ if (require.main === module) {
             // be retried immediately on each restart, causing the crash loop.
             // Timeout guard: if Firestore hangs, don't block pollLoop forever.
             const RESTORE_TIMEOUT_MS = 8000;
+            let _restoreTimer;
             await Promise.race([
-                loadRateLimitsFromFirestore(),
-                new Promise(resolve => setTimeout(() => {
-                    console.warn('[imap-daemon] ⚠️  loadRateLimitsFromFirestore timed out — starting loops anyway');
-                    resolve();
-                }, RESTORE_TIMEOUT_MS)),
+                loadRateLimitsFromFirestore().then(r => { clearTimeout(_restoreTimer); return r; }),
+                new Promise(resolve => {
+                    _restoreTimer = setTimeout(() => {
+                        console.warn('[imap-daemon] ⚠️  loadRateLimitsFromFirestore timed out — starting loops anyway');
+                        resolve();
+                    }, RESTORE_TIMEOUT_MS);
+                }),
             ]);
             pollLoop();
             auditLoop();
