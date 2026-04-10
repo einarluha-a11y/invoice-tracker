@@ -695,13 +695,22 @@ async function checkAndRunFlagTasks() {
 // Overlap-safe IMAP polling daemon
 console.log('Automated Invoice Processor Started. Checking every 2 minutes...');
 async function pollLoop() {
+    let consecutiveFailures = 0;
     while (true) {
         try {
             await pollAllCompanyInboxes();
+            consecutiveFailures = 0; // reset on success
         } catch (err) {
+            consecutiveFailures++;
             console.error('[Poll Loop Error] Critical failure in IMAP daemon:', err.message);
         }
-        await new Promise(resolve => setTimeout(resolve, 2 * 60 * 1000));
+        // Exponential backoff when Firestore is down: 2min, 4min, 8min (max).
+        // Prevents hammering an unreachable Firestore every 2 minutes.
+        // On success (consecutiveFailures === 0): normal 2-minute interval.
+        const waitMs = consecutiveFailures === 0
+            ? 2 * 60 * 1000
+            : Math.min(2 * 60 * 1000 * Math.pow(2, consecutiveFailures - 1), 8 * 60 * 1000);
+        await new Promise(resolve => setTimeout(resolve, waitMs));
     }
 }
 

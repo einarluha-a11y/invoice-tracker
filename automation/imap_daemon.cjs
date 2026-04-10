@@ -17,7 +17,9 @@ process.on('exit', (code) => {
 // Keepalive: prevents event-loop drain when all IMAP accounts are rate-limited
 // and async ops complete too fast (Firebase calls return immediately on network flap).
 // Without this: event loop empties → Node exits (code 0) → PM2 restarts → crash loop.
-const _keepAlive = setInterval(() => {}, 60000);
+// Use 5s interval (not 60s) so the first timer fires well before pollLoop/auditLoop
+// timers are created — closing the crash-loop window that existed in the first 60s.
+const _keepAlive = setInterval(() => {}, 5000);
 
 // Modules
 const { checkEmailForInvoices, pollAllCompanyInboxes, checkAndRunFlagTasks, pollLoop, loadRateLimitsFromFirestore } = require('./imap_listener.cjs');
@@ -58,8 +60,25 @@ if (require.main === module) {
                     }, RESTORE_TIMEOUT_MS);
                 }),
             ]);
-            pollLoop();
-            auditLoop();
+            // Self-healing wrappers: if a loop exits for any reason (uncaught throw
+            // before first await, or unhandled rejection), restart it after 30s rather
+            // than leaving the daemon silent until the next PM2 restart.
+            (async () => {
+                while (true) {
+                    try { await pollLoop(); } catch (e) {
+                        console.error('[imap-daemon] ⚠️  pollLoop exited unexpectedly, restarting in 30s:', e?.message || e);
+                    }
+                    await new Promise(r => setTimeout(r, 30000));
+                }
+            })();
+            (async () => {
+                while (true) {
+                    try { await auditLoop(); } catch (e) {
+                        console.error('[imap-daemon] ⚠️  auditLoop exited unexpectedly, restarting in 30s:', e?.message || e);
+                    }
+                    await new Promise(r => setTimeout(r, 30000));
+                }
+            })();
         });
 }
 

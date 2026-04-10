@@ -90,7 +90,9 @@ async function reportError(errorCode, context, err) {
              console.error('[Dead-Man Switch] Firestore connection is totally offline. UI logging bypassed.');
         }
     } catch (fsErr) {
-        console.error('[Dead-Man Switch] Firestore write crashed. Escalating to external webhook...', fsErr.message);
+        // Firestore unavailable (e.g. ENOTFOUND during network outage) — file log already written.
+        // If ALERT_WEBHOOK_URL is set, the webhook below will deliver the alert instead.
+        console.error('[Dead-Man Switch] Firestore write failed — file log only:', fsErr.message);
     }
 
     console.error(`[ErrorReporter] 🚨 ${errorCode}: ${context} — ${message}`);
