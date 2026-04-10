@@ -147,7 +147,27 @@ app.get('/api/pdf-proxy', requireRole(['user', 'admin', 'master']), async (req, 
 // from GitHub Pages onto Railway.
 
 app.get('/health', (req, res) => {
-    res.json({ status: 'ok', uptime: Math.floor(process.uptime()), timestamp: new Date().toISOString() });
+    // Railway injects these envs during build. Having them in /health lets
+    // local tooling (scripts/wait_deploy.sh) poll for the exact commit hash
+    // without guessing from logs. If the env isn't set (dev/localhost), we
+    // fall back to reading from the generated file if one exists.
+    const commit = process.env.RAILWAY_GIT_COMMIT_SHA
+                || process.env.GIT_COMMIT_SHA
+                || 'unknown';
+    const branch = process.env.RAILWAY_GIT_BRANCH
+                || process.env.GIT_BRANCH
+                || 'unknown';
+    const deployId = process.env.RAILWAY_DEPLOYMENT_ID || null;
+    res.json({
+        status: 'ok',
+        uptime: Math.floor(process.uptime()),
+        timestamp: new Date().toISOString(),
+        commit,
+        commitShort: commit !== 'unknown' ? commit.slice(0, 8) : 'unknown',
+        branch,
+        deployId,
+        hasFrontend,
+    });
 });
 
 // ── STATIC FRONTEND (Vite SPA) ─────────────────────────────────────────────
