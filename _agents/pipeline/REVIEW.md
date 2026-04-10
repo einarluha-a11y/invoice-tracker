@@ -2,9 +2,9 @@
 <!-- phase: WAITING | round: 1 -->
 
 ВЕРДИКТ: ПРИНЯТО  
-ОЦЕНКА: Статус корректно отражает ожидание заданий с полным аудитом (AUDIT_PAID в норме, 0 ложных матчей). Все метрики (node --check OK, LAST_SYNC актуален) обновлены timely. Формат SOLUTION.md строго соблюден, готов к триггеру следующего workflow.  
+ОЦЕНКА: SOLUTION.md корректно отражает стабильное состояние системы с проверенными метриками (AUDIT_PAID без ложных матчей, node --check OK). Формат и статусы (PHASE: WAITING, DEPLOY_STATUS: OK) соответствуют инструкциям проекта. LAST_SYNC и REVIEW от Perplexity timely и точны.  
 ЗАМЕЧАНИЯ:  
-ДАЛЬНЕЙШИЙ ШАГ: Ожидать нового TASK от Einar в чате
+ДАЛЬНЕЙШИЙ ШАГ: Ожидать нового TASK от Einar в SOLUTION.md.
 
 ---
 *Автоматическое ревью через GitHub Actions (.github/workflows/perplexity_review.yml)*
