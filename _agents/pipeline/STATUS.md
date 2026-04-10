@@ -1,7 +1,9 @@
 # STATUS — Pipeline Activity Log
 Обновляется автоматически. Perplexity читает при генерации задач.
 
-## 2026-04-10
+- 2026-04-10 17:00 UTC — ✅ BUGFIX ROUND 2: grep выполнен, loadRateLimitsFromFirestore найдена в imap_listener.cjs:59. Добавлен Promise.race + 8s timeout. node --check OK. DEPLOY_STATUS: OK. Ожидаю ревью от Perplexity.
+
+- 2026-04-10 17:00 UTC — ✅ SYNC: агент запущен. PHASE: WAITING. REVIEW.md — Perplexity ответил вне протокола (стандартный сбой). Новых задач нет, BACKLOG пуст. node --check OK. DEPLOY_STATUS: OK. Ожидаю новых задач от Einar/Perplexity.
 - 2026-04-10 UTC — ✅ SYNC: агент запущен. Найден незакоммиченный timeout guard в imap_daemon.cjs — закоммичен (57385bd). PHASE: WAITING. node --check OK. DEPLOY_STATUS: OK. Ожидаю новых задач.
 - 2026-04-10 UTC — ✅ SYNC: агент запущен. PHASE: WAITING. ROUND: 0. Система стабильна. node --check OK. Railway logs OK (Restored 2 IMAP bans). DEPLOY_STATUS: OK. Ожидаю новых задач.
 - 2026-04-10 16:00 UTC — ✅ SYNC: REVIEW BUGFIX ROUND 1 ПРИНЯТО. Багфикс crash loop в invoice-imap (safe err.message в .catch()) подтверждён. STATUS.md обновлён по запросу Perplexity. PHASE: WAITING. DEPLOY_STATUS: OK. Ожидаю новых задач.
