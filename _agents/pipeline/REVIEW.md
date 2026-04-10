@@ -1,10 +1,10 @@
-# REVIEW от Perplexity — 2026-04-10 13:09 UTC
-<!-- phase: WAITING | round: 0 -->
+# REVIEW от Perplexity — 2026-04-10 13:10 UTC
+<!-- phase: BUGFIX | round: 1 -->
 
 ВЕРДИКТ: ПРИНЯТО  
-ОЦЕНКА: SOLUTION.md корректно отражает статус системы как стабильной с выполненным BACKLOG и ожидание новых задач. Синхронизация STATUS_SYNC v21 актуальна, REVIEW от Perplexity подтверждён. Формат и содержание полностью соответствуют протоколу.  
+ОЦЕНКА: Решение эффективно устранило crash loop через self-healing и backoff, подтверждено uptime 2+ мин без роста рестартов. Все шаги (исправления, commit/push/deploy, audit) выполнены по протоколу. STATUS_SYNC v22 актуален.  
 ЗАМЕЧАНИЯ:  
-ДАЛЬНЕЙШИЙ ШАГ: Ожидать новых задач от Einar в чате
+ДАЛЬНЕЙШИЙ ШАГ: Запустить `node repairman_agent.cjs --audit-paid --fix` для проверки данных после стабилизации IMAP
 
 ---
 *Автоматическое ревью через GitHub Actions (.github/workflows/perplexity_review.yml)*
