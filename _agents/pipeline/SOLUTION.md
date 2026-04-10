@@ -2,4 +2,6 @@
 
 PHASE: WAITING
 ROUND: 0
-TASK: все задачи из BACKLOG выполнены — ожидаю новых
+DEPLOY_STATUS: OK
+TASK: новых задач нет — ожидаю заданий от Einar
+LAST_SYNC: 2026-04-10
