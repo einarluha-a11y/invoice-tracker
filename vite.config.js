@@ -15,8 +15,8 @@ export default defineConfig({
       },
       includeAssets: ['favicon.ico', 'apple-touch-icon-180x180.png', 'maskable-icon-512x512.png'],
       manifest: {
-        name: 'Kontrol Invoice',
-        short_name: 'Kontrol',
+        name: 'Invoice-Tracker',
+        short_name: 'Invoice-Tracker',
         description: 'Invoice Tracking and AI Assistant',
         theme_color: '#121212',
         background_color: '#121212',
