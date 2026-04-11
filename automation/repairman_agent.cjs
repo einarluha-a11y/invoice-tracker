@@ -24,12 +24,18 @@
  *   node repairman_agent.cjs --since 2026-03-23 --until 2026-03-30 --fix
  */
 
-// Health check — ensure system is ready before running repairs
-try {
-    require('./health_check.cjs');
-} catch (e) {
-    console.error('[Repairman] ❌ Health check failed. Fix issues before running repairs.');
-    process.exit(1);
+// Health check — ensure system is ready before running repairs.
+// Skipped when SKIP_HEALTH_CHECK=1 (useful for one-off audit runs in
+// worktrees where a full sync/pull is undesirable).
+if (process.env.SKIP_HEALTH_CHECK !== '1') {
+    try {
+        require('./health_check.cjs');
+    } catch (e) {
+        console.error('[Repairman] ❌ Health check failed. Fix issues before running repairs.');
+        process.exit(1);
+    }
+} else {
+    console.log('[Repairman] ⚠️  SKIP_HEALTH_CHECK=1 — skipping pre-flight health check.');
 }
 
 require('dotenv').config({ path: __dirname + '/.env' });
