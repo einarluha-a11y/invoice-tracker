@@ -93,7 +93,15 @@ async function handleLemonWebhook(event) {
     }
     const meta = event.meta || {};
     const eventName = meta.event_name || '';
-    const eventId = meta.webhook_id || meta.event_id || event?.data?.id || null;
+    // Idempotency key PREFIXED with eventName so the same underlying id
+    // (e.g. Lemon Squeezy reuses data.id across subscription_updated and
+    // subscription_payment_success events in related resources) never
+    // collides. Without the prefix, a subscription_created with id X
+    // and an order_created with the same X would dedupe each other —
+    // the second event gets silently dropped and the user loses credits
+    // or a plan upgrade.
+    const rawId = meta.webhook_id || meta.event_id || event?.data?.id || null;
+    const eventId = rawId ? `${eventName}:${rawId}` : null;
 
     if (!HANDLED_EVENTS.has(eventName)) {
         console.log(`[Billing] Ignoring event: ${eventName}`);
@@ -103,7 +111,7 @@ async function handleLemonWebhook(event) {
     // Idempotency: atomic .create on billing_events/{eventId} — if the doc
     // already exists the second attempt throws ALREADY_EXISTS and we bail.
     if (eventId && db) {
-        const ref = db.collection('billing_events').doc(String(eventId));
+        const ref = db.collection('billing_events').doc(eventId);
         try {
             await ref.create({
                 eventName,
@@ -277,15 +285,30 @@ async function applySubscriptionCancellation(uid, event, reason) {
 /**
  * subscription_payment_failed → leave the plan in place (LS gives grace
  * period) but raise a flag the frontend can surface.
+ *
+ * Uses `update()` instead of `set({merge: true})` so a payment failure
+ * for a non-existent user doesn't CREATE a skeleton billing doc with
+ * only the paymentFailed flag (which would crash later reads expecting
+ * a full doc shape).
  */
 async function applyPaymentFailed(uid, event) {
     if (!db) return;
     const ref = db.collection('users').doc(uid).collection('billing').doc('state');
-    await ref.set({
-        paymentFailed: true,
-        paymentFailedAt: admin.firestore.FieldValue.serverTimestamp(),
-    }, { merge: true });
-    console.warn(`[Billing] ⚠️  Payment failed for ${uid}`);
+    try {
+        await ref.update({
+            paymentFailed: true,
+            paymentFailedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        console.warn(`[Billing] ⚠️  Payment failed for ${uid}`);
+    } catch (err) {
+        // NOT_FOUND is fine — the user has no billing doc, so they're
+        // not a paying customer. Log and move on.
+        if (err.code === 5 || /NOT_FOUND/i.test(String(err.message))) {
+            console.warn(`[Billing] payment_failed event for uid=${uid}: no billing doc, ignoring`);
+            return;
+        }
+        throw err;
+    }
 }
 
 /**
@@ -386,21 +409,27 @@ async function spendCredits({ uid, action, units = 1, mode }) {
         }
     }
 
-    // Mode 'enforce' — real transactional debit
+    // Mode 'enforce' — real transactional debit. The audit log row is
+    // written INSIDE the same transaction so a failed audit write rolls
+    // back the credit debit. Previously the audit was fire-and-forget
+    // after the transaction — if the audit collection hit a quota the
+    // credits were spent with no trail, breaking reconciliation.
     const result = await db.runTransaction(async (t) => {
         const snap = await t.get(ref);
         if (!snap.exists) {
-            // New user without a billing doc — seed a default (trial) one
-            // and let them spend from the trial budget.
-            const fresh = defaultBillingDoc({ uid });
-            const spend = computeSpend(fresh, total);
-            if (!spend.allowed) return spend;
-            t.set(ref, {
-                ...fresh,
-                credits: { ...fresh.credits, ...spend.newCredits },
-                updatedAt: Date.now(),
-            });
-            return { allowed: true, remaining: spend.remaining };
+            // New user without a billing doc: refuse in enforce mode.
+            // Previously we auto-seeded a trial doc with 500 credits,
+            // which could grant free PRO to orphan uids (deleted users,
+            // system accounts, webhook race orphans). The caller
+            // (chargeForCompany) treats this as a skip-with-reason, not
+            // an error, so ingestion keeps working — it just doesn't
+            // charge until the user has a legitimate billing doc via
+            // migration or webhook.
+            return {
+                allowed: false,
+                reason: 'no_billing_doc',
+                remaining: 0,
+            };
         }
 
         const billing = snap.data();
@@ -413,25 +442,22 @@ async function spendCredits({ uid, action, units = 1, mode }) {
             'credits.purchased': spend.newCredits.purchased,
             updatedAt: Date.now(),
         });
+
+        // Audit row inside the same transaction. Uses a client-generated
+        // doc ref so we can call t.set() without an extra await.
+        const auditRef = db.collection('billing_events').doc();
+        t.set(auditRef, {
+            type: 'spend',
+            uid,
+            action,
+            units,
+            cost: total,
+            remaining: spend.remaining,
+            at: admin.firestore.FieldValue.serverTimestamp(),
+        });
+
         return { allowed: true, remaining: spend.remaining };
     });
-
-    // Fire-and-forget audit log of the spend (non-blocking)
-    if (result.allowed) {
-        try {
-            await db.collection('billing_events').add({
-                type: 'spend',
-                uid,
-                action,
-                units,
-                cost: total,
-                remaining: result.remaining,
-                at: admin.firestore.FieldValue.serverTimestamp(),
-            });
-        } catch (auditErr) {
-            console.warn(`[Billing] audit log failed (non-critical): ${auditErr.message}`);
-        }
-    }
 
     return { ...result, mode: 'enforce' };
 }
@@ -473,12 +499,36 @@ async function chargeForCompany({ companyId, action, units = 1, mode }) {
     }
 
     try {
-        return await spendCredits({ uid, action, units, mode: effectiveMode });
+        const result = await spendCredits({ uid, action, units, mode: effectiveMode });
+        // If the user has no billing doc (new state after hardening:
+        // spendCredits no longer auto-seeds trial docs for unknown uids),
+        // log a warning and return allowed so ingestion keeps working.
+        // This branch is expected for system accounts or orphaned uids
+        // where the webhook hasn't created a doc yet.
+        if (!result.allowed && result.reason === 'no_billing_doc') {
+            console.warn(
+                `[Billing] Skipping charge for uid=${uid} action=${action} (no billing doc — ` +
+                `user not migrated or webhook not yet applied)`
+            );
+            return { allowed: true, mode: effectiveMode, reason: 'no_billing_doc' };
+        }
+        return result;
     } catch (err) {
-        console.error(`[Billing] chargeForCompany failed for uid=${uid} action=${action}: ${err.message}`);
-        // Fail open during rollout — don't break invoice processing because
-        // of a billing error. Operators can watch logs for these.
-        return { allowed: true, mode: effectiveMode, reason: 'charge_error', error: err.message };
+        console.error(
+            `[Billing] chargeForCompany failed for companyId=${companyId} uid=${uid} ` +
+            `action=${action}: ${err.message}`
+        );
+        // Fail open during rollout: invoice ingestion never breaks because
+        // of a Firestore hiccup. The error is loud in the log so operators
+        // can see it. When BILLING_ENFORCEMENT=enforce and we start seeing
+        // these, either roll back to shadow or fix the underlying issue
+        // before more credits leak.
+        return {
+            allowed: true,
+            mode: effectiveMode,
+            reason: 'charge_error',
+            error: err.message,
+        };
     }
 }
 

@@ -67,6 +67,44 @@ const ALLOWED_CONTENT_TYPES = new Set([
     'image/png',
 ]);
 
+/**
+ * Validate a file by its magic bytes (first few bytes of the buffer)
+ * rather than trusting the client-supplied Content-Type header. Prevents
+ * an attacker from uploading arbitrary binaries (executables, polyglot
+ * JS, corrupted JPEGs with exploit payloads) by claiming the file is a
+ * PDF. Returns the detected type or null if nothing matches.
+ *
+ * Magic signatures:
+ *   PDF:  %PDF           (0x25 0x50 0x44 0x46)
+ *   JPEG: 0xFF 0xD8 0xFF (with variant 0xE0 or 0xE1 or 0xDB etc)
+ *   PNG:  0x89 0x50 0x4E 0x47 0x0D 0x0A 0x1A 0x0A
+ *
+ * The check is minimal — we don't validate the rest of the file
+ * structure, just the leading bytes. A well-crafted polyglot could
+ * still sneak through, but it's a large jump in attacker effort
+ * compared to "lie about the Content-Type header".
+ */
+function detectFileType(buffer) {
+    if (!Buffer.isBuffer(buffer) || buffer.length < 8) return null;
+    const b = buffer;
+    // PDF: %PDF
+    if (b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46) {
+        return 'application/pdf';
+    }
+    // JPEG: FF D8 FF
+    if (b[0] === 0xFF && b[1] === 0xD8 && b[2] === 0xFF) {
+        return 'image/jpeg';
+    }
+    // PNG: 89 50 4E 47 0D 0A 1A 0A
+    if (
+        b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4E && b[3] === 0x47 &&
+        b[4] === 0x0D && b[5] === 0x0A && b[6] === 0x1A && b[7] === 0x0A
+    ) {
+        return 'image/png';
+    }
+    return null;
+}
+
 // ─── Create a new share link ─────────────────────────────────────────────────
 /**
  * Generate a cryptographically random token and persist the link.
@@ -190,11 +228,31 @@ async function handleShareUpload({ token, fileBuffer, fileName, contentType, upl
         err.status = 413;
         throw err;
     }
-    const mime = (contentType || 'application/pdf').toLowerCase().split(';')[0].trim();
-    if (!ALLOWED_CONTENT_TYPES.has(mime)) {
-        const err = new Error(`Content type not allowed: ${mime}`);
+    // Sanity-check the client-supplied Content-Type first (cheap early
+    // rejection), but the authoritative check is magic-byte detection
+    // below. Trusting only the header lets an attacker upload arbitrary
+    // bytes by lying about Content-Type.
+    const claimedMime = (contentType || 'application/pdf').toLowerCase().split(';')[0].trim();
+    if (!ALLOWED_CONTENT_TYPES.has(claimedMime)) {
+        const err = new Error(`Content type not allowed: ${claimedMime}`);
         err.status = 415;
         throw err;
+    }
+    const detectedMime = detectFileType(fileBuffer);
+    if (!detectedMime) {
+        const err = new Error('File is not a recognised PDF, JPEG, or PNG');
+        err.status = 415;
+        throw err;
+    }
+    // Final mime is what the file ACTUALLY is, not what the uploader
+    // claimed. jpg/jpeg collapsed to image/jpeg. This is what we write
+    // to Storage metadata and pass to the extraction pipeline.
+    const mime = detectedMime;
+    if (claimedMime !== mime && !(claimedMime === 'image/jpg' && mime === 'image/jpeg')) {
+        console.warn(
+            `[ShareLink] mime mismatch token=${token.slice(0, 8)}… ` +
+            `claimed=${claimedMime} detected=${mime}`
+        );
     }
 
     // Store in Storage under a predictable path so orphan_cleanup can
