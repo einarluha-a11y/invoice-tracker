@@ -1,7 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="256" height="256">
-  <!-- Invoice-Tracker icon — same path data as Login.tsx header icon
-       (Lucide "file-text"). Stroke color #58a6ff matches --accent-color
-       in src/index.css. Background #121212 matches the app dark theme. -->
+  <title>Invoice-Tracker</title>
   <rect width="24" height="24" fill="#121212"/>
   <g fill="none" stroke="#58a6ff" stroke-width="2"
      stroke-linecap="round" stroke-linejoin="round">
