@@ -14,6 +14,7 @@ const {
     daysBetween,
     isBeforeToday,
     coerceToIso,
+    extractYearMonth,
 } = require('../core/date_helpers.cjs');
 
 let passed = 0, failed = 0;
@@ -118,6 +119,52 @@ t('unknown format → passthrough', () => {
 });
 t('null → empty string', () => {
     assert.strictEqual(coerceToIso(null), '');
+});
+
+console.log('\n── extractYearMonth ──');
+t('ISO "2026-04-09" → {2026, 4}', () => {
+    assert.deepStrictEqual(extractYearMonth('2026-04-09'), { year: '2026', month: '4' });
+});
+t('European "09.04.2026" → {2026, 4}', () => {
+    assert.deepStrictEqual(extractYearMonth('09.04.2026'), { year: '2026', month: '4' });
+});
+t('UK "09/04/2026" → {2026, 4}', () => {
+    assert.deepStrictEqual(extractYearMonth('09/04/2026'), { year: '2026', month: '4' });
+});
+t('ISO January → month "1" (single digit)', () => {
+    assert.deepStrictEqual(extractYearMonth('2026-01-15'), { year: '2026', month: '1' });
+});
+t('ISO December → month "12"', () => {
+    assert.deepStrictEqual(extractYearMonth('2026-12-31'), { year: '2026', month: '12' });
+});
+t('empty string → today', () => {
+    const now = new Date();
+    const r = extractYearMonth('');
+    assert.strictEqual(r.year, String(now.getUTCFullYear()));
+    assert.strictEqual(r.month, String(now.getUTCMonth() + 1));
+});
+t('null → today', () => {
+    const now = new Date();
+    const r = extractYearMonth(null);
+    assert.strictEqual(r.year, String(now.getUTCFullYear()));
+});
+t('undefined → today', () => {
+    const now = new Date();
+    const r = extractYearMonth(undefined);
+    assert.strictEqual(r.year, String(now.getUTCFullYear()));
+});
+t('garbage "2026" (year only) → today (no false month=1)', () => {
+    // This is the bug the audit caught: "2026" alone used to silently
+    // become month="1". extractYearMonth refuses to guess.
+    const now = new Date();
+    const r = extractYearMonth('2026');
+    assert.strictEqual(r.year, String(now.getUTCFullYear()));
+    assert.strictEqual(r.month, String(now.getUTCMonth() + 1));
+});
+t('garbage "not a date" → today', () => {
+    const now = new Date();
+    const r = extractYearMonth('not a date');
+    assert.strictEqual(r.year, String(now.getUTCFullYear()));
 });
 
 console.log(`\n── ${passed}/${passed + failed} passed ──`);

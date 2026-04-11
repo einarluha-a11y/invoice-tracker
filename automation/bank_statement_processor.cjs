@@ -288,12 +288,28 @@ async function reconcilePayment(reference, description, paidAmount, totalBankDra
                         const isVendorTwin = pWords.some(w => matchedVendor.includes(w)) || mWords.some(w => pVendor.includes(w));
 
                         if (isVendorTwin) {
-                            // Prepayment/Arve pair: delete the Ettemaksuteatis, keep the Arve as Paid
+                            // Prepayment/Arve pair: mark the Ettemaksuteatis as Duplicate
+                            // (soft-delete) and link it to the canonical Arve. Never hard-delete
+                            // invoices — preserve audit trail and allow recovery if the reconciler
+                            // gets it wrong.
                             if (isPrepayment(matchedId) || isPrepayment(pData.invoiceId)) {
                                 const ettemaksDoc = isPrepayment(pData.invoiceId) ? doc : matchedDoc;
                                 const arveDoc = isPrepayment(pData.invoiceId) ? matchedDoc : doc;
-                                console.log(`[Reconciliation-ProFormaSwap] Deleting prepayment ${ettemaksDoc.data().invoiceId}, keeping Arve ${arveDoc.data().invoiceId} as Paid.`);
-                                await ettemaksDoc.ref.delete();
+                                console.log(`[Reconciliation-ProFormaSwap] Marking prepayment ${ettemaksDoc.data().invoiceId} as Duplicate (linked to Arve ${arveDoc.data().invoiceId}).`);
+                                await db.runTransaction(async (t) => {
+                                    const freshEtte = await t.get(ettemaksDoc.ref);
+                                    if (!freshEtte.exists) return;
+                                    const ed = freshEtte.data();
+                                    // Don't clobber an already-resolved prepayment.
+                                    if (ed.status === 'Duplicate') return;
+                                    t.update(ettemaksDoc.ref, {
+                                        status: 'Duplicate',
+                                        previousStatus: ed.status || 'Pending',
+                                        linkedInvoiceId: arveDoc.id,
+                                        duplicateReason: `Prepayment resolved by Arve ${arveDoc.data().invoiceId}`,
+                                        resolvedAt: admin.firestore.FieldValue.serverTimestamp(),
+                                    });
+                                });
                                 if (arveDoc.id !== matchedDoc.id) {
                                     // Arve is the pending twin — mark it Paid too
                                     await db.runTransaction(async (t) => {
