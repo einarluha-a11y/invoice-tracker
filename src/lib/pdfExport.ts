@@ -8,6 +8,13 @@ export interface PdfExportOptions {
     endDate?: string;
     statusFilter?: InvoiceStatus | 'All' | 'Unpaid';
     locale?: string;
+    /**
+     * When true, adds a small "Created with Invoice Tracker" footer on
+     * each page. Set on FREE-plan exports (sprint 6 branding track) —
+     * PRO / BUSINESS users get a clean PDF. Passive viral loop for the
+     * free tier: every shared PDF carries a link back to the app.
+     */
+    brandFooter?: boolean;
 }
 
 const ROBOTO_CDN = 'https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/fonts/Roboto/Roboto-Regular.ttf';
@@ -55,7 +62,14 @@ function filterLabel(statusFilter?: PdfExportOptions['statusFilter']): string {
 }
 
 export async function generateInvoicesPDF(invoices: Invoice[], options: PdfExportOptions = {}): Promise<void> {
-    const { companyName, startDate, endDate, statusFilter, locale = 'en-US' } = options;
+    const {
+        companyName,
+        startDate,
+        endDate,
+        statusFilter,
+        locale = 'en-US',
+        brandFooter = false,
+    } = options;
 
     const base64 = await loadRobotoBase64();
     const doc = new jsPDF();
@@ -125,6 +139,26 @@ export async function generateInvoicesPDF(invoices: Invoice[], options: PdfExpor
             5: { cellWidth: 14 },
             6: { cellWidth: 18 },
             7: { cellWidth: 'auto' },
+        },
+        // Brand footer (FREE plan only) — "Created with Invoice Tracker"
+        // at the bottom center of every page. Passive viral loop —
+        // downstream readers see the attribution and can click through.
+        // PRO / BUSINESS users get a clean PDF with no footer.
+        didDrawPage: (data) => {
+            if (!brandFooter) return;
+            const pageWidth = doc.internal.pageSize.getWidth();
+            const pageHeight = doc.internal.pageSize.getHeight();
+            const footerY = pageHeight - 8;
+            doc.setFontSize(7);
+            doc.setTextColor(140, 140, 140);
+            doc.text(
+                'Created with Invoice Tracker · invoicetracker.app',
+                pageWidth / 2,
+                footerY,
+                { align: 'center' }
+            );
+            // Reset text colour for subsequent pages (autoTable continues drawing)
+            doc.setTextColor(0, 0, 0);
         },
     });
 

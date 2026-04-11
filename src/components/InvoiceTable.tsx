@@ -24,12 +24,15 @@ interface InvoiceTableProps {
     showArchived?: boolean;
     companyName?: string;
     canEdit?: boolean;
+    /** Adds "Created with Invoice Tracker" footer on PDF exports.
+     *  Set by App.tsx when the current user is on the FREE plan. */
+    brandFreePdf?: boolean;
 }
 
 export type SortField = keyof Invoice;
 export type SortDirection = 'asc' | 'desc';
 
-export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, endDate, dateFilterType = 'created', sortField, sortDirection, onSort, onEdit, onDelete, onRestore, showArchived = false, companyName, canEdit = true }: InvoiceTableProps) {
+export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, endDate, dateFilterType = 'created', sortField, sortDirection, onSort, onEdit, onDelete, onRestore, showArchived = false, companyName, canEdit = true, brandFreePdf = false }: InvoiceTableProps) {
     const { t, i18n } = useTranslation();
     const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
     const [visibleLimit, setVisibleLimit] = useState(100);
@@ -269,6 +272,7 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                 endDate,
                 statusFilter,
                 locale: langCode,
+                brandFooter: brandFreePdf,
             });
         } catch (error) {
             console.error('PDF Export failed:', error);

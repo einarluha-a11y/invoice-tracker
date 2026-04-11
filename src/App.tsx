@@ -585,6 +585,7 @@ function App() {
                         showArchived={showArchived}
                         companyName={activeCompany?.name}
                         canEdit={userRole !== 'user'}
+                        brandFreePdf={billing?.plan === 'free' || !billing}
                     />
 
                 </div>
