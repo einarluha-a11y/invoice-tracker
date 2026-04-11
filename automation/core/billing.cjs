@@ -292,6 +292,69 @@ const HANDLED_EVENTS = Object.freeze(new Set([
     'order_created', // used for credit pack one-time purchases
 ]));
 
+// ─── Billable-uid resolution ─────────────────────────────────────────────────
+/**
+ * Resolve which user's credit balance should be debited for an action that
+ * affects `companyId`. Billing is per-user but invoice processing (IMAP
+ * daemon, bank reconciler) runs as a system process without a logged-in
+ * user, so every company must map to exactly one "billable owner".
+ *
+ * Resolution order:
+ *   1. `companies/{companyId}.billingOwnerUid` — explicit override
+ *   2. `companies/{companyId}.accountId` → `accounts/{accountId}.ownerUid`
+ *   3. First user with role=admin in `accounts/{accountId}/users`
+ *   4. null — caller should log a warning and either skip the charge or
+ *      use the system fallback (see allowCredit)
+ *
+ * Passes the `db` instance as first arg so tests can inject a stub.
+ *
+ * @param {Firestore} db - Firebase Admin Firestore instance
+ * @param {string}    companyId
+ * @returns {Promise<string|null>}
+ */
+async function getBillableUidForCompany(db, companyId) {
+    if (!db || !companyId) return null;
+
+    // 1. Explicit billingOwnerUid on the company doc
+    let companyData = null;
+    try {
+        const snap = await db.collection('companies').doc(companyId).get();
+        if (snap.exists) {
+            companyData = snap.data() || {};
+            if (companyData.billingOwnerUid) return String(companyData.billingOwnerUid);
+        }
+    } catch (err) {
+        console.warn(`[Billing] getBillableUidForCompany: company read failed — ${err.message}`);
+    }
+
+    // 2. account.ownerUid fallback via company.accountId
+    const accountId = companyData && companyData.accountId;
+    if (accountId) {
+        try {
+            const accSnap = await db.collection('accounts').doc(accountId).get();
+            if (accSnap.exists) {
+                const acc = accSnap.data() || {};
+                if (acc.ownerUid) return String(acc.ownerUid);
+            }
+
+            // 3. First admin user in the account's user list
+            const adminSnap = await db
+                .collection('accounts').doc(accountId)
+                .collection('users')
+                .where('role', '==', 'admin')
+                .limit(1)
+                .get();
+            if (!adminSnap.empty) {
+                return String(adminSnap.docs[0].id);
+            }
+        } catch (err) {
+            console.warn(`[Billing] getBillableUidForCompany: account fallback failed — ${err.message}`);
+        }
+    }
+
+    return null;
+}
+
 module.exports = {
     PLANS,
     VALID_PLANS,
@@ -310,4 +373,5 @@ module.exports = {
     getCreditCost,
     defaultBillingDoc,
     computeSpend,
+    getBillableUidForCompany,
 };

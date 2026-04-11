@@ -5,8 +5,13 @@ import { Login } from './components/Login';
 import { useAuth } from './context/AuthContext';
 import type { InvoiceStatus, Invoice } from './data/types';
 import { subscribeToInvoices, archiveInvoice, restoreInvoice, updateInvoice } from './data/api';
+import { subscribeToBilling, creditsAvailable, monthlyUsagePct } from './data/billing';
+import type { BillingDoc } from './data/billing';
 import { db } from './firebase';
 import { Settings } from './components/Settings';
+import { Billing } from './components/Billing';
+import { CreditMeter } from './components/CreditMeter';
+import { UpgradeModal } from './components/UpgradeModal';
 import { useCompanies, Company } from './hooks/useCompanies';
 import { InvoiceModal } from './components/InvoiceModal';
 import { AiChat } from './components/AiChat';
@@ -147,7 +152,32 @@ function App() {
     const { companies, companiesLoading, companiesError } = useCompanies();
 
     const [selectedCompanyId, setSelectedCompanyId] = useState<string>('');
-    const [view, setView] = useState<'dashboard' | 'settings'>('dashboard');
+    const [view, setView] = useState<'dashboard' | 'settings' | 'billing'>('dashboard');
+
+    // Live billing snapshot for the current user. Drives the CreditMeter
+    // badge in the header, the soft-block UpgradeModal, and /billing page.
+    // Null until the user has a doc (pre-migration) — UI falls back to
+    // hidden meter + onboarding notice on the billing page.
+    const [billing, setBilling] = useState<BillingDoc | null>(null);
+    const [upgradeModalDismissed, setUpgradeModalDismissed] = useState(false);
+
+    useEffect(() => {
+        if (!user) { setBilling(null); return; }
+        const unsub = subscribeToBilling(user.uid, setBilling);
+        return unsub;
+    }, [user]);
+
+    // Show the upgrade modal once per session when the user crosses 80%.
+    // Hard-block (100% + no purchased) re-shows on every page load so the
+    // message stays visible until they act.
+    const showUpgradeModal = useMemo(() => {
+        if (!billing || upgradeModalDismissed) return false;
+        const pct = monthlyUsagePct(billing);
+        const remaining = creditsAvailable(billing);
+        if (remaining === 0) return true;        // hard
+        if (pct >= 0.8) return true;              // soft
+        return false;
+    }, [billing, upgradeModalDismissed]);
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState<InvoiceStatus | 'All' | 'Unpaid'>('All');
     const [startDate, setStartDate] = useState('');
@@ -324,6 +354,9 @@ function App() {
     if (view === 'settings') {
         return <Settings onBack={() => setView('dashboard')} />;
     }
+    if (view === 'billing') {
+        return <Billing onBack={() => setView('dashboard')} />;
+    }
 
     return (
         <div className="dashboard-container">
@@ -382,6 +415,7 @@ function App() {
 
                     {user && (
                         <>
+                            <CreditMeter billing={billing} onClick={() => setView('billing')} />
                             {userRole !== 'user' && <button
                                 onClick={() => setView('settings')}
                                 style={{
@@ -575,6 +609,18 @@ function App() {
                         </div>
                     </div>
                 </div>
+            )}
+
+            {/* Upgrade modal — appears at 80% and 100% credit usage. */}
+            {showUpgradeModal && billing && (
+                <UpgradeModal
+                    billing={billing}
+                    onClose={() => setUpgradeModalDismissed(true)}
+                    onNavigateToBilling={() => {
+                        setUpgradeModalDismissed(true);
+                        setView('billing');
+                    }}
+                />
             )}
         </div>
     );

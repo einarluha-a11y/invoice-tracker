@@ -28,12 +28,29 @@ const {
     computeSpend,
     resolveSubscriptionVariant,
     resolveCreditPack,
+    getBillableUidForCompany,
 } = require('../core/billing.cjs');
 
 let passed = 0, failed = 0;
+const pendingAsync = [];
 function t(name, fn) {
-    try { fn(); console.log(`  ✅ ${name}`); passed++; }
-    catch (err) { console.log(`  ❌ ${name}\n     ${err.message}`); failed++; }
+    try {
+        const result = fn();
+        if (result && typeof result.then === 'function') {
+            // Async test — register it and await in main runner
+            pendingAsync.push(
+                result
+                    .then(() => { console.log(`  ✅ ${name}`); passed++; })
+                    .catch((err) => { console.log(`  ❌ ${name}\n     ${err.message}`); failed++; })
+            );
+        } else {
+            console.log(`  ✅ ${name}`);
+            passed++;
+        }
+    } catch (err) {
+        console.log(`  ❌ ${name}\n     ${err.message}`);
+        failed++;
+    }
 }
 
 console.log('\n── plan config ──');
@@ -356,5 +373,117 @@ t('returns null when no uid present', () => {
     assert.strictEqual(_extractUidFromEvent(null), null);
 });
 
-console.log(`\n── ${passed}/${passed + failed} passed ──`);
-process.exit(failed > 0 ? 1 : 0);
+console.log('\n── getBillableUidForCompany ──');
+
+// Tiny in-memory Firestore stub so we can test the resolver without hitting
+// real Firebase. Mirrors just enough of the Admin SDK surface to work.
+function makeDbStub({ companies = {}, accounts = {}, accountUsers = {} } = {}) {
+    const docStub = (exists, data) => ({
+        exists,
+        data: () => data,
+        id: data?._id || '',
+    });
+    const collection = (name) => ({
+        doc: (id) => ({
+            get: async () => {
+                const store = name === 'companies' ? companies : name === 'accounts' ? accounts : {};
+                return store[id] ? docStub(true, store[id]) : docStub(false, null);
+            },
+            collection: (sub) => ({
+                where: (field, op, value) => ({
+                    limit: () => ({
+                        get: async () => {
+                            const list = accountUsers[id] || [];
+                            const filtered = list.filter(u => u[field] === value);
+                            return {
+                                empty: filtered.length === 0,
+                                docs: filtered.map(u => ({ id: u._id, data: () => u })),
+                            };
+                        },
+                    }),
+                }),
+            }),
+        }),
+    });
+    return { collection };
+}
+
+t('null db → null', async () => {
+    const r = await getBillableUidForCompany(null, 'c1');
+    assert.strictEqual(r, null);
+});
+
+t('null companyId → null', async () => {
+    const db = makeDbStub();
+    const r = await getBillableUidForCompany(db, null);
+    assert.strictEqual(r, null);
+});
+
+t('company with explicit billingOwnerUid wins', async () => {
+    const db = makeDbStub({
+        companies: { c1: { billingOwnerUid: 'explicit-uid', accountId: 'acc1' } },
+        accounts: { acc1: { ownerUid: 'account-owner' } },
+    });
+    const r = await getBillableUidForCompany(db, 'c1');
+    assert.strictEqual(r, 'explicit-uid');
+});
+
+t('falls back to account.ownerUid when company has no owner', async () => {
+    const db = makeDbStub({
+        companies: { c1: { accountId: 'acc1' } },
+        accounts: { acc1: { ownerUid: 'account-owner' } },
+    });
+    const r = await getBillableUidForCompany(db, 'c1');
+    assert.strictEqual(r, 'account-owner');
+});
+
+t('falls back to first admin user when account has no owner', async () => {
+    const db = makeDbStub({
+        companies: { c1: { accountId: 'acc1' } },
+        accounts: { acc1: { name: 'No-owner Inc' } },
+        accountUsers: {
+            acc1: [
+                { _id: 'admin-uid-1', role: 'admin' },
+                { _id: 'user-uid-1', role: 'user' },
+            ],
+        },
+    });
+    const r = await getBillableUidForCompany(db, 'c1');
+    assert.strictEqual(r, 'admin-uid-1');
+});
+
+t('returns null when nothing resolves', async () => {
+    const db = makeDbStub({
+        companies: { c1: { accountId: 'acc1' } },
+        accounts: { acc1: {} },
+        accountUsers: { acc1: [{ _id: 'user-uid', role: 'user' }] },
+    });
+    const r = await getBillableUidForCompany(db, 'c1');
+    assert.strictEqual(r, null);
+});
+
+t('returns null for unknown company with no accountId', async () => {
+    const db = makeDbStub({ companies: { c1: {} } });
+    const r = await getBillableUidForCompany(db, 'c1');
+    assert.strictEqual(r, null);
+});
+
+t('handles company read errors gracefully', async () => {
+    const broken = {
+        collection: () => ({
+            doc: () => ({
+                get: async () => { throw new Error('network down'); },
+                collection: () => ({ where: () => ({ limit: () => ({ get: async () => ({ empty: true, docs: [] }) }) }) }),
+            }),
+        }),
+    };
+    const r = await getBillableUidForCompany(broken, 'c1');
+    assert.strictEqual(r, null);
+});
+
+// Wait for all async test promises to settle before reporting final tally.
+(async () => {
+    await Promise.all(pendingAsync);
+    console.log(`\n── ${passed}/${passed + failed} passed ──`);
+    process.exit(failed > 0 ? 1 : 0);
+})();
