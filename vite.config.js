@@ -2,8 +2,20 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
+// Inject the git commit hash at build time so the running bundle can
+// compare itself against the live /health endpoint and force a reload
+// if it's stale. Railway exposes RAILWAY_GIT_COMMIT_SHA; local dev
+// falls back to 'dev'.
+const BUILD_COMMIT =
+    process.env.RAILWAY_GIT_COMMIT_SHA ||
+    process.env.GIT_COMMIT_SHA ||
+    'dev';
+
 // https://vite.dev/config/
 export default defineConfig({
+  define: {
+    __BUILD_COMMIT__: JSON.stringify(BUILD_COMMIT),
+  },
   plugins: [
     react(),
     VitePWA({

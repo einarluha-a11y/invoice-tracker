@@ -146,6 +146,38 @@ function hasActiveInput(): boolean {
     return tag === 'INPUT' || tag === 'TEXTAREA' || (el as HTMLElement).isContentEditable;
 }
 
+/**
+ * Nuclear reload — unregisters every service worker, deletes every
+ * cache, then hard-reloads. Used as a fallback when the normal Workbox
+ * update flow gets stuck (bundle runs an older handler that never
+ * triggers onNeedRefresh, or the SW is orphaned on an old origin).
+ * Any chunk this page has already imported stays in memory, but the
+ * next page boot starts from prod HTML with no cache layer in the way.
+ */
+async function nuclearReload(reason: string): Promise<void> {
+    console.warn(`[PWA] Nuclear reload: ${reason}`);
+    try {
+        if ('serviceWorker' in navigator) {
+            const regs = await navigator.serviceWorker.getRegistrations();
+            await Promise.all(regs.map((r) => r.unregister().catch(() => false)));
+        }
+    } catch (err) {
+        console.warn('[PWA] SW unregister failed:', err);
+    }
+    try {
+        if ('caches' in window) {
+            const names = await caches.keys();
+            await Promise.all(names.map((n) => caches.delete(n).catch(() => false)));
+        }
+    } catch (err) {
+        console.warn('[PWA] cache delete failed:', err);
+    }
+    // Break any reload loops by adding a cache-buster query string.
+    const url = new URL(window.location.href);
+    url.searchParams.set('_rl', Date.now().toString(36));
+    window.location.replace(url.toString());
+}
+
 const updateSW = registerSW({
   onNeedRefresh() {
     console.log('[PWA] New app version available. Will refresh when window is idle.');
@@ -169,6 +201,54 @@ const updateSW = registerSW({
     console.log('[PWA] App is ready for offline use.');
   },
 });
+
+// ── Commit-hash health poller ────────────────────────────────────────
+//
+// Belt-and-suspenders fallback to the SW update flow. The running
+// bundle knows the commit SHA it was built from (injected at build
+// time via vite.config.js `define`). Every 60 seconds we hit /health
+// and compare against the live commit. If they diverge for more than
+// two consecutive checks, the bundle is genuinely stale and we
+// nuclear-reload to pick up the fresh HTML + assets.
+//
+// The two-strike requirement prevents spurious reloads during a
+// Railway rolling deploy where one replica briefly returns the new
+// hash before the CDN catches up.
+//
+// This catches the case Workbox misses entirely: a PWA window that
+// predates the reload fix and has no way of knowing a new version
+// exists. It needs only one successful /health poll to unstick.
+const BUILD_COMMIT: string = typeof __BUILD_COMMIT__ !== 'undefined' ? __BUILD_COMMIT__ : 'dev';
+let staleStrikes = 0;
+
+async function pollForCommitDrift(): Promise<void> {
+    try {
+        const r = await fetch('/health', { cache: 'no-store' });
+        if (!r.ok) return;
+        const data = await r.json();
+        const live: string = typeof data.commit === 'string' ? data.commit : '';
+        if (!live || live === 'unknown' || BUILD_COMMIT === 'dev') return;
+        if (live !== BUILD_COMMIT) {
+            staleStrikes++;
+            console.warn(
+                `[PWA] commit drift: bundle=${BUILD_COMMIT.slice(0, 8)} live=${live.slice(0, 8)} strikes=${staleStrikes}`
+            );
+            if (staleStrikes >= 2 && !hasActiveInput()) {
+                await nuclearReload(`stale bundle ${BUILD_COMMIT.slice(0, 8)} vs live ${live.slice(0, 8)}`);
+            }
+        } else if (staleStrikes > 0) {
+            staleStrikes = 0;
+        }
+    } catch {
+        // Network errors are fine — offline PWA stays on its bundle.
+    }
+}
+
+// Kick off the poller on next tick so the initial render finishes first.
+setTimeout(() => {
+    pollForCommitDrift();                    // immediate first check
+    setInterval(pollForCommitDrift, 60_000); // then every 60s
+}, 5000);
 // Sync HTML lang attribute with active i18next language for native browser input localization
 document.documentElement.lang = i18n.language;
 
