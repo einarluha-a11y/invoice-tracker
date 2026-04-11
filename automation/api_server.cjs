@@ -31,7 +31,8 @@ app.post('/api/chat', rateLimit(30, 60_000), requireRole(['user', 'admin', 'mast
 
     try {
         const today = new Date().toISOString().slice(0, 10);
-        const r = await anthropic.messages.create({
+        const { withClaudeBudget } = require('./core/claude_rate_limit.cjs');
+        const r = await withClaudeBudget(() => anthropic.messages.create({
             model: 'claude-haiku-4-5-20251001',
             max_tokens: 400,
             system: `You are an invoice tracker filter assistant. Extract filter criteria from user queries in Russian, English, or Estonian.
@@ -53,7 +54,7 @@ Return ONLY valid JSON (no markdown, no prose outside JSON):
 
 Omit filter fields that don't apply. Resolve relative dates ("last month", "этот месяц", "möödunud kuu") based on today.`,
             messages: [{ role: 'user', content: msg }],
-        });
+        }));
         const text = r.content?.[0]?.text || '{}';
         const m = text.match(/\{[\s\S]*\}/);
         let parsed;

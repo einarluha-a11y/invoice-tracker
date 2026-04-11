@@ -535,11 +535,12 @@ Rules:
 Return ONLY the JSON object, nothing else.`;
 
     try {
-        const resp = await client.messages.create({
+        const { withClaudeBudget } = require('./core/claude_rate_limit.cjs');
+        const resp = await withClaudeBudget(() => client.messages.create({
             model: 'claude-haiku-4-5-20251001',
             max_tokens: 600,
             messages: [{ role: 'user', content: prompt }],
-        });
+        }));
         const text = resp.content[0]?.text || '';
         const match = text.match(/\{[\s\S]*\}/);
         if (!match) return null;
