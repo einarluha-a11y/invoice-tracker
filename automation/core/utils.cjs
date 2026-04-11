@@ -114,18 +114,56 @@ function cleanNum(str) {
 }
 
 /**
- * Strip all quote characters from vendor names.
- * Handles: "straight", guillemets, arrows, low-high, single quotes
+ * Street / address / country tokens used to detect when a vendor string has
+ * address glued to the company name (e.g. Azure's VendorName often returns
+ * "DeepL SE, Maarweg 165, 50825 Cologne, Germany").
+ */
+const STREET_TOKENS = /\b(str\.|strasse|straße|street|rd\.|road|ave\.?|avenue|blvd\.?|boulevard|weg|platz|pl\.|ul\.|ulica|ulitsa|bulvar|lane|ln\.|tee|tn\.|pst\.|puiestee|улица|просп(ект)?|бульвар|переулок|шоссе|maantee|mnt\.?)\b/i;
+const COUNTRY_NAMES = /\b(estonia|eesti|latvia|latvija|lithuania|lietuva|germany|deutschland|poland|polska|russia|россия|usa|united\s+states|uk|united\s+kingdom|england|scotland|finland|suomi|sweden|sverige|france|italy|italia|netherlands|holland|spain|españa|belgium|belgique|austria|österreich|czech|slovakia|slovenia|norway|denmark|ireland|portugal|greece|hungary|romania|bulgaria|malta|cyprus|luxembourg|switzerland|schweiz|iceland|ukraine|belarus|moldova|serbia|croatia|turkey)\b/i;
+const POSTAL_LIKE = /\b\d{3,6}[-\s]?\d{0,4}\b/;
+
+/**
+ * Strip quotes, address suffixes and extra whitespace from vendor names.
+ *
+ * Rules:
+ * 1. Remove all kinds of quotation marks and decorative angle brackets.
+ * 2. Collapse to the first line (OCR sometimes returns multi-line blocks).
+ * 3. If a comma is present and what follows looks like an address
+ *    (contains digits, street tokens, postal codes, or country names),
+ *    cut the string at that comma. Keeps legal suffixes like "Acme, Inc."
+ *    because "Inc." contains no address markers.
  */
 function cleanVendorName(name) {
     if (!name) return name;
-    return name
+    let cleaned = name
         .replace(/[\u0022\u201C\u201D\u201E\u201F]/g, '')   // двойные кавычки всех видов
         .replace(/[\u0027\u2018\u2019\u201A\u201B]/g, '')   // одиночные кавычки
         .replace(/[\u00AB\u00BB\u2039\u203A]/g, '')          // угловые guillemets
         .replace(/[<>]{1,2}/g, '')                           // стрелки << >>
         .replace(/\s{2,}/g, ' ')                             // двойные пробелы после удаления
         .trim();
+
+    // Take only the first non-empty line (multi-line OCR blocks).
+    const firstLine = cleaned.split(/[\r\n]+/).map(s => s.trim()).find(Boolean);
+    if (firstLine) cleaned = firstLine;
+
+    // Address suffix stripping: cut at the first comma if tail looks like an address.
+    const commaIdx = cleaned.indexOf(',');
+    if (commaIdx > 0) {
+        const head = cleaned.slice(0, commaIdx).trim();
+        const tail = cleaned.slice(commaIdx + 1).trim();
+        // Tail is considered "address-ish" if any of these match
+        const looksLikeAddress =
+            /\d/.test(tail) ||                // contains digits (house nr, postal code)
+            STREET_TOKENS.test(tail) ||        // street/road tokens
+            POSTAL_LIKE.test(tail) ||          // postal code pattern
+            COUNTRY_NAMES.test(tail);          // country name
+        if (looksLikeAddress && head.length >= 2) {
+            cleaned = head;
+        }
+    }
+
+    return cleaned.trim();
 }
 
 // ─── Vendor Aliases (cached) ────────────────────────────────────────────────
