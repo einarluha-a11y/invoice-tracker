@@ -11,6 +11,9 @@ const { admin, db, bucket } = require('./core/firebase.cjs');
 const { stageDocument, markStagingResult } = require('./core/staging.cjs');
 // Number parsing — single source of truth for European/US decimal formats
 const { cleanNum, computeContentHash } = require('./core/utils.cjs');
+// Date helpers — canonical year/month extraction so misformatted dates
+// never silently fall back to month="1".
+const { extractYearMonth } = require('./core/date_helpers.cjs');
 const { inspectVendorFields } = require('./core/self_invoice_guard.cjs');
 // Merit Aktiva sync — sends invoices automatically
 const { syncInvoiceToMerit } = require('./merit_sync.cjs');
@@ -145,10 +148,11 @@ async function writeToFirestore(dataArray) {
 
             // 0b. Check by file source: if same file was already saved → duplicate.
             // Denorm fileBasename as indexed field for O(1) lookup via composite index
-            // (companyId, fileBasename). Falls back to full scan for legacy records
-            // that don't have the field yet.
+            // (companyId, fileBasename). The legacy fallback (scanning records with
+            // `fileBasename == null`) is skipped when contentHash already found a
+            // match — that's the canonical dedup key, no need to pay the extra read.
             let currentFileBasename = '';
-            if (data.fileUrl) {
+            if (!isDuplicate && data.fileUrl) {
                 currentFileBasename = (data.fileUrl.match(/\d+_([^?]+)/)?.[1] || '').toLowerCase();
                 if (currentFileBasename) {
                     // Fast path: composite index on (companyId, fileBasename)
@@ -162,12 +166,15 @@ async function writeToFirestore(dataArray) {
                         isDuplicate = true;
                         existingDocId = indexedSnap.docs[0].id;
                     } else {
-                        // Fallback for legacy records without fileBasename field.
-                        // Only runs if the indexed query returned nothing.
+                        // Legacy fallback: scan the small tail of records without the
+                        // denormalized fileBasename field. Capped at 100 (down from 500)
+                        // because the denorm field is now backfilled on every write and
+                        // the legacy tail is tiny. Scan is per-insert overhead so keep
+                        // it minimal.
                         const legacySnap = await invoicesRef
                             .where('companyId', '==', data.companyId)
                             .where('fileBasename', '==', null)
-                            .limit(500)
+                            .limit(100)
                             .get();
                         for (const doc of legacySnap.docs) {
                             const existingFile = doc.data().fileUrl || '';
@@ -277,6 +284,10 @@ async function writeToFirestore(dataArray) {
             const looksLikeId = /^[\d\/\-\.]+$/.test(rawDesc.trim()) || /\d{7,}/.test(rawDesc);
             const cleanDescription = (rawDesc && !looksLikeId) ? rawDesc.trim() : '';
 
+            // Canonical year/month via shared helper — accepts ISO, DD.MM.YYYY,
+            // DD/MM/YYYY, DD-MM-YYYY; falls back to today only when dateCreated
+            // is actually missing (not when it's a truncated string).
+            const ym = extractYearMonth(data.dateCreated);
             t.set(docRef, {
                 invoiceId: invoiceId,
                 vendorName: vendorName,
@@ -285,14 +296,8 @@ async function writeToFirestore(dataArray) {
                 taxAmount: Number(data.taxAmount) || 0,
                 currency: data.currency || 'EUR',
                 dateCreated: data.dateCreated || '',
-                // invoiceYear/Month: AI outputs YYYY-MM-DD → [0]=year, [1]=month
-                // Legacy fallback for DD.MM.YYYY → split(".")[2]=year, split(".")[1]=month
-                invoiceYear: data.dateCreated
-                    ? (data.dateCreated.includes('-') ? data.dateCreated.split("-")[0] : data.dateCreated.split(".")[2])
-                    : new Date().getFullYear().toString(),
-                invoiceMonth: data.dateCreated
-                    ? parseInt(data.dateCreated.includes('-') ? data.dateCreated.split("-")[1] : (data.dateCreated.split(".")[1] || "1"), 10).toString()
-                    : (new Date().getMonth() + 1).toString(),
+                invoiceYear: ym.year,
+                invoiceMonth: ym.month,
                 dueDate: data.dueDate || '',
                 status: finalStatus,
                 supplierRegistration: data.supplierRegistration || "",
@@ -349,12 +354,8 @@ async function writeToFirestore(dataArray) {
                 amount: numAmount,
                 currency: data.currency || 'EUR',
                 dateCreated: data.dateCreated || '',
-                invoiceYear: data.dateCreated
-                    ? (data.dateCreated.includes('-') ? data.dateCreated.split("-")[0] : data.dateCreated.split(".")[2])
-                    : new Date().getFullYear().toString(),
-                invoiceMonth: data.dateCreated
-                    ? parseInt(data.dateCreated.includes('-') ? data.dateCreated.split("-")[1] : (data.dateCreated.split(".")[1] || "1"), 10).toString()
-                    : (new Date().getMonth() + 1).toString(),
+                invoiceYear: ym.year,
+                invoiceMonth: ym.month,
                 dueDate: data.dueDate || '',
                 status: finalStatus,
                 fileUrl: data.fileUrl || null,

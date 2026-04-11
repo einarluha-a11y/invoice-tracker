@@ -117,6 +117,33 @@ function coerceToIso(s) {
     return trimmed; // unknown format — return as-is
 }
 
+/**
+ * Extract {year, month} as 1-indexed strings from a date string.
+ *
+ * Accepts ISO (YYYY-MM-DD), European dot (DD.MM.YYYY), slash (DD/MM/YYYY)
+ * or dash (DD-MM-YYYY) formats. Falls back to today when the string is
+ * empty, null, undefined, or unparseable — never returns junk like
+ * `month="1"` for a truncated date string, because that silently misplaces
+ * invoices in reporting.
+ *
+ * @param {string} dateCreated — any of the supported date formats
+ * @returns {{year: string, month: string}}
+ */
+function extractYearMonth(dateCreated) {
+    const fallback = () => {
+        const now = new Date();
+        return {
+            year: String(now.getUTCFullYear()),
+            month: String(now.getUTCMonth() + 1),
+        };
+    };
+    if (!dateCreated || typeof dateCreated !== 'string') return fallback();
+    const iso = coerceToIso(dateCreated.trim());
+    if (!isIsoDate(iso)) return fallback();
+    const [y, m] = iso.split('-');
+    return { year: String(parseInt(y, 10)), month: String(parseInt(m, 10)) };
+}
+
 module.exports = {
     isIsoDate,
     todayIso,
@@ -126,4 +153,5 @@ module.exports = {
     daysBetween,
     isBeforeToday,
     coerceToIso,
+    extractYearMonth,
 };
