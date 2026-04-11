@@ -4,8 +4,18 @@ import './i18n'
 import './index.css'
 import App from './App.jsx'
 import { AuthProvider } from './context/AuthContext'
+import { ShareLandingPage } from './components/ShareLandingPage'
 import i18n from './i18n';
 import { registerSW } from 'virtual:pwa-register';
+
+// Path-based routing at the root so the public /share/:token page does
+// not drag in AuthProvider / the whole dashboard bundle for anonymous
+// suppliers. This isn't react-router — just a top-level check.
+function parseShareToken(): string | null {
+    if (typeof window === 'undefined') return null;
+    const match = window.location.pathname.match(/^\/share\/([0-9a-f]{32})\/?$/);
+    return match ? match[1] : null;
+}
 
 // ── STALE SERVICE WORKER CLEANUP ────────────────────────────────────────────
 // The app used to live on invoice-tracker-blue.vercel.app and
@@ -123,10 +133,20 @@ const updateSW = registerSW({
 // Sync HTML lang attribute with active i18next language for native browser input localization
 document.documentElement.lang = i18n.language;
 
+// Root render: decide between the public share landing page and the
+// full authenticated dashboard. ShareLandingPage is self-contained and
+// does not need AuthProvider — suppliers dropping files are not
+// Firebase users.
+const shareToken = parseShareToken();
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <AuthProvider>
-      <App />
-    </AuthProvider>
+    {shareToken ? (
+        <ShareLandingPage token={shareToken} />
+    ) : (
+        <AuthProvider>
+            <App />
+        </AuthProvider>
+    )}
   </StrictMode>,
 )
