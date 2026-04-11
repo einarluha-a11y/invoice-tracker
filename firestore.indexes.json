@@ -40,6 +40,15 @@
         { "fieldPath": "companyId", "order": "ASCENDING" },
         { "fieldPath": "fileBasename", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "billing_events",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "type", "order": "ASCENDING" },
+        { "fieldPath": "uid", "order": "ASCENDING" },
+        { "fieldPath": "at", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []
