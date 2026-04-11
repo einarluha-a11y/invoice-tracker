@@ -118,16 +118,55 @@ function redirectToCanonicalIfNeeded(): boolean {
     }
 })();
 
-// Register service worker with auto-update
+// Register service worker with auto-update.
+//
+// Reload strategy: in a standalone PWA (Dock icon, no address bar) there
+// is no "natural page load" where the user would pick up a new version.
+// The old code just logged `onNeedRefresh` and did nothing, leaving
+// desktop PWAs stuck on stale bundles indefinitely — Einar saw this on
+// April 11 when sprint 3 UI shipped but the Dock icon kept showing the
+// sprint-2 layout.
+//
+// Fix: when `onNeedRefresh` fires, wait a few seconds (so any in-flight
+// API call can finish), then call `updateSW(true)`. That triggers a
+// reload using the fresh bundle the new service worker has already
+// pre-cached. Unsaved client-side state is rare in this app (forms are
+// all modal-based and submit immediately) so a reload is safe.
+//
+// We avoid reloading when a form is open or a text input has focus,
+// which would clobber half-typed input. The reload retries every 5
+// seconds until the window is idle.
+let pendingReload = false;
+
+function hasActiveInput(): boolean {
+    if (typeof document === 'undefined') return false;
+    const el = document.activeElement;
+    if (!el) return false;
+    const tag = el.tagName;
+    return tag === 'INPUT' || tag === 'TEXTAREA' || (el as HTMLElement).isContentEditable;
+}
+
 const updateSW = registerSW({
   onNeedRefresh() {
-    // A new update was found. We do NOT forcefully reload here to avoid
-    // interrupting the user every time a background push happens. They
-    // will pick up the new version on the next natural page load.
-    console.log('New app version available. Refresh the window to apply.');
+    console.log('[PWA] New app version available. Will refresh when window is idle.');
+    if (pendingReload) return;
+    pendingReload = true;
+    const tryReload = () => {
+      if (hasActiveInput()) {
+        setTimeout(tryReload, 5000);
+        return;
+      }
+      console.log('[PWA] Applying new version now.');
+      // updateSW(true) reloads after the waiting SW takes control —
+      // workbox clientsClaim:true means that happens immediately.
+      updateSW(true);
+    };
+    // Small initial delay so any in-flight XHR / WebSocket ACK has time
+    // to finish cleanly before the page flips.
+    setTimeout(tryReload, 2000);
   },
   onOfflineReady() {
-    console.log('App is ready for offline use.');
+    console.log('[PWA] App is ready for offline use.');
   },
 });
 // Sync HTML lang attribute with active i18next language for native browser input localization
