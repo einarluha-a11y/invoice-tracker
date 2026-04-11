@@ -65,12 +65,18 @@ export default defineConfig({
     chunkSizeWarningLimit: 1100,
     rollupOptions: {
       output: {
+        // manualChunks pins specific libraries to specific chunk names.
+        // Only list libraries that are STATICALLY imported from the
+        // entrypoint — vite will preload named chunks, so putting a
+        // dynamically-imported lib here costs bandwidth at boot for no
+        // benefit. jspdf / jspdf-autotable / html2canvas / react-pdf /
+        // pdfjs-dist are all only loaded when the user clicks an
+        // export or view button, so they're let through to Vite's
+        // auto-chunking (which creates dynamic chunks that are NOT
+        // preloaded).
         manualChunks: {
-          'pdf-viewer': ['react-pdf', 'pdfjs-dist'],
           'vendor-react': ['react', 'react-dom'],
           'firebase': ['firebase/app', 'firebase/auth', 'firebase/firestore', 'firebase/storage'],
-          'pdf-export': ['jspdf', 'jspdf-autotable'],
-          'html2canvas': ['html2canvas'],
           'i18n': ['i18next', 'react-i18next'],
         },
       },
