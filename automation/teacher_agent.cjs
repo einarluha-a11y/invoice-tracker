@@ -76,6 +76,16 @@ async function extractFromRawText(rawText) {
 
     const snippet = rawText.slice(0, 2000);
 
+    // M5: detect document language so we can give Claude the right
+    // per-language label hints (Estonian/Russian/Polish/German/etc).
+    // Falls back gracefully to a multilingual prompt if detection fails.
+    const { detectLanguage, getLanguageHint } = require('./core/language_detector.cjs');
+    const { language, confidence } = detectLanguage(snippet);
+    const languageHint = getLanguageHint(language);
+    if (language !== 'unknown') {
+        debug(`[Teacher] Language detected: ${language} (confidence ${confidence})`);
+    }
+
     try {
         const client = getAnthropic();
         const { withClaudeBudget } = require('./core/claude_rate_limit.cjs');
@@ -85,6 +95,8 @@ async function extractFromRawText(rawText) {
             messages: [{
                 role: 'user',
                 content: `Extract invoice details from this text. The SUPPLIER (seller/service provider) is NOT the buyer.
+
+${languageHint}
 
 Return ONLY valid JSON:
 {"vendorName": "...", "supplierVat": "...", "supplierRegistration": "...", "amount": 0, "subtotal": 0, "tax": 0, "currency": "EUR"}

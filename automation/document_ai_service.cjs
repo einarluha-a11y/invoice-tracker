@@ -502,7 +502,14 @@ async function askClaudeToFix(rawText, current, issues) {
     const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
     const snippet = rawText.slice(0, 3000);
 
+    // M5: detect document language to give Claude per-language label hints.
+    const { detectLanguage, getLanguageHint } = require('./core/language_detector.cjs');
+    const { language } = detectLanguage(snippet);
+    const languageHint = getLanguageHint(language);
+
     const prompt = `You are fixing fields on an already-extracted invoice.
+
+${languageHint}
 
 Current fields (from Scout/Teacher):
 ${JSON.stringify(current, null, 2)}

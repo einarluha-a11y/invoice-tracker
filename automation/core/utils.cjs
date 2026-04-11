@@ -24,26 +24,93 @@ function computeContentHash(buffer) {
 }
 
 /**
- * Parse a numeric string into a float, handling European (1.200,50) and US (1,200.50) formats.
- * Strips currency symbols, spaces, and normalizes separators.
+ * Parse a numeric string into a float, handling 15 different invoice number
+ * formats (M9). Defends against the common ways accountants and exporters
+ * mangle numbers across locales.
+ *
+ * Supported:
+ *  1. European  "1.200,50"     → 1200.50
+ *  2. US        "1,200.50"     → 1200.50
+ *  3. Plain     "1200"         → 1200
+ *  4. Plain dec "1200.50"      → 1200.50
+ *  5. EU comma  "1200,50"      → 1200.50
+ *  6. Currency  "€1,200.50"    → 1200.50
+ *  7. Suffix    "1.200,50 EUR" → 1200.50
+ *  8. Negative  "-1.200,50"    → -1200.50
+ *  9. Parens    "(1200.50)"    → -1200.50  ← M9 fix
+ * 10. Trailing  "1200.50-"     → -1200.50  ← M9 fix
+ * 11. Spaces    "1 234,56"     → 1234.56   (PL/CZ/RU non-breaking thousands)
+ * 12. Apostrof. "1'234.56"     → 1234.56   (Swiss)
+ * 13. Indian    "1,23,456.78"  → 123456.78 (lakh grouping)
+ * 14. Multi sep "1.000.000,50" → 1000000.50
+ * 15. Just sep  ",50"          → 0.50
+ *
+ * Returns 0 for null/undefined/empty/non-numeric/garbage.
+ *
+ * Note: scientific notation (1.5e3) is intentionally NOT supported because
+ * the digit-only character whitelist strips the 'e', and adding e/E would
+ * misparse "Total 5e EUR" style strings. Invoices don't use scientific.
  */
 function cleanNum(str) {
     if (!str && str !== 0) return 0;
-    let s = String(str).replace(/[^\d.,-]/g, '').trim();
+    let s = String(str);
+
+    // ── 1. Detect parenthesised negatives BEFORE stripping ──
+    // Accounting convention: (1234.56) means -1234.56
+    let isParensNegative = false;
+    const trimmed = s.trim();
+    if (/^\s*\(.*\)\s*$/.test(trimmed)) {
+        isParensNegative = true;
+    }
+
+    // ── 2. Detect trailing minus BEFORE stripping ──
+    // Some German/Polish ledger exports write the minus AFTER the number:
+    // "1234.56-" or "1.234,56-"
+    let isTrailingNegative = false;
+    // Strip currency/letters first to find a "real" trailing minus,
+    // but only check the digits-and-separators tail
+    const tail = trimmed.replace(/[^\d.,\-+()]/g, '');
+    if (/[\d.,]-$/.test(tail) && !/^-/.test(tail)) {
+        isTrailingNegative = true;
+    }
+
+    // ── 3. Strip everything except digits, separators, and a single leading minus ──
+    s = s.replace(/[^\d.,-]/g, '').trim();
+
+    // Remove all minus signs except a single leading one (we'll re-apply
+    // negatives at the end based on the flags above).
+    let leadingNegative = false;
+    if (s.startsWith('-')) leadingNegative = true;
+    s = s.replace(/-/g, '');
+
+    // ── 4. Decide thousands vs decimal separator ──
     if (s.includes(',') && s.includes('.')) {
         if (s.lastIndexOf(',') > s.lastIndexOf('.')) {
+            // EU: dots are thousands, last comma is decimal
             s = s.replace(/\./g, '').replace(',', '.');
         } else {
+            // US/Indian: commas are thousands, last dot is decimal
             s = s.replace(/,/g, '');
         }
     } else if (s.includes(',')) {
-        s = s.replace(',', '.');
+        // Only commas — could be thousands or decimal. Heuristic:
+        //   single comma followed by exactly 3 digits → thousands ("1,000")
+        //   anything else → decimal ("1234,56" or ",50")
+        const m = s.match(/^(\d+),(\d{3})$/);
+        if (m) {
+            s = m[1] + m[2]; // strip thousands separator
+        } else {
+            s = s.replace(',', '.');
+        }
     }
-    // At this point s is a plain US-format decimal string. Use Number() for
-    // strict parsing — rejects trailing garbage ("10abc" → NaN), then fall
-    // back to 0 via isFinite check (handles NaN and ±Infinity).
+    // (no separators or only dots: nothing to do)
+
+    // ── 5. Parse and apply sign ──
     const n = Number(s);
-    return isFinite(n) ? n : 0;
+    if (!isFinite(n)) return 0;
+
+    const negative = leadingNegative || isParensNegative || isTrailingNegative;
+    return negative ? -Math.abs(n) : n;
 }
 
 /**
