@@ -60,5 +60,57 @@ t('strips straight quotes', () => assert.strictEqual(cleanVendorName('"Acme OÜ"
 t('strips guillemets « »', () => assert.strictEqual(cleanVendorName('«Acme OÜ»'), 'Acme OÜ'));
 t('null → null', () => assert.strictEqual(cleanVendorName(null), null));
 
+// Address suffix stripping (regression guard for DeepL bug)
+t('DeepL full address → DeepL SE', () =>
+    assert.strictEqual(
+        cleanVendorName('DeepL SE, Maarweg 165, 50825 Cologne, Germany'),
+        'DeepL SE'
+    ));
+t('company with house number', () =>
+    assert.strictEqual(
+        cleanVendorName('Acme OÜ, Lossi 15, Tallinn'),
+        'Acme OÜ'
+    ));
+t('company with postal code', () =>
+    assert.strictEqual(
+        cleanVendorName('Beta AS, 10115 Tallinn, Estonia'),
+        'Beta AS'
+    ));
+t('company with street token "tn"', () =>
+    assert.strictEqual(
+        cleanVendorName('Gamma OÜ, Pärnu mnt 12'),
+        'Gamma OÜ'
+    ));
+t('company with country only after comma', () =>
+    assert.strictEqual(
+        cleanVendorName('Delta Ltd, United Kingdom'),
+        'Delta Ltd'
+    ));
+t('legal suffix Acme, Inc. is preserved', () =>
+    assert.strictEqual(
+        cleanVendorName('Acme, Inc.'),
+        'Acme, Inc.'
+    ));
+t('legal suffix Foo, LLC is preserved', () =>
+    assert.strictEqual(
+        cleanVendorName('Foo, LLC'),
+        'Foo, LLC'
+    ));
+t('multi-line vendor block → first line', () =>
+    assert.strictEqual(
+        cleanVendorName('Epsilon GmbH\nMusterstrasse 42\n12345 Berlin'),
+        'Epsilon GmbH'
+    ));
+t('quotes + address combined', () =>
+    assert.strictEqual(
+        cleanVendorName('"Zeta OÜ", Narva mnt 10, Tallinn'),
+        'Zeta OÜ'
+    ));
+t('pure company name unchanged', () =>
+    assert.strictEqual(
+        cleanVendorName('Anthropic PBC'),
+        'Anthropic PBC'
+    ));
+
 console.log(`\n── ${passed}/${passed + failed} passed ──`);
 process.exit(failed > 0 ? 1 : 0);

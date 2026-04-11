@@ -40,7 +40,7 @@ const {
     logRepair, incrementRepairAttempts, getRepairAttempts, markRepairPending,
     getStagedDocument,
 } = require('./core/staging.cjs');
-const { cleanNum } = require('./core/utils.cjs');
+const { cleanNum, cleanVendorName } = require('./core/utils.cjs');
 
 // ─── CLI Arguments ───────────────────────────────────────────────────────────
 
@@ -720,8 +720,11 @@ const VENDOR_CANONICAL = {
 
 function normalizeVendorName(name) {
     if (!name) return name;
-    // Fix broken multiline names (e.g. "BMEMI\nVARUSTAJA")
-    let clean = name.replace(/[\r\n]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+    // Fix broken multiline names (e.g. "BMEMI\nVARUSTAJA") and strip
+    // quotes + address suffix via shared cleanVendorName utility
+    // (e.g. "DeepL SE, Maarweg 165, 50825 Cologne, Germany" → "DeepL SE").
+    let clean = cleanVendorName(name.replace(/[\r\n]+/g, ' '));
+    clean = clean.replace(/\s{2,}/g, ' ').trim();
     const key = clean.toLowerCase();
     return VENDOR_CANONICAL[key] || clean;
 }
