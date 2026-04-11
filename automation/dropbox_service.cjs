@@ -147,30 +147,67 @@ async function listInvoicesInFolder(folderPath) {
 }
 
 /**
- * Вычисляет путь к папке в Dropbox по имени компании, году и месяцу.
- * Сохраняет существующую структуру папок.
- * @param {string} companyName - Имя компании из Firestore
- * @param {string} year - Год (напр. "2026")
- * @param {string} month - Месяц (напр. "3")
- * @returns {string} Путь к папке в Dropbox
+ * Resolve the Dropbox folder structure for a given company.
+ *
+ * Source of truth (in priority order):
+ *   1. `dropboxConfig` field on the Firestore companies/{id} doc:
+ *        { folderBasePath: "IDEACOM", folderPrefix: "IC" }
+ *      This is the new way — settable per-company through the Settings page,
+ *      no code changes needed when a new accounting entity is added.
+ *
+ *   2. Hardcoded heuristic match on company name (legacy fallback for the
+ *      two original tenants — IDEACOM and GLOBAL TECHNICS — so existing
+ *      data keeps flowing without a manual migration of dropboxConfig).
+ *
+ *   3. UNKNOWN_COMPANY / UK as a last-resort default.
+ *
+ * Returns `{ folderBasePath, folderPrefix }`. Pure function — does not
+ * touch Firestore. The caller is responsible for fetching the company
+ * doc and passing in `companyDocData` if it has one.
  */
-function buildDropboxFolderPath(companyName, year, month) {
-    let folderBasePath = 'UNKNOWN_COMPANY';
-    let folderPrefix = 'UK';
-
-    const compNameUpper = (companyName || '').toUpperCase();
-    if (compNameUpper.includes('IDEACOM')) {
-        folderBasePath = 'IDEACOM';
-        folderPrefix = 'IC';
-    } else if (compNameUpper.includes('GLOBAL TECHNICS')) {
-        folderBasePath = 'GLOBAL TECHNICS';
-        folderPrefix = 'GT';
+function resolveDropboxConfig(companyName, companyDocData) {
+    // 1. Per-company config from Firestore
+    if (companyDocData && companyDocData.dropboxConfig) {
+        const cfg = companyDocData.dropboxConfig;
+        if (cfg.folderBasePath && cfg.folderPrefix) {
+            return {
+                folderBasePath: cfg.folderBasePath,
+                folderPrefix: cfg.folderPrefix,
+                source: 'firestore',
+            };
+        }
     }
 
+    // 2. Legacy heuristic — only the two original tenants
+    const compNameUpper = (companyName || '').toUpperCase();
+    if (compNameUpper.includes('IDEACOM')) {
+        return { folderBasePath: 'IDEACOM', folderPrefix: 'IC', source: 'legacy' };
+    }
+    if (compNameUpper.includes('GLOBAL TECHNICS')) {
+        return { folderBasePath: 'GLOBAL TECHNICS', folderPrefix: 'GT', source: 'legacy' };
+    }
+
+    // 3. Last-resort default
+    return { folderBasePath: 'UNKNOWN_COMPANY', folderPrefix: 'UK', source: 'default' };
+}
+
+/**
+ * Build the Dropbox folder path for a given invoice.
+ *
+ * @param {string} companyName    — receiver company name from Firestore
+ * @param {string} year           — "2026"
+ * @param {string} month          — "3"
+ * @param {object} [companyDocData] — full Firestore companies/{id} doc data,
+ *                                  used to read .dropboxConfig if present
+ * @returns {string} absolute Dropbox path
+ *   e.g. "/IDEACOM/IC_ARVED/IC_arved_meile/IC_arved_meile_2026/IC_arved_meile_2026_3"
+ */
+function buildDropboxFolderPath(companyName, year, month, companyDocData) {
+    const { folderBasePath, folderPrefix } = resolveDropboxConfig(companyName, companyDocData);
     return `/${folderBasePath}/${folderPrefix}_ARVED/${folderPrefix}_arved_meile/${folderPrefix}_arved_meile_${year}/${folderPrefix}_arved_meile_${year}_${month}`;
 }
 
-module.exports = { uploadInvoiceToPDF, createCompanyFolder, listInvoicesInFolder, buildDropboxFolderPath, getAccessToken };
+module.exports = { uploadInvoiceToPDF, createCompanyFolder, listInvoicesInFolder, buildDropboxFolderPath, resolveDropboxConfig, getAccessToken };
 
 // CLI тест: node automation/dropbox_service.cjs --test
 if (require.main === module) {

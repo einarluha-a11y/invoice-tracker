@@ -379,9 +379,12 @@ async function writeToFirestore(dataArray) {
                     if (!payload.fileUrl) continue;
                     const cId = payload.companyId;
                     const companyDoc = cId ? await db.collection('companies').doc(cId).get() : null;
-                    const companyName = companyDoc?.exists ? (companyDoc.data().name || '') : '';
+                    const companyData = companyDoc?.exists ? companyDoc.data() : null;
+                    const companyName = companyData?.name || '';
 
-                    const folderPath = buildDropboxFolderPath(companyName, payload.invoiceYear, payload.invoiceMonth);
+                    // M2: pass full company doc so dropboxConfig field overrides
+                    // the legacy hardcoded IDEACOM/GLOBAL TECHNICS heuristic.
+                    const folderPath = buildDropboxFolderPath(companyName, payload.invoiceYear, payload.invoiceMonth, companyData);
 
                     // Скачать PDF из Firebase Storage и загрузить в Dropbox
                     const { default: fetch } = await import('node-fetch');
