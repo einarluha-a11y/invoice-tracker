@@ -117,38 +117,9 @@ app.post('/api/users/roles', requireRole(['master']), async (req, res) => {
     }
 });
 
-// GET /api/pdf-proxy — скачивает файл из Firebase Storage через Admin SDK (без 401)
-// Фронтенд передаёт токен в Authorization для защиты самого эндпоинта,
-// Admin SDK имеет полный доступ к Storage без пользовательского токена.
-app.get('/api/pdf-proxy', requireRole(['user', 'admin', 'master']), async (req, res) => {
-    const { url } = req.query;
-    if (!url || typeof url !== 'string') {
-        return res.status(400).json({ error: 'url query param required' });
-    }
-    try {
-        const storageBucket = adminFb.storage().bucket();
-        let filePath;
-        // Поддержка gs:// и https://firebasestorage.googleapis.com/...
-        if (url.startsWith('gs://')) {
-            filePath = url.replace(/^gs:\/\/[^/]+\//, '');
-        } else {
-            // https://firebasestorage.googleapis.com/v0/b/{bucket}/o/{encoded-path}?...
-            const match = url.match(/\/o\/([^?]+)/);
-            if (!match) return res.status(400).json({ error: 'invalid Firebase Storage URL' });
-            filePath = decodeURIComponent(match[1]);
-        }
-        const fileRef = storageBucket.file(filePath);
-        const [metadata] = await fileRef.getMetadata();
-        const contentType = metadata.contentType || 'application/octet-stream';
-        const [fileBuffer] = await fileRef.download();
-        res.set('Content-Type', contentType);
-        res.set('Cache-Control', 'private, max-age=3600');
-        res.send(fileBuffer);
-    } catch (err) {
-        console.error('[api/pdf-proxy]', err.message);
-        res.status(500).json({ error: 'proxy failed: ' + err.message });
-    }
-});
+// NOTE: /api/pdf-proxy is defined in webhook_server.cjs and registered
+// there first — Express resolves the first matching handler, so the
+// duplicate definition that used to live here was dead code. Removed.
 
 // NOTE: GET / is now handled by the SPA fallback below — the old text
 // "Invoice Automation Bot is Active" was removed when the frontend moved
