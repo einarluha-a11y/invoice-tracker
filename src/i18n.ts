@@ -348,6 +348,15 @@ const resources = {
                 unusual: "Необычно",
                 anomaly: "Аномалия",
             },
+            referral: {
+                title: "Пригласи друзей",
+                description: "Получай {{bonus}} кредитов за каждого друга, зарегистрировавшегося по твоей ссылке. Кредиты не сгорают и добавляются к месячному лимиту.",
+                copy: "Скопировать",
+                copied: "✓ Скопировано",
+                friends: "Друзей присоединилось",
+                earned: "Кредитов заработано",
+                copyPrompt: "Скопируйте эту ссылку",
+            },
         }
     },
     en: {
@@ -696,6 +705,15 @@ const resources = {
                 unusual: "Unusual",
                 anomaly: "Anomaly",
             },
+            referral: {
+                title: "Invite friends",
+                description: "Earn {{bonus}} credits for every friend who signs up with your link. Credits never expire and stack on top of your monthly allowance.",
+                copy: "Copy link",
+                copied: "✓ Copied",
+                friends: "Friends joined",
+                earned: "Credits earned",
+                copyPrompt: "Copy this link",
+            },
         }
     },
     et: {
@@ -1043,6 +1061,15 @@ const resources = {
             anomaly: {
                 unusual: "Ebaharilik",
                 anomaly: "Anomaalia",
+            },
+            referral: {
+                title: "Kutsu sõpru",
+                description: "Teeni {{bonus}} krediiti iga sõbra eest, kes sinu lingi kaudu registreerub. Krediidid ei aegu ja lisanduvad sinu kuu limiidile.",
+                copy: "Kopeeri link",
+                copied: "✓ Kopeeritud",
+                friends: "Liitunud sõpru",
+                earned: "Krediiti teenitud",
+                copyPrompt: "Kopeeri see link",
             },
         }
     }

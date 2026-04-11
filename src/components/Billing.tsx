@@ -24,6 +24,7 @@ import {
 } from '../data/billing';
 import { ShareLinksSection } from './ShareLinksSection';
 import { CreditHistorySection } from './CreditHistorySection';
+import { ReferralSection } from './ReferralSection';
 
 interface Props {
     onBack: () => void;
@@ -146,6 +147,7 @@ export const Billing: React.FC<Props> = ({ onBack, selectedCompanyId = null }) =
                     <CreditHistorySection />
                     <PlansGrid currentPlan={currentPlan} uid={user?.uid || ''} />
                     <CreditPacksRow uid={user?.uid || ''} />
+                    <ReferralSection />
                     <ShareLinksSection selectedCompanyId={selectedCompanyId} />
                 </>
             )}

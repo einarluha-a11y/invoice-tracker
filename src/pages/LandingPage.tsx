@@ -19,21 +19,32 @@
  * root to route anonymous visitors to /landing automatically.
  */
 
-import React from 'react';
+import React, { useEffect } from 'react';
+import { stashRefFromUrl } from '../data/referrals';
 
-export const LandingPage: React.FC = () => (
-    <div style={shellStyle}>
-        <Nav />
-        <Hero />
-        <ProblemSolution />
-        <HowItWorks />
-        <Pricing />
-        <Features />
-        <FinalCTA />
-        <Footer />
-        <style>{css}</style>
-    </div>
-);
+export const LandingPage: React.FC = () => {
+    // Capture ?ref=<uid> from the URL on mount so it's available when
+    // the prospect eventually clicks "Start free" and signs up.
+    // Stored in sessionStorage so it survives navigating to the
+    // signup page but clears on tab close.
+    useEffect(() => {
+        stashRefFromUrl();
+    }, []);
+
+    return (
+        <div style={shellStyle}>
+            <Nav />
+            <Hero />
+            <ProblemSolution />
+            <HowItWorks />
+            <Pricing />
+            <Features />
+            <FinalCTA />
+            <Footer />
+            <style>{css}</style>
+        </div>
+    );
+};
 
 const shellStyle: React.CSSProperties = {
     minHeight: '100vh',
