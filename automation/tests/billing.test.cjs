@@ -20,6 +20,8 @@ const {
     TRIAL_DAYS,
     TRIAL_PLAN,
     HANDLED_EVENTS,
+    BILLING_ENFORCEMENT_MODES,
+    getEnforcementMode,
     isValidPlan,
     getPlanConfig,
     getCreditsForPlan,
@@ -479,6 +481,105 @@ t('handles company read errors gracefully', async () => {
     };
     const r = await getBillableUidForCompany(broken, 'c1');
     assert.strictEqual(r, null);
+});
+
+console.log('\n── BILLING_ENFORCEMENT mode ──');
+
+t('valid modes are off/shadow/enforce', () => {
+    assert.deepStrictEqual([...BILLING_ENFORCEMENT_MODES].sort(), ['enforce', 'off', 'shadow']);
+});
+
+t('getEnforcementMode defaults to off when env unset', () => {
+    const prev = process.env.BILLING_ENFORCEMENT;
+    delete process.env.BILLING_ENFORCEMENT;
+    assert.strictEqual(getEnforcementMode(), 'off');
+    if (prev !== undefined) process.env.BILLING_ENFORCEMENT = prev;
+});
+
+t('getEnforcementMode returns off for unknown values', () => {
+    process.env.BILLING_ENFORCEMENT = 'nuclear';
+    assert.strictEqual(getEnforcementMode(), 'off');
+    delete process.env.BILLING_ENFORCEMENT;
+});
+
+t('getEnforcementMode accepts off/shadow/enforce case-insensitive', () => {
+    process.env.BILLING_ENFORCEMENT = 'OFF';
+    assert.strictEqual(getEnforcementMode(), 'off');
+    process.env.BILLING_ENFORCEMENT = 'Shadow';
+    assert.strictEqual(getEnforcementMode(), 'shadow');
+    process.env.BILLING_ENFORCEMENT = 'ENFORCE';
+    assert.strictEqual(getEnforcementMode(), 'enforce');
+    delete process.env.BILLING_ENFORCEMENT;
+});
+
+console.log('\n── spendCredits (mode=off passthrough) ──');
+
+// Lazy import again so the billing_service picks up fresh env state.
+const { spendCredits, chargeForCompany } = require('../billing_service.cjs');
+
+t('spendCredits mode=off returns allowed without touching Firestore', async () => {
+    const prev = process.env.BILLING_ENFORCEMENT;
+    process.env.BILLING_ENFORCEMENT = 'off';
+    const r = await spendCredits({ uid: 'test-uid', action: 'ai_extraction', units: 1 });
+    assert.strictEqual(r.allowed, true);
+    assert.strictEqual(r.mode, 'off');
+    if (prev !== undefined) process.env.BILLING_ENFORCEMENT = prev; else delete process.env.BILLING_ENFORCEMENT;
+});
+
+t('spendCredits mode=off even with units=999 is instant', async () => {
+    process.env.BILLING_ENFORCEMENT = 'off';
+    const r = await spendCredits({ uid: 'test-uid', action: 'ai_extraction', units: 999 });
+    assert.strictEqual(r.allowed, true);
+    delete process.env.BILLING_ENFORCEMENT;
+});
+
+t('spendCredits requires uid', async () => {
+    process.env.BILLING_ENFORCEMENT = 'enforce';
+    await assert.rejects(
+        () => spendCredits({ uid: null, action: 'ai_extraction' }),
+        /uid is required/
+    );
+    delete process.env.BILLING_ENFORCEMENT;
+});
+
+t('spendCredits throws on unknown action', async () => {
+    process.env.BILLING_ENFORCEMENT = 'off';
+    await assert.rejects(
+        () => spendCredits({ uid: 'u1', action: 'nonsense_action' }),
+        /Unknown billable action/
+    );
+    delete process.env.BILLING_ENFORCEMENT;
+});
+
+console.log('\n── chargeForCompany ──');
+
+t('chargeForCompany mode=off is a no-op, returns allowed', async () => {
+    const prev = process.env.BILLING_ENFORCEMENT;
+    delete process.env.BILLING_ENFORCEMENT;
+    const r = await chargeForCompany({ companyId: 'c1', action: 'ai_extraction', units: 5 });
+    assert.strictEqual(r.allowed, true);
+    assert.strictEqual(r.mode, 'off');
+    if (prev !== undefined) process.env.BILLING_ENFORCEMENT = prev;
+});
+
+t('chargeForCompany without companyId returns allowed with reason', async () => {
+    const prev = process.env.BILLING_ENFORCEMENT;
+    process.env.BILLING_ENFORCEMENT = 'enforce';
+    const r = await chargeForCompany({ companyId: null, action: 'ai_extraction' });
+    assert.strictEqual(r.allowed, true);
+    assert.strictEqual(r.reason, 'no_company_id');
+    if (prev !== undefined) process.env.BILLING_ENFORCEMENT = prev; else delete process.env.BILLING_ENFORCEMENT;
+});
+
+t('chargeForCompany passes unknown action through to throw', async () => {
+    process.env.BILLING_ENFORCEMENT = 'off';
+    // mode=off short-circuits before hitting spendCredits's unknown action
+    // check, so this is a no-op. Documents the current behavior: the cheap
+    // off path does not validate action names, only actual spends do.
+    const r = await chargeForCompany({ companyId: 'c1', action: 'nonsense' });
+    assert.strictEqual(r.allowed, true);
+    assert.strictEqual(r.mode, 'off');
+    delete process.env.BILLING_ENFORCEMENT;
 });
 
 // Wait for all async test promises to settle before reporting final tally.

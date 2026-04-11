@@ -260,6 +260,23 @@ async function reconcilePayment(reference, description, paidAmount, totalBankDra
                     t.update(docRef, globalPayload);
                 });
                 console.log(`  -> Marked as Paid!`);
+
+                // Billing: charge 1 credit for a successful bank reconciliation
+                // match (sprint 2b). No-op under BILLING_ENFORCEMENT=off.
+                try {
+                    const { chargeForCompany } = require('./billing_service.cjs');
+                    const r = await chargeForCompany({
+                        companyId: data.companyId,
+                        action: 'bank_reconciliation',
+                        units: 1,
+                    });
+                    if (r.mode && r.mode !== 'off' && !r.allowed) {
+                        console.warn(`[Billing] Reconciliation charge refused: ${r.reason} (${data.companyId})`);
+                    }
+                } catch (billingErr) {
+                    console.warn(`[Billing] reconciliation charge failed (non-blocking): ${billingErr.message}`);
+                }
+
                 // Merit Aktiva sync for cross-currency match (priority matrix already handled FX/normal above)
                 if (isCrossCurrencyMatch) {
                     try { await syncPaymentToMerit(data, { amount: paidAmount, reference }, matchedDoc.id); } catch(e) { console.warn('[Merit] Payment sync (cross-currency):', e.message); }
