@@ -1,20 +1,34 @@
-import { StrictMode } from 'react'
+import React, { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './i18n'
 import './index.css'
 import App from './App.jsx'
 import { AuthProvider } from './context/AuthContext'
 import { ShareLandingPage } from './components/ShareLandingPage'
+import { LandingPage } from './pages/LandingPage'
+import { TermsOfService } from './pages/TermsOfService'
+import { PrivacyPolicy } from './pages/PrivacyPolicy'
 import i18n from './i18n';
 import { registerSW } from 'virtual:pwa-register';
 
-// Path-based routing at the root so the public /share/:token page does
-// not drag in AuthProvider / the whole dashboard bundle for anonymous
-// suppliers. This isn't react-router — just a top-level check.
-function parseShareToken(): string | null {
+// Path-based routing at the root so public pages (share upload, landing,
+// legal) do not drag in AuthProvider or the full dashboard bundle for
+// anonymous visitors. This isn't react-router — just top-level checks.
+type PublicRoute =
+    | { kind: 'share'; token: string }
+    | { kind: 'landing' }
+    | { kind: 'terms' }
+    | { kind: 'privacy' };
+
+function parsePublicRoute(): PublicRoute | null {
     if (typeof window === 'undefined') return null;
-    const match = window.location.pathname.match(/^\/share\/([0-9a-f]{32})\/?$/);
-    return match ? match[1] : null;
+    const path = window.location.pathname;
+    const shareMatch = path.match(/^\/share\/([0-9a-f]{32})\/?$/);
+    if (shareMatch) return { kind: 'share', token: shareMatch[1] };
+    if (/^\/landing\/?$/.test(path)) return { kind: 'landing' };
+    if (/^\/terms\/?$/.test(path)) return { kind: 'terms' };
+    if (/^\/privacy\/?$/.test(path)) return { kind: 'privacy' };
+    return null;
 }
 
 // ── STALE SERVICE WORKER CLEANUP ────────────────────────────────────────────
@@ -252,20 +266,34 @@ setTimeout(() => {
 // Sync HTML lang attribute with active i18next language for native browser input localization
 document.documentElement.lang = i18n.language;
 
-// Root render: decide between the public share landing page and the
-// full authenticated dashboard. ShareLandingPage is self-contained and
-// does not need AuthProvider — suppliers dropping files are not
-// Firebase users.
-const shareToken = parseShareToken();
+// Root render: decide between a public page and the full authenticated
+// dashboard. Public pages are self-contained and do not need
+// AuthProvider — anonymous visitors (suppliers, ProductHunt traffic,
+// legal readers) should not trigger Firebase Auth initialisation.
+const publicRoute = parsePublicRoute();
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    {shareToken ? (
-        <ShareLandingPage token={shareToken} />
-    ) : (
+function rootElement(): React.ReactElement {
+    if (publicRoute?.kind === 'share') {
+        return <ShareLandingPage token={publicRoute.token} />;
+    }
+    if (publicRoute?.kind === 'landing') {
+        return <LandingPage />;
+    }
+    if (publicRoute?.kind === 'terms') {
+        return <TermsOfService />;
+    }
+    if (publicRoute?.kind === 'privacy') {
+        return <PrivacyPolicy />;
+    }
+    return (
         <AuthProvider>
             <App />
         </AuthProvider>
-    )}
+    );
+}
+
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    {rootElement()}
   </StrictMode>,
 )
