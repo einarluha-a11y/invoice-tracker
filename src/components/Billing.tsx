@@ -22,9 +22,11 @@ import {
     monthlyUsagePct,
     getCheckoutUrl,
 } from '../data/billing';
+import { ShareLinksSection } from './ShareLinksSection';
 
 interface Props {
     onBack: () => void;
+    selectedCompanyId?: string | null;
 }
 
 const PLAN_CATALOG: Array<{
@@ -88,7 +90,7 @@ const CREDIT_PACKS: Array<{ target: 'credits_100' | 'credits_500' | 'credits_100
     { target: 'credits_1000', credits: 1000, price: 35 },
 ];
 
-export const Billing: React.FC<Props> = ({ onBack }) => {
+export const Billing: React.FC<Props> = ({ onBack, selectedCompanyId = null }) => {
     const { t } = useTranslation();
     const { user } = useAuth();
     const [billing, setBilling] = useState<BillingDoc | null>(null);
@@ -142,6 +144,7 @@ export const Billing: React.FC<Props> = ({ onBack }) => {
                     <CurrentPlanCard billing={billing} remaining={remaining} usagePct={usagePct} />
                     <PlansGrid currentPlan={currentPlan} uid={user?.uid || ''} />
                     <CreditPacksRow uid={user?.uid || ''} />
+                    <ShareLinksSection selectedCompanyId={selectedCompanyId} />
                 </>
             )}
         </div>

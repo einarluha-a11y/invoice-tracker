@@ -355,7 +355,7 @@ function App() {
         return <Settings onBack={() => setView('dashboard')} />;
     }
     if (view === 'billing') {
-        return <Billing onBack={() => setView('dashboard')} />;
+        return <Billing onBack={() => setView('dashboard')} selectedCompanyId={selectedCompanyId || null} />;
     }
 
     return (

@@ -101,9 +101,63 @@ app.post('/api/lemon-webhook', async (req, res) => {
     }
 });
 
+// ── Share link public endpoints (sprint 5 viral loop) ────────────────────
+// These two endpoints MUST bypass verifyToken because the supplier who
+// uploads via a share link is not a Firebase user. The token itself is
+// the credential: 32 random hex chars, stored in Firestore with expiry
+// and upload cap. The /info endpoint returns just enough metadata for
+// the landing page to render (company label, remaining uploads). The
+// /upload endpoint accepts a raw file body.
+const {
+    validateToken: validateShareToken,
+    handleShareUpload,
+} = require('./share_links_service.cjs');
+
+app.get('/api/share/:token/info', async (req, res) => {
+    try {
+        const { link } = await validateShareToken(req.params.token);
+        // Return only fields the landing page needs. Never leak ownerUid
+        // or any PII — the supplier is a stranger.
+        return res.status(200).json({
+            label: link.label || '',
+            remainingUploads: Math.max(0, link.maxUploads - link.uploadsCount),
+            expiresAt: link.expiresAt,
+        });
+    } catch (err) {
+        return res.status(err.status || 500).json({ error: err.message });
+    }
+});
+
+// Upload endpoint uses a raw body parser with a 25 MB cap (matches the
+// constant in share_links_service). We can't use express.json for this
+// because the body is a binary file.
+const express_raw = require('express').raw;
+app.post(
+    '/api/share/:token/upload',
+    express_raw({ type: '*/*', limit: '25mb' }),
+    async (req, res) => {
+        try {
+            const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress || '';
+            const fileName = req.headers['x-file-name'] || 'invoice.pdf';
+            const contentType = req.headers['x-content-type'] || req.headers['content-type'] || 'application/pdf';
+            const result = await handleShareUpload({
+                token: req.params.token,
+                fileBuffer: req.body,
+                fileName,
+                contentType,
+                uploaderIp: ip,
+            });
+            return res.status(200).json(result);
+        } catch (err) {
+            console.warn(`[ShareLink] upload failed: ${err.message}`);
+            return res.status(err.status || 500).json({ error: err.message });
+        }
+    }
+);
+
 // Protect every other /api/* route with Firebase ID-token verification.
-// Exemption: /api/lemon-webhook is registered above and matches first;
-// Express runs the route handler before this middleware for that path.
+// Exemption: /api/lemon-webhook + /api/share/:token/* are registered above
+// and match first; Express runs the route handler before this middleware.
 app.use('/api', verifyToken);
 
 // --- SIMPLE IN-MEMORY RATE LIMITER ---
@@ -138,6 +192,60 @@ setInterval(() => {
 // real invoice ingestion runs through imap_daemon.cjs. Keeping an
 // unauthenticated fallback endpoint — even behind a shared secret — just
 // widens the attack surface, so it's gone.
+
+// --- SHARE LINKS — authenticated management endpoints (sprint 5) ---
+// These sit AFTER the /api verifyToken middleware so only logged-in
+// users can create / list / revoke their own share links. The public
+// upload + info endpoints for /api/share/:token/* are defined above.
+const {
+    createShareLink,
+    revokeShareLink,
+    listShareLinks,
+} = require('./share_links_service.cjs');
+
+app.post('/api/share/create', rateLimit(20, 60_000), async (req, res) => {
+    if (!db) return res.status(503).json({ error: 'Database unavailable.' });
+    try {
+        const { companyId, label, ttlDays, maxUploads } = req.body || {};
+        const result = await createShareLink({
+            ownerUid: req.uid,
+            companyId: companyId || null,
+            accountId: req.accountId || null,
+            label: label || '',
+            ttlDays,
+            maxUploads,
+        });
+        return res.status(200).json(result);
+    } catch (err) {
+        console.error('[ShareLink] create failed:', err.message);
+        return res.status(err.status || 500).json({ error: err.message });
+    }
+});
+
+app.get('/api/share/list', async (req, res) => {
+    if (!db) return res.status(503).json({ error: 'Database unavailable.' });
+    try {
+        const companyId = req.query.companyId ? String(req.query.companyId) : null;
+        const links = await listShareLinks({ ownerUid: req.uid, companyId });
+        return res.status(200).json(links);
+    } catch (err) {
+        console.error('[ShareLink] list failed:', err.message);
+        return res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/share/revoke', async (req, res) => {
+    if (!db) return res.status(503).json({ error: 'Database unavailable.' });
+    try {
+        const { token } = req.body || {};
+        if (!token) return res.status(400).json({ error: 'token required' });
+        const result = await revokeShareLink({ token, ownerUid: req.uid });
+        return res.status(200).json(result);
+    } catch (err) {
+        console.warn(`[ShareLink] revoke failed: ${err.message}`);
+        return res.status(err.status || 500).json({ error: err.message });
+    }
+});
 
 // --- REPROCESS INVOICE (on-demand re-extraction via Claude) ---
 // Called by the repair button (🔧) in the dashboard TEGEVUS column.

@@ -134,6 +134,24 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // ── Share links (sprint 5 viral loop) ────────────────────────────────
+    // share_links: a user can read/list their own links (to display in
+    // the UI), create via the backend API only. Revocation goes through
+    // /api/share/revoke so ownership is verified server-side.
+    match /share_links/{token} {
+      allow read: if request.auth != null && (
+        isMaster() || resource.data.ownerUid == request.auth.uid
+      );
+      allow write: if false; // Admin SDK only
+    }
+
+    // share_uploads: audit log of every supplier file drop. Read
+    // restricted to master/admin for support; writes via backend only.
+    match /share_uploads/{uploadId} {
+      allow read: if request.auth != null && (isMaster() || isAdmin());
+      allow write: if false;
+    }
+
     match /{document=**} {
       allow read, write: if isAdmin();
     }
