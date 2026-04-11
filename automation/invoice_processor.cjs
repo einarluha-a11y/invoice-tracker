@@ -371,12 +371,36 @@ async function writeToFirestore(dataArray) {
 
         debug(`[Firestore] ${dataArray.length} invoice(s) successfully written via Transaction!`);
 
-        // --- DROPBOX UPLOAD ---
+        // --- DROPBOX UPLOAD (M1: saga pattern with state tracking) ---
+        // Two services that can't share an atomic transaction (Dropbox is
+        // external). Saga pattern instead:
+        //   1. Mark invoice `dropboxStatus: 'uploading'` so retry sweepers
+        //      know an attempt is in flight
+        //   2. Upload to Dropbox (with retry on transient errors)
+        //   3. On success: update invoice with dropboxPath +
+        //      `dropboxStatus: 'committed'`
+        //   4. On failure after retries: update invoice with
+        //      `dropboxStatus: 'failed', dropboxError: <msg>` so a future
+        //      sweep can re-attempt without the human knowing
+        //
+        // The orphan_cleanup script (M3) catches the inverse failure
+        // (Dropbox file with no Firestore invoice) — that pair completes
+        // the saga.
         const dropboxEnabled = process.env.DROPBOX_REFRESH_TOKEN || process.env.DROPBOX_ACCESS_TOKEN;
         if (dropboxEnabled) {
             for (const payload of webhooksToSend) {
+                const docId = payload.firestoreDocId || payload.invoiceId;
+                const invRef = db.collection('invoices').doc(docId);
+
                 try {
                     if (!payload.fileUrl) continue;
+
+                    // Phase 1: write intent
+                    await invRef.update({
+                        dropboxStatus: 'uploading',
+                        dropboxAttemptedAt: admin.firestore.FieldValue.serverTimestamp(),
+                    });
+
                     const cId = payload.companyId;
                     const companyDoc = cId ? await db.collection('companies').doc(cId).get() : null;
                     const companyData = companyDoc?.exists ? companyDoc.data() : null;
@@ -386,7 +410,7 @@ async function writeToFirestore(dataArray) {
                     // the legacy hardcoded IDEACOM/GLOBAL TECHNICS heuristic.
                     const folderPath = buildDropboxFolderPath(companyName, payload.invoiceYear, payload.invoiceMonth, companyData);
 
-                    // Скачать PDF из Firebase Storage и загрузить в Dropbox
+                    // Phase 2: download PDF + upload to Dropbox with retry
                     const { default: fetch } = await import('node-fetch');
                     const pdfRes = await fetch(payload.fileUrl);
                     if (!pdfRes.ok) throw new Error(`Failed to download PDF: ${pdfRes.status}`);
@@ -395,14 +419,44 @@ async function writeToFirestore(dataArray) {
                     // Filename: "26114_Anesta.pdf" (invoiceId + vendor short name)
                     const vendorShort = (payload.vendorName || '').replace(/\s*(OÜ|AS|LLC|SIA|UAB|GmbH|Ltd)\s*/gi, '').trim() || 'Unknown';
                     const dropboxFileName = `${payload.invoiceId}_${vendorShort}`;
-                    const dropboxPath = await uploadInvoiceToPDF(dropboxFileName, pdfBuffer, folderPath);
+
+                    // Retry up to 3 times with exponential backoff for
+                    // transient Dropbox errors (rate limit, network blip)
+                    let dropboxPath = null;
+                    let lastErr = null;
+                    for (let attempt = 1; attempt <= 3; attempt++) {
+                        try {
+                            dropboxPath = await uploadInvoiceToPDF(dropboxFileName, pdfBuffer, folderPath);
+                            break;
+                        } catch (e) {
+                            lastErr = e;
+                            const transient = /429|5\d\d|ECONN|timeout|network/i.test(e.message || '');
+                            if (!transient || attempt === 3) throw e;
+                            await new Promise(res => setTimeout(res, 1000 * Math.pow(2, attempt - 1)));
+                            console.warn(`[Dropbox] ⏳ Retry ${attempt + 1}/3 for ${payload.invoiceId} after: ${e.message}`);
+                        }
+                    }
                     console.log(`[Dropbox] ✅ Uploaded ${payload.invoiceId} → ${dropboxPath}`);
 
-                    // Сохранить dropboxPath в Firestore (use Firestore doc ID, not invoice number)
-                    const docId = payload.firestoreDocId || payload.invoiceId;
-                    await db.collection('invoices').doc(docId).update({ dropboxPath });
+                    // Phase 3: commit dropboxPath + status
+                    await invRef.update({
+                        dropboxPath,
+                        dropboxStatus: 'committed',
+                        dropboxCommittedAt: admin.firestore.FieldValue.serverTimestamp(),
+                        dropboxError: admin.firestore.FieldValue.delete(),
+                    });
                 } catch (dbxErr) {
                     console.error(`[Dropbox] ❌ Upload failed for ${payload.invoiceId}:`, dbxErr.message);
+                    // Phase 4 (failure): mark for future retry
+                    try {
+                        await invRef.update({
+                            dropboxStatus: 'failed',
+                            dropboxError: dbxErr.message.slice(0, 500),
+                            dropboxFailedAt: admin.firestore.FieldValue.serverTimestamp(),
+                        });
+                    } catch (updateErr) {
+                        console.warn(`[Dropbox] Failed to flag retry state: ${updateErr.message}`);
+                    }
                 }
             }
         } else {
