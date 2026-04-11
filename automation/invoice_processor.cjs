@@ -15,6 +15,9 @@ const { cleanNum, computeContentHash } = require('./core/utils.cjs');
 // never silently fall back to month="1".
 const { extractYearMonth } = require('./core/date_helpers.cjs');
 const { inspectVendorFields } = require('./core/self_invoice_guard.cjs');
+// Billing: per-invoice credit charge (gated by BILLING_ENFORCEMENT env
+// flag — no-op unless the operator has enabled shadow or enforce mode).
+const { chargeForCompany } = require('./billing_service.cjs');
 // Merit Aktiva sync — sends invoices automatically
 const { syncInvoiceToMerit } = require('./merit_sync.cjs');
 const debug = (...a) => process.env.DEBUG && console.log(...a);
@@ -371,6 +374,41 @@ async function writeToFirestore(dataArray) {
         }
 
         debug(`[Firestore] ${dataArray.length} invoice(s) successfully written via Transaction!`);
+
+        // --- BILLING: charge credits for extracted invoices (sprint 2b) ---
+        // Group successfully-saved invoices by companyId and charge the
+        // billable owner 1 credit per invoice. `webhooksToSend` already
+        // filters out duplicates and failed transactions, so its length
+        // matches the true number of new records.
+        //
+        // No-op when BILLING_ENFORCEMENT=off (default). Switch to
+        // 'shadow' to log predicted charges, then 'enforce' to actually
+        // deduct. Non-blocking — a billing error never fails ingestion.
+        try {
+            const chargeTally = new Map(); // companyId -> units
+            for (const payload of webhooksToSend) {
+                if (!payload.companyId) continue;
+                chargeTally.set(
+                    payload.companyId,
+                    (chargeTally.get(payload.companyId) || 0) + 1
+                );
+            }
+            for (const [companyId, units] of chargeTally) {
+                const result = await chargeForCompany({
+                    companyId,
+                    action: 'ai_extraction',
+                    units,
+                });
+                if (result.mode && result.mode !== 'off' && !result.allowed) {
+                    console.warn(
+                        `[Billing] Credit charge refused for companyId=${companyId}: ` +
+                        `${result.reason} (units=${units}, mode=${result.mode})`
+                    );
+                }
+            }
+        } catch (billingErr) {
+            console.error(`[Billing] charge loop failed (non-blocking): ${billingErr.message}`);
+        }
 
         // --- DROPBOX UPLOAD (M1: saga pattern with state tracking) ---
         // Two services that can't share an atomic transaction (Dropbox is

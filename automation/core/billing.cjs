@@ -292,6 +292,26 @@ const HANDLED_EVENTS = Object.freeze(new Set([
     'order_created', // used for credit pack one-time purchases
 ]));
 
+// ─── Billing enforcement mode (gradual rollout gate) ────────────────────────
+// Controls whether billable actions actually debit credits at runtime.
+// Read from BILLING_ENFORCEMENT env var at every call site so the operator
+// can flip modes without restarting the service.
+//
+//   'off'     (default) — no billing integration runs. Existing behavior.
+//                        Used before the monetization rollout.
+//   'shadow'  — read the billing doc, run computeSpend, log what WOULD
+//               be charged, but write nothing. Use this to verify credit
+//               math against real traffic without risk.
+//   'enforce' — actually debit credits inside a Firestore transaction.
+//               Soft-block when insufficient (callers decide what to do).
+const BILLING_ENFORCEMENT_MODES = Object.freeze(['off', 'shadow', 'enforce']);
+
+function getEnforcementMode() {
+    const raw = String(process.env.BILLING_ENFORCEMENT || 'off').trim().toLowerCase();
+    if (BILLING_ENFORCEMENT_MODES.includes(raw)) return raw;
+    return 'off';
+}
+
 // ─── Billable-uid resolution ─────────────────────────────────────────────────
 /**
  * Resolve which user's credit balance should be debited for an action that
@@ -364,6 +384,8 @@ module.exports = {
     TRIAL_DAYS,
     TRIAL_PLAN,
     HANDLED_EVENTS,
+    BILLING_ENFORCEMENT_MODES,
+    getEnforcementMode,
     buildVariantMap,
     resolveSubscriptionVariant,
     resolveCreditPack,

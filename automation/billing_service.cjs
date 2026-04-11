@@ -38,6 +38,8 @@ const {
     getCreditCost,
     defaultBillingDoc,
     computeSpend,
+    getBillableUidForCompany,
+    getEnforcementMode,
 } = require('./core/billing.cjs');
 
 const DAY_MS = 86400_000;
@@ -333,24 +335,58 @@ async function applyOrderCreated(uid, event) {
  *   if (!r.allowed) return softBlockResponse(r.reason);
  *
  * Multi-unit actions (e.g. processing a 5-invoice PDF) pass `units: 5`.
- * Returns `{ allowed, remaining, reason? }`. Never throws for the common
- * "insufficient credits" case — it returns { allowed: false, reason:
- * 'insufficient_credits' } so callers can soft-block cleanly.
+ * Returns `{ allowed, remaining, reason?, mode }`. Never throws for the
+ * common "insufficient credits" case — it returns { allowed: false,
+ * reason: 'insufficient_credits' } so callers can soft-block cleanly.
  *
- * Throws only on Firestore errors or missing/invalid inputs.
+ * Modes (passed directly OR resolved from BILLING_ENFORCEMENT env var):
+ *   - 'off'     — passthrough, no reads or writes. Returns { allowed: true }.
+ *   - 'shadow'  — reads the billing doc, runs computeSpend, logs what it
+ *                 WOULD charge, writes nothing. Used to validate math
+ *                 against production traffic without risk.
+ *   - 'enforce' — full transactional debit + audit log.
+ *
+ * Throws only on Firestore errors or invalid inputs.
  */
-async function spendCredits({ uid, action, units = 1 }) {
+async function spendCredits({ uid, action, units = 1, mode }) {
     if (!uid || typeof uid !== 'string') throw new Error('spendCredits: uid is required');
     const perUnitCost = getCreditCost(action); // throws on unknown action
     const total = perUnitCost * Math.max(1, Number(units) || 1);
+    const effectiveMode = mode || getEnforcementMode();
+
+    // Mode 'off' — do nothing, return allowed. This is the default so the
+    // integration call sites are no-ops until the operator flips the flag.
+    if (effectiveMode === 'off') {
+        return { allowed: true, remaining: Infinity, mode: 'off' };
+    }
 
     if (!db) {
         // No Firestore in test/dev contexts — treat as allowed but warn.
         console.warn('[Billing] Firestore unavailable — spendCredits passthrough');
-        return { allowed: true, remaining: Infinity };
+        return { allowed: true, remaining: Infinity, mode: effectiveMode };
     }
 
     const ref = db.collection('users').doc(uid).collection('billing').doc('state');
+
+    // Mode 'shadow' — read-only pass. Log what we would charge so the
+    // operator can compare against actual usage before enabling enforcement.
+    if (effectiveMode === 'shadow') {
+        try {
+            const snap = await ref.get();
+            const billing = snap.exists ? snap.data() : defaultBillingDoc({ uid });
+            const spend = computeSpend(billing, total);
+            console.log(
+                `[Billing:shadow] would charge uid=${uid} action=${action} units=${units} ` +
+                `cost=${total} allowed=${spend.allowed} remaining=${spend.remaining ?? 0}`
+            );
+            return { ...spend, mode: 'shadow' };
+        } catch (err) {
+            console.warn(`[Billing:shadow] read failed (non-critical): ${err.message}`);
+            return { allowed: true, remaining: Infinity, mode: 'shadow' };
+        }
+    }
+
+    // Mode 'enforce' — real transactional debit
     const result = await db.runTransaction(async (t) => {
         const snap = await t.get(ref);
         if (!snap.exists) {
@@ -397,7 +433,53 @@ async function spendCredits({ uid, action, units = 1 }) {
         }
     }
 
-    return result;
+    return { ...result, mode: 'enforce' };
+}
+
+/**
+ * chargeForCompany — the one-line call site for integration code. Wraps
+ * uid resolution + spendCredits so invoice_processor, bank_statement_
+ * processor, and friends don't have to duplicate the plumbing.
+ *
+ * Flow:
+ *   1. If BILLING_ENFORCEMENT=off → return { allowed: true, mode: 'off' }
+ *      without any Firestore reads. Cheap no-op.
+ *   2. Resolve the billable uid via getBillableUidForCompany.
+ *   3. If no uid → log a warning and return { allowed: true, mode,
+ *      reason: 'no_billable_uid' }. Never block ingestion because of
+ *      missing metadata — flag it and move on.
+ *   4. Call spendCredits with the resolved mode.
+ *
+ * Always returns an object; never throws for the common case.
+ */
+async function chargeForCompany({ companyId, action, units = 1, mode }) {
+    const effectiveMode = mode || getEnforcementMode();
+
+    if (effectiveMode === 'off') {
+        return { allowed: true, mode: 'off', remaining: Infinity };
+    }
+    if (!db) {
+        return { allowed: true, mode: effectiveMode, remaining: Infinity };
+    }
+    if (!companyId) {
+        console.warn(`[Billing] chargeForCompany called without companyId (action=${action})`);
+        return { allowed: true, mode: effectiveMode, reason: 'no_company_id' };
+    }
+
+    const uid = await getBillableUidForCompany(db, companyId);
+    if (!uid) {
+        console.warn(`[Billing] No billable uid for companyId=${companyId} — skipping charge (${action}, ${units} units)`);
+        return { allowed: true, mode: effectiveMode, reason: 'no_billable_uid' };
+    }
+
+    try {
+        return await spendCredits({ uid, action, units, mode: effectiveMode });
+    } catch (err) {
+        console.error(`[Billing] chargeForCompany failed for uid=${uid} action=${action}: ${err.message}`);
+        // Fail open during rollout — don't break invoice processing because
+        // of a billing error. Operators can watch logs for these.
+        return { allowed: true, mode: effectiveMode, reason: 'charge_error', error: err.message };
+    }
 }
 
 // ─── Public API ──────────────────────────────────────────────────────────────
@@ -405,6 +487,7 @@ module.exports = {
     verifyWebhook,
     handleLemonWebhook,
     spendCredits,
+    chargeForCompany,
     // Exposed for tests
     _extractUidFromEvent: extractUidFromEvent,
     _applySubscriptionActivation: applySubscriptionActivation,
