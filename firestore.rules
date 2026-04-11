@@ -126,6 +126,18 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // CollectionGroup rule for master-only admin dashboard. Lets a
+    // master user run `collectionGroup('billing')` to see every
+    // user's state doc at once in AdminBilling.tsx. The per-document
+    // rule above already restricts regular users to their own doc,
+    // but collectionGroup queries require an explicit
+    // match /{path=**}/billing/{docId} variant — Firestore security
+    // rules don't propagate implicitly across collectionGroup reads.
+    match /{path=**}/billing/{docId} {
+      allow read: if request.auth != null && isMaster();
+      allow write: if false;
+    }
+
     // Idempotency ledger for webhook events (keyed by Lemon Squeezy event
     // id) + append-only audit log of credit spends. Write-only via Admin
     // SDK. Read access:
