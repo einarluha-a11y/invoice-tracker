@@ -128,9 +128,17 @@ service cloud.firestore {
 
     // Idempotency ledger for webhook events (keyed by Lemon Squeezy event
     // id) + append-only audit log of credit spends. Write-only via Admin
-    // SDK — read access for master/admin so support can audit disputes.
+    // SDK. Read access:
+    //   - master/admin — full access for support + audit
+    //   - regular user — only their OWN spend events (for the "Usage
+    //     history" section in Billing.tsx). Filtered by resource.data.uid.
+    //     Webhook idempotency docs (type != 'spend') remain master/admin
+    //     only because they contain other customers' email addresses.
     match /billing_events/{eventId} {
-      allow read: if request.auth != null && (isMaster() || isAdmin());
+      allow read: if request.auth != null && (
+        isMaster() || isAdmin() ||
+        (resource.data.type == 'spend' && resource.data.uid == request.auth.uid)
+      );
       allow write: if false;
     }
 

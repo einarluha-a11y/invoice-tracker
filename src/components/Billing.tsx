@@ -23,6 +23,7 @@ import {
     getCheckoutUrl,
 } from '../data/billing';
 import { ShareLinksSection } from './ShareLinksSection';
+import { CreditHistorySection } from './CreditHistorySection';
 
 interface Props {
     onBack: () => void;
@@ -142,6 +143,7 @@ export const Billing: React.FC<Props> = ({ onBack, selectedCompanyId = null }) =
             ) : (
                 <>
                     <CurrentPlanCard billing={billing} remaining={remaining} usagePct={usagePct} />
+                    <CreditHistorySection />
                     <PlansGrid currentPlan={currentPlan} uid={user?.uid || ''} />
                     <CreditPacksRow uid={user?.uid || ''} />
                     <ShareLinksSection selectedCompanyId={selectedCompanyId} />
