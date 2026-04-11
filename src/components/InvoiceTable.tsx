@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect, useRef, useCallback, Suspense } fr
 import { useTranslation } from 'react-i18next';
 import type { Invoice, InvoiceStatus } from '../data/types';
 import { authHeaders } from '../data/api';
+import { AnomalyBadge } from './AnomalyBadge';
 
 const InvoicePdfViewer = React.lazy(() =>
     import('./InvoicePdfViewer').then(m => ({ default: m.InvoicePdfViewer }))
@@ -379,14 +380,8 @@ export function InvoiceTable({ invoices, searchTerm, statusFilter, startDate, en
                                                             ⚠️
                                                         </span>
                                                     )}
-                                                    {typeof invoice.anomalyScore === 'number' && invoice.anomalyScore >= 0.7 && (
-                                                        <span
-                                                            className="quality-badge quality-badge-anomaly"
-                                                            title={`Anomaly score ${invoice.anomalyScore.toFixed(2)}${invoice.anomalyReasons?.length ? ': ' + invoice.anomalyReasons.join('; ') : ''}`}
-                                                        >
-                                                            🚩
-                                                        </span>
-                                                    )}
+                                                    <AnomalyBadge invoice={invoice} />
+
                                                     {invoice.extractionQuality === 'low' && (
                                                         <span
                                                             className="quality-badge quality-badge-low-ocr"

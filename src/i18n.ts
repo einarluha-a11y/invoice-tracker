@@ -344,6 +344,10 @@ const resources = {
                     auto_categorization: "Авто-категория",
                 },
             },
+            anomaly: {
+                unusual: "Необычно",
+                anomaly: "Аномалия",
+            },
         }
     },
     en: {
@@ -688,6 +692,10 @@ const resources = {
                     auto_categorization: "Auto-categorization",
                 },
             },
+            anomaly: {
+                unusual: "Unusual",
+                anomaly: "Anomaly",
+            },
         }
     },
     et: {
@@ -1031,6 +1039,10 @@ const resources = {
                     smart_duplicate_check: "Duplikaadi kontroll",
                     auto_categorization: "Automaatne kategooria",
                 },
+            },
+            anomaly: {
+                unusual: "Ebaharilik",
+                anomaly: "Anomaalia",
             },
         }
     }
