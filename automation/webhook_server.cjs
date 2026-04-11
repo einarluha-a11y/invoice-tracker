@@ -1,9 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-const crypto = require('crypto');
 const { reportError } = require('./error_reporter.cjs');
-const { processInvoiceWithDocAI } = require('./document_ai_service.cjs');
 
 const { admin, db, bucket, serviceAccount } = require('./core/firebase.cjs');
 
@@ -71,14 +69,15 @@ function requireRole(roles) {
     };
 }
 
-// Protect all /api/* routes except /api/intake (Zapier webhook — no user token)
-app.use('/api', (req, res, next) => {
-    if (req.path === '/intake') return next();
-    return verifyToken(req, res, next);
-});
+// Protect every /api/* route with Firebase ID-token verification. No
+// exemptions: the legacy /api/intake Zapier webhook was removed because
+// it was orphaned (Zapier's Zap uploads directly to Dropbox, not here)
+// and holding an un-authenticated fallback is an unnecessary attack
+// surface. Real invoice intake runs through imap_daemon.cjs.
+app.use('/api', verifyToken);
 
 // --- SIMPLE IN-MEMORY RATE LIMITER ---
-// Protects /api/intake and /api/chat from abuse without extra dependencies.
+// Protects /api/chat and similar endpoints from abuse without extra deps.
 const rateLimitMap = new Map(); // ip -> { count, resetAt }
 function rateLimit(maxRequests, windowMs) {
     return (req, res, next) => {
@@ -104,133 +103,11 @@ setInterval(() => {
     }
 }, 5 * 60 * 1000);
 
-/**
- * Zapier shared-secret check for /api/intake.
- *
- * The intake webhook is the one /api/* path that bypasses verifyToken,
- * because Zapier doesn't speak Firebase ID tokens. Without a secret it's
- * a wide-open door — anyone who knows the URL can POST an invoice and
- * assign it to ANY companyId by supplying it in the body.
- *
- * Fix: require an HMAC-style shared secret in the `X-Zapier-Secret` header
- * (or `?secret=` query param). The secret is set via
- * `ZAPIER_WEBHOOK_SECRET` env var on Railway. If unset, the endpoint
- * falls back to the legacy (unauthenticated) behavior and logs a warning
- * on every request so the operator notices and sets it.
- */
-function requireZapierSecret(req, res, next) {
-    const expected = process.env.ZAPIER_WEBHOOK_SECRET;
-    if (!expected) {
-        console.warn('[Webhook] ⚠️  ZAPIER_WEBHOOK_SECRET not set — /api/intake is UNAUTHENTICATED. Set it in Railway env.');
-        return next();
-    }
-    const provided = req.headers['x-zapier-secret'] || req.query.secret || '';
-    if (typeof provided !== 'string' || provided.length === 0) {
-        return res.status(401).json({ error: 'Missing X-Zapier-Secret header' });
-    }
-    // Constant-time compare to prevent timing attacks
-    const a = Buffer.from(String(provided));
-    const b = Buffer.from(String(expected));
-    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
-        return res.status(401).json({ error: 'Invalid X-Zapier-Secret' });
-    }
-    next();
-}
-
-/**
- * Step 1: INTAKE
- * Route that Zapier hits when an email/file triggers.
- */
-app.post('/api/intake', rateLimit(20, 60_000), requireZapierSecret, async (req, res) => {
-    if (!db || !bucket) {
-        console.error('[Webhook] Firebase not initialized — rejecting request. Check FIREBASE_SERVICE_ACCOUNT env var.');
-        return res.status(503).json({ error: 'Database unavailable. Check server configuration.' });
-    }
-    try {
-        const { fileUrl, fileName, senderUrl, companyId } = req.body;
-
-        if (!fileUrl) return res.status(400).json({ error: "Missing fileUrl" });
-
-        // Download file into memory buffer (acts as the bridge from Zapier to GCP)
-        console.log(`[Step 1: Intake] Downloading file from Zapier URL: ${fileUrl}`);
-        const fileResponse = await fetch(fileUrl);
-        const arrayBuf = await fileResponse.arrayBuffer();
-        const fileBuffer = Buffer.from(arrayBuf);
-        const mimeType = fileResponse.headers.get('content-type') || 'application/pdf';
-
-        // --- EXTRACTION via Scout (Azure Document Intelligence) ---
-        console.log(`[Webhook] Extracting invoice via Scout...`);
-        const extracted = await processInvoiceWithDocAI(fileBuffer, mimeType);
-        if (!extracted || extracted.length === 0) {
-            return res.status(422).json({ error: 'Could not extract invoice data from file' });
-        }
-        const inv = extracted[0];
-
-        let parsedData = {
-            vendorName: inv.vendorName || 'Unknown',
-            invoiceId: inv.invoiceId || `Auto-${Date.now()}`,
-            dateCreated: inv.dateCreated || '',
-            dueDate: inv.dueDate || '',
-            subtotal: inv.subtotalAmount || 0,
-            tax: inv.taxAmount || 0,
-            total: inv.amount || 0,
-            currency: inv.currency || 'EUR',
-            lineItems: inv.lineItems || [],
-            confidenceScores: {},
-            originalFileUrl: null
-        };
-
-        // dueDate fallback: use invoice date if due date missing
-        if (!parsedData.dueDate) parsedData.dueDate = parsedData.dateCreated;
-
-        let validationWarnings = inv.validationWarnings || [];
-        let systemStatus = validationWarnings.length > 0 ? 'Needs Action' : 'Unpaid';
-
-        // --- Secure Storage Upload ---
-        const cleanName = fileName ? fileName.replace(/[^a-zA-Z0-9.\-_]/g, '') : `Zapier-DocAI-${Date.now()}.pdf`;
-        const filePath = `invoices/${companyId || 'UNKNOWN'}/${Date.now()}_${cleanName}`;
-        const uuid = crypto.randomUUID();
-        await bucket.file(filePath).save(fileBuffer, { metadata: { contentType: mimeType, metadata: { firebaseStorageDownloadTokens: uuid } } });
-        parsedData.originalFileUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(filePath)}?alt=media&token=${uuid}`;
-
-        // --- Step 6: ROUTING ---
-        console.log(`[Step 6: Routing] Status determined as: ${systemStatus}. Writing to DB...`);
-        
-        // Write exactly to Invoice-Tracker's required DB model
-        const docRef = db.collection('invoices').doc();
-        await docRef.set({
-            invoiceId: parsedData.invoiceId,
-            vendorName: parsedData.vendorName,
-            amount: parsedData.total,
-            taxAmount: parsedData.tax,        // NEW: Saved for API integrations
-            subtotalAmount: parsedData.subtotal, // NEW
-            currency: parsedData.currency,
-            dateCreated: parsedData.dateCreated || new Date().toISOString().split('T')[0],
-            dueDate: parsedData.dueDate || new Date().toISOString().split('T')[0],
-            status: systemStatus,
-            companyId: companyId || null,
-            fileUrl: parsedData.originalFileUrl,
-            lineItems: parsedData.lineItems,  // NEW: Saving arrays into Firestore directly
-            validationWarnings: validationWarnings,
-            createdAt: admin.firestore.FieldValue.serverTimestamp()
-        });
-
-        // Send Success to Zapier
-        res.status(200).json({
-            message: "Invoice Intelligence Pipeline Completed",
-            docId: docRef.id,
-            extractedData: parsedData,
-            warnings: validationWarnings,
-            finalStatus: systemStatus
-        });
-
-    } catch (err) {
-        console.error("Pipeline Error:", err);
-        // Link pipeline crash directly to the unified UI Dashboard Error Reporter
-        await reportError('WEBHOOK_PIPELINE_ERROR', req.body?.companyId || 'UNKNOWN_ZAPIER_SOURCE', err).catch(() => {});
-        res.status(500).json({ error: err.message });
-    }
-});
+// NOTE: /api/intake (the legacy Zapier webhook) was removed. The Zap that
+// used to hit it uploads attachments directly to Dropbox instead, and the
+// real invoice ingestion runs through imap_daemon.cjs. Keeping an
+// unauthenticated fallback endpoint — even behind a shared secret — just
+// widens the attack surface, so it's gone.
 
 // --- REPROCESS INVOICE (on-demand re-extraction via Claude) ---
 // Called by the repair button (🔧) in the dashboard TEGEVUS column.
