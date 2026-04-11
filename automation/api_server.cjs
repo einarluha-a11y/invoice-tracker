@@ -1,5 +1,12 @@
 require('dotenv').config({ path: __dirname + '/.env' });
 
+// Startup env-var self-check (Minor). Warns on missing required vars but
+// does NOT exit — api_server still provides /health and static SPA even
+// when Claude/Firebase are misconfigured, so the operator can fix env
+// vars without losing the UI.
+const { ensureEnv } = require('./core/env_check.cjs');
+ensureEnv('api_server', { exitOnFail: false });
+
 // --- CLOUD HOSTING & API SUPPORT ---
 // This server handles:
 //   • /api/*      — webhook intake, AI chat, health checks, agent stats

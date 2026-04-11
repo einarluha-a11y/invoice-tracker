@@ -121,38 +121,6 @@ async function runOrphanCleanupIfDue() {
     }
 }
 
-// ─── Weekly orphan cleanup (M3) ─────────────────────────────────────────────
-// Every iteration of auditLoop runs every 2h. We want orphan cleanup at most
-// once a week, so we persist `lastRunAt` in Firestore config/orphan_cleanup
-// and skip until 7 days have passed. Always dry-run-by-default — actual
-// deletion requires the operator to run `node automation/orphan_cleanup.cjs --delete`
-// manually after reviewing the dry-run report. This avoids surprise deletes
-// from a cron job.
-async function runOrphanCleanupIfDue() {
-    const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
-    try {
-        const ref = db.collection('config').doc('orphan_cleanup');
-        const snap = await ref.get();
-        const last = snap.exists ? snap.data().lastRunAt : null;
-        const lastMs = last && last.toMillis ? last.toMillis() : 0;
-        if (lastMs && (Date.now() - lastMs) < ONE_WEEK_MS) {
-            return; // not due yet
-        }
-        console.log('[Orphan Cleanup] Weekly scan due — running dry-run report...');
-        const { runOrphanCleanup } = require('./orphan_cleanup.cjs');
-        const result = await runOrphanCleanup({ dryRun: true });
-        await ref.set({
-            lastRunAt: admin.firestore.FieldValue.serverTimestamp(),
-            lastResult: result,
-        });
-        if (result.orphans > 0) {
-            console.log(`[Orphan Cleanup] Found ${result.orphans} orphans — review with: node automation/orphan_cleanup.cjs --delete`);
-        }
-    } catch (err) {
-        console.warn(`[Orphan Cleanup] Skipped: ${err.message}`);
-    }
-}
-
 // Overlap-safe Post-Flight Auditor daemon
 console.log('Dashboard Auditor Scheduled. Sweeping database every 2 hours...');
 async function auditLoop() {

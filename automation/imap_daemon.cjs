@@ -1,5 +1,12 @@
 require('dotenv').config({ path: __dirname + '/.env' });
 
+// Startup env-var self-check (Minor). Warns on missing required vars.
+// IMAP daemon needs Claude + Azure + Firebase to do useful work. We don't
+// process.exit() because the watchdog would flap us — better to log
+// loudly on startup so the operator sees the issue in Railway logs.
+const { ensureEnv } = require('./core/env_check.cjs');
+ensureEnv('imap_daemon', { exitOnFail: false });
+
 // Global error handlers — prevent crashes from unhandled rejections / protocol error events
 process.on('unhandledRejection', (reason, promise) => {
     const msg = (reason instanceof Error) ? reason.message : String(reason ?? 'unknown');
