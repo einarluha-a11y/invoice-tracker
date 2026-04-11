@@ -193,6 +193,51 @@ setInterval(() => {
 // unauthenticated fallback endpoint — even behind a shared secret — just
 // widens the attack surface, so it's gone.
 
+// --- REFERRAL CLAIM (sprint 7 viral loop) ---
+// Called by the frontend the first time a new user signs up with a
+// ?ref=<uid> parameter on their landing URL. Grants +50 credits to
+// the referrer and marks the new user's billing doc with referredBy.
+// Requires auth — the caller's uid MUST match newUserUid so no one
+// can claim on behalf of strangers.
+const { claimReferral, countReferrals, REFERRAL_BONUS_CREDITS } = require('./referral_service.cjs');
+
+app.post('/api/referral/claim', rateLimit(10, 60_000), async (req, res) => {
+    if (!db) return res.status(503).json({ error: 'Database unavailable.' });
+    try {
+        const { referrerUid, newUserUid } = req.body || {};
+        if (!referrerUid || !newUserUid) {
+            return res.status(400).json({ error: 'referrerUid and newUserUid required' });
+        }
+        // Caller must be claiming for their own account
+        if (newUserUid !== req.uid) {
+            return res.status(403).json({ error: 'You can only claim a referral for your own account' });
+        }
+        const result = await claimReferral({ referrerUid, newUserUid });
+        if (!result.allowed) {
+            return res.status(400).json({ error: result.reason });
+        }
+        return res.status(200).json(result);
+    } catch (err) {
+        console.error('[Referral] claim failed:', err);
+        return res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/api/referral/stats', async (req, res) => {
+    if (!db) return res.status(503).json({ error: 'Database unavailable.' });
+    try {
+        const count = await countReferrals(req.uid);
+        return res.status(200).json({
+            count,
+            bonusPerReferral: REFERRAL_BONUS_CREDITS,
+            totalEarned: count * REFERRAL_BONUS_CREDITS,
+        });
+    } catch (err) {
+        console.error('[Referral] stats failed:', err);
+        return res.status(500).json({ error: err.message });
+    }
+});
+
 // --- SHARE LINKS — authenticated management endpoints (sprint 5) ---
 // These sit AFTER the /api verifyToken middleware so only logged-in
 // users can create / list / revoke their own share links. The public

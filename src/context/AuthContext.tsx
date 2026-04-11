@@ -5,6 +5,7 @@ import {
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, collection, getDocs, serverTimestamp } from 'firebase/firestore';
 import { auth, googleProvider, isFirebaseConfigured, db } from '../firebase';
+import { consumeStashedRef } from '../data/referrals';
 
 export interface Account {
     id: string;
@@ -154,6 +155,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                     setIsMaster(false);
                     setAuthError(null);
                     localStorage.setItem('currentAccountId', accountId);
+
+                    // Referral claim (sprint 7) — fire-and-forget.
+                    // If the prospect arrived via /landing?ref=<uid>,
+                    // LandingPage stashed that uid in sessionStorage. Now
+                    // that the new user is authenticated, we POST to
+                    // /api/referral/claim to credit the referrer. Any
+                    // failure is logged, never blocks signup.
+                    consumeStashedRef(currentUser.uid).catch((err) => {
+                        console.warn('[AuthContext] referral claim failed:', err);
+                    });
+
                     setLoading(false);
                     return;
                 }
