@@ -126,25 +126,18 @@ export const CreditHistorySection: React.FC = () => {
                 </div>
             ) : (
                 <div
+                    className="credit-history-table"
                     style={{
                         border: '1px solid var(--border-color)',
                         borderRadius: 'var(--radius-md)',
                         overflow: 'hidden',
                     }}
                 >
-                    <div
-                        style={{
-                            display: 'grid',
-                            gridTemplateColumns: '1.2fr 2fr 0.6fr 0.8fr 0.8fr',
-                            gap: '0.5rem',
-                            padding: '0.6rem 1rem',
-                            background: 'var(--bg-color)',
-                            fontSize: '0.75rem',
-                            color: 'var(--text-secondary)',
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.05em',
-                        }}
-                    >
+                    {/* Header — hidden on mobile so narrow screens don't
+                         cram 5 columns into 320px. Cards on mobile,
+                         table on desktop (controlled by the <style> tag
+                         below with media queries). */}
+                    <div className="credit-history-header">
                         <div>{t('billing.usage.when', 'When')}</div>
                         <div>{t('billing.usage.action', 'Action')}</div>
                         <div style={{ textAlign: 'right' }}>{t('billing.usage.units', 'Units')}</div>
@@ -152,36 +145,80 @@ export const CreditHistorySection: React.FC = () => {
                         <div style={{ textAlign: 'right' }}>{t('billing.usage.leftAfter', 'After')}</div>
                     </div>
                     {events.map((e) => (
-                        <div
-                            key={e.id}
-                            style={{
-                                display: 'grid',
-                                gridTemplateColumns: '1.2fr 2fr 0.6fr 0.8fr 0.8fr',
-                                gap: '0.5rem',
-                                padding: '0.6rem 1rem',
-                                borderTop: '1px solid var(--border-color)',
-                                fontSize: '0.85rem',
-                                alignItems: 'center',
-                            }}
-                        >
-                            <div style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
+                        <div key={e.id} className="credit-history-row">
+                            <div className="col-when" data-label={t('billing.usage.when', 'When')}>
                                 {formatAt(e.at, i18n.language)}
                             </div>
-                            <div>
+                            <div className="col-action" data-label={t('billing.usage.action', 'Action')}>
                                 <span style={{ marginRight: '0.4rem' }}>{ACTION_EMOJI[e.action] || '•'}</span>
                                 {t(ACTION_LABEL_KEY[e.action] || e.action, humanizeAction(e.action))}
                             </div>
-                            <div style={{ textAlign: 'right', color: 'var(--text-secondary)' }}>
+                            <div className="col-units" data-label={t('billing.usage.units', 'Units')}>
                                 {e.units}
                             </div>
-                            <div style={{ textAlign: 'right', fontFamily: 'monospace' }}>
+                            <div className="col-cost" data-label={t('billing.usage.cost', 'Cost')}>
                                 −{e.cost}
                             </div>
-                            <div style={{ textAlign: 'right', color: 'var(--text-secondary)', fontFamily: 'monospace' }}>
+                            <div className="col-after" data-label={t('billing.usage.leftAfter', 'After')}>
                                 {e.remaining}
                             </div>
                         </div>
                     ))}
+                    <style>{`
+                        .credit-history-header {
+                            display: grid;
+                            grid-template-columns: 1.2fr 2fr 0.6fr 0.8fr 0.8fr;
+                            gap: 0.5rem;
+                            padding: 0.6rem 1rem;
+                            background: var(--bg-color);
+                            font-size: 0.75rem;
+                            color: var(--text-secondary);
+                            text-transform: uppercase;
+                            letter-spacing: 0.05em;
+                        }
+                        .credit-history-row {
+                            display: grid;
+                            grid-template-columns: 1.2fr 2fr 0.6fr 0.8fr 0.8fr;
+                            gap: 0.5rem;
+                            padding: 0.6rem 1rem;
+                            border-top: 1px solid var(--border-color);
+                            font-size: 0.85rem;
+                            align-items: center;
+                        }
+                        .credit-history-row .col-when { color: var(--text-secondary); font-size: 0.8rem; }
+                        .credit-history-row .col-units,
+                        .credit-history-row .col-cost,
+                        .credit-history-row .col-after { text-align: right; }
+                        .credit-history-row .col-cost { font-family: monospace; }
+                        .credit-history-row .col-after { color: var(--text-secondary); font-family: monospace; }
+
+                        @media (max-width: 680px) {
+                            .credit-history-header { display: none; }
+                            .credit-history-row {
+                                display: block;
+                                padding: 0.8rem 1rem;
+                            }
+                            .credit-history-row > div {
+                                display: flex;
+                                justify-content: space-between;
+                                padding: 0.15rem 0;
+                                text-align: left !important;
+                                font-size: 0.85rem;
+                            }
+                            .credit-history-row > div::before {
+                                content: attr(data-label);
+                                color: var(--text-secondary);
+                                font-size: 0.7rem;
+                                text-transform: uppercase;
+                                letter-spacing: 0.04em;
+                                flex: 0 0 auto;
+                                margin-right: 0.8rem;
+                            }
+                            .credit-history-row .col-action {
+                                font-weight: 500;
+                            }
+                        }
+                    `}</style>
                 </div>
             )}
         </div>

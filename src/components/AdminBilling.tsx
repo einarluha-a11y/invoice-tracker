@@ -244,28 +244,17 @@ const StatCard: React.FC<{
 );
 
 const UsersTable: React.FC<{ rows: Row[] }> = ({ rows }) => {
-    const { t, i18n } = useTranslation();
+    const { t } = useTranslation();
     return (
         <div
+            className="admin-users-table"
             style={{
                 border: '1px solid var(--border-color)',
                 borderRadius: 'var(--radius-md)',
                 overflow: 'auto',
             }}
         >
-            <div
-                style={{
-                    display: 'grid',
-                    gridTemplateColumns: '2fr 0.8fr 0.8fr 2.5fr 1fr 1fr',
-                    gap: '0.5rem',
-                    padding: '0.7rem 1rem',
-                    background: 'var(--bg-color)',
-                    fontSize: '0.75rem',
-                    color: 'var(--text-secondary)',
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.05em',
-                }}
-            >
+            <div className="admin-users-header">
                 <div>{t('admin.billing.col.user', 'User')}</div>
                 <div>{t('admin.billing.col.plan', 'Plan')}</div>
                 <div>{t('admin.billing.col.cycle', 'Cycle')}</div>
@@ -278,23 +267,12 @@ const UsersTable: React.FC<{ rows: Row[] }> = ({ rows }) => {
                 const limit = r.credits?.limit || 0;
                 const pct = limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
                 return (
-                    <div
-                        key={r.docPath}
-                        style={{
-                            display: 'grid',
-                            gridTemplateColumns: '2fr 0.8fr 0.8fr 2.5fr 1fr 1fr',
-                            gap: '0.5rem',
-                            padding: '0.7rem 1rem',
-                            borderTop: '1px solid var(--border-color)',
-                            fontSize: '0.85rem',
-                            alignItems: 'center',
-                        }}
-                    >
+                    <div key={r.docPath} className="admin-users-row">
                         <div>
                             <div style={{ fontWeight: 500 }}>{r.uid.slice(0, 12)}…</div>
-                            {(r as any).email && (
+                            {r.email && (
                                 <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                                    {(r as any).email}
+                                    {r.email}
                                 </div>
                             )}
                         </div>
@@ -336,11 +314,52 @@ const UsersTable: React.FC<{ rows: Row[] }> = ({ rows }) => {
                         <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap' }}>
                             {r.trial?.active && <Tag kind="accent">TRIAL</Tag>}
                             {r.paymentFailed && <Tag kind="danger">FAILED</Tag>}
-                            {(r as any).migration?.reason === 'existing_user_grandfather' && <Tag kind="neutral">GF</Tag>}
+                            {r.migration?.reason === 'existing_user_grandfather' && <Tag kind="neutral">GF</Tag>}
                         </div>
                     </div>
                 );
             })}
+            <style>{`
+                .admin-users-header {
+                    display: grid;
+                    grid-template-columns: 2fr 0.8fr 0.8fr 2.5fr 1fr 1fr;
+                    gap: 0.5rem;
+                    padding: 0.7rem 1rem;
+                    background: var(--bg-color);
+                    font-size: 0.75rem;
+                    color: var(--text-secondary);
+                    text-transform: uppercase;
+                    letter-spacing: 0.05em;
+                }
+                .admin-users-row {
+                    display: grid;
+                    grid-template-columns: 2fr 0.8fr 0.8fr 2.5fr 1fr 1fr;
+                    gap: 0.5rem;
+                    padding: 0.7rem 1rem;
+                    border-top: 1px solid var(--border-color);
+                    font-size: 0.85rem;
+                    align-items: center;
+                }
+
+                /* Stack into cards on mobile — 6 columns at 400px is
+                   unreadable. Each cell gets a data-label pseudo to
+                   show the column name inline. */
+                @media (max-width: 680px) {
+                    .admin-users-header { display: none; }
+                    .admin-users-row {
+                        display: block;
+                        padding: 0.9rem 1rem;
+                    }
+                    .admin-users-row > div {
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                        padding: 0.15rem 0;
+                        text-align: left !important;
+                        gap: 0.6rem;
+                    }
+                }
+            `}</style>
         </div>
     );
 };
