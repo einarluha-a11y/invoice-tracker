@@ -24,8 +24,18 @@ export interface BillingTrial {
     endsAt: number | null;
 }
 
+export interface BillingMigrationMeta {
+    grandfatherBonus: number;
+    reason: 'existing_user_grandfather';
+    policyVersion: number;
+}
+
 export interface BillingDoc {
     uid: string;
+    /** Email copied from the user's Firebase Auth profile at migration
+     *  or signup time. Used by AdminBilling to show a friendly label
+     *  next to the uid. Optional because older docs may not have it. */
+    email?: string | null;
     plan: PlanId;
     billingCycle: BillingCycle;
     credits: BillingCredits;
@@ -37,6 +47,14 @@ export interface BillingDoc {
     };
     paymentFailed?: boolean;
     cancellationReason?: 'cancelled' | 'expired' | null;
+    /** When present, this user came from the grandfather migration
+     *  run and received the one-time bonus credit grant. */
+    migration?: BillingMigrationMeta;
+    /** Set by referral_service.claimReferral when a user signs up
+     *  via another user's /landing?ref=... URL. */
+    referredBy?: string;
+    referralClaimedAt?: number;
+    migratedAt?: number;
     createdAt: number;
     updatedAt: number;
 }
