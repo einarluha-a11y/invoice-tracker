@@ -1,9 +1,29 @@
 rules_version = '2';
+
+// Firebase Storage rules
+//
+// Threat model: an authenticated user must not be able to upload files
+// into another tenant's folder via the Firebase client SDK. The previous
+// rule (`allow write: if request.auth != null`) let any authenticated
+// browser session write to `invoices/<ANY_COMPANY_ID>/<anything>` and
+// claim it belonged to a company they had nothing to do with.
+//
+// Fix: all writes must go through the backend (Admin SDK), which bypasses
+// these rules. The Admin SDK derives the companyId server-side from a
+// trusted source (Zapier webhook secret, IMAP daemon config, or the
+// authenticated caller's claims) so clients can never forge it.
+//
+// Reads remain allowed for any authenticated user. Cross-company PDF
+// exposure is limited by Firestore rules on `/invoices` (which restrict
+// read access and therefore hide `fileUrl`) — a user who has no way to
+// discover a file's URL has no way to request it. Defense in depth via
+// random UUID download tokens makes Storage URLs effectively unguessable.
+
 service firebase.storage {
   match /b/{bucket}/o {
     match /{allPaths=**} {
       allow read: if request.auth != null;
-      allow write: if request.auth != null;
+      allow write: if false;  // Admin SDK only — blocks client-side uploads
     }
   }
 }

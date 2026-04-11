@@ -105,10 +105,43 @@ setInterval(() => {
 }, 5 * 60 * 1000);
 
 /**
- * Step 1: INTAKE 
+ * Zapier shared-secret check for /api/intake.
+ *
+ * The intake webhook is the one /api/* path that bypasses verifyToken,
+ * because Zapier doesn't speak Firebase ID tokens. Without a secret it's
+ * a wide-open door — anyone who knows the URL can POST an invoice and
+ * assign it to ANY companyId by supplying it in the body.
+ *
+ * Fix: require an HMAC-style shared secret in the `X-Zapier-Secret` header
+ * (or `?secret=` query param). The secret is set via
+ * `ZAPIER_WEBHOOK_SECRET` env var on Railway. If unset, the endpoint
+ * falls back to the legacy (unauthenticated) behavior and logs a warning
+ * on every request so the operator notices and sets it.
+ */
+function requireZapierSecret(req, res, next) {
+    const expected = process.env.ZAPIER_WEBHOOK_SECRET;
+    if (!expected) {
+        console.warn('[Webhook] ⚠️  ZAPIER_WEBHOOK_SECRET not set — /api/intake is UNAUTHENTICATED. Set it in Railway env.');
+        return next();
+    }
+    const provided = req.headers['x-zapier-secret'] || req.query.secret || '';
+    if (typeof provided !== 'string' || provided.length === 0) {
+        return res.status(401).json({ error: 'Missing X-Zapier-Secret header' });
+    }
+    // Constant-time compare to prevent timing attacks
+    const a = Buffer.from(String(provided));
+    const b = Buffer.from(String(expected));
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+        return res.status(401).json({ error: 'Invalid X-Zapier-Secret' });
+    }
+    next();
+}
+
+/**
+ * Step 1: INTAKE
  * Route that Zapier hits when an email/file triggers.
  */
-app.post('/api/intake', rateLimit(20, 60_000), async (req, res) => {
+app.post('/api/intake', rateLimit(20, 60_000), requireZapierSecret, async (req, res) => {
     if (!db || !bucket) {
         console.error('[Webhook] Firebase not initialized — rejecting request. Check FIREBASE_SERVICE_ACCOUNT env var.');
         return res.status(503).json({ error: 'Database unavailable. Check server configuration.' });
@@ -216,6 +249,15 @@ app.post('/api/reprocess-invoice', rateLimit(10, 60_000), requireRole(['admin', 
         if (!docSnap.exists) return res.status(404).json({ error: `Invoice ${docId} not found.` });
 
         const existing = docSnap.data();
+
+        // Cross-tenant guard: non-master callers can only reprocess invoices
+        // that belong to their own account. Master users bypass this by design
+        // (they're operators who legitimately work across tenants).
+        if (!req.isMaster && req.accountId && existing.companyId && existing.companyId !== req.accountId) {
+            console.warn(`[Reprocess] 🚫 Blocked cross-account reprocess: user=${req.uid} acct=${req.accountId} tried ${docId} (belongs to ${existing.companyId})`);
+            return res.status(403).json({ error: 'Invoice does not belong to your account.' });
+        }
+
         const fileUrl = existing.fileUrl;
         if (!fileUrl) return res.status(400).json({ error: 'No fileUrl — cannot reprocess without the original file.' });
 
@@ -343,7 +385,9 @@ app.get('/api/pdf-proxy', async (req, res) => {
 });
 
 // --- VITAL TELEMETRY API (DASHBOARD) ---
-app.get('/api/agent-stats', async (req, res) => {
+// Restricted to admin/master. Non-privileged users get a 403 — they
+// shouldn't see aggregate system metrics across all companies.
+app.get('/api/agent-stats', requireRole(['admin', 'master']), async (req, res) => {
     if (!db) return res.status(503).json({ error: 'Database unavailable.' });
     try {
         const now = new Date();
