@@ -10,6 +10,7 @@ import type { BillingDoc } from './data/billing';
 import { db } from './firebase';
 import { Settings } from './components/Settings';
 import { Billing } from './components/Billing';
+import { AdminBilling } from './components/AdminBilling';
 import { CreditMeter } from './components/CreditMeter';
 import { UpgradeModal } from './components/UpgradeModal';
 import { useCompanies, Company } from './hooks/useCompanies';
@@ -152,7 +153,7 @@ function App() {
     const { companies, companiesLoading, companiesError } = useCompanies();
 
     const [selectedCompanyId, setSelectedCompanyId] = useState<string>('');
-    const [view, setView] = useState<'dashboard' | 'settings' | 'billing'>('dashboard');
+    const [view, setView] = useState<'dashboard' | 'settings' | 'billing' | 'admin-billing'>('dashboard');
 
     // Live billing snapshot for the current user. Drives the CreditMeter
     // badge in the header, the soft-block UpgradeModal, and /billing page.
@@ -357,6 +358,14 @@ function App() {
     if (view === 'billing') {
         return <Billing onBack={() => setView('dashboard')} selectedCompanyId={selectedCompanyId || null} />;
     }
+    if (view === 'admin-billing') {
+        if (!isMaster) {
+            // Guard — non-masters can't reach this view. Fall back to dashboard.
+            setView('dashboard');
+            return null;
+        }
+        return <AdminBilling onBack={() => setView('dashboard')} />;
+    }
 
     return (
         <div className="dashboard-container">
@@ -416,6 +425,21 @@ function App() {
                     {user && (
                         <>
                             <CreditMeter billing={billing} onClick={() => setView('billing')} />
+                            {isMaster && <button
+                                onClick={() => setView('admin-billing')}
+                                title={t('admin.billing.title', 'Billing — admin view')}
+                                style={{
+                                    background: 'transparent',
+                                    border: '1px solid var(--border-color)',
+                                    color: 'var(--text-secondary)',
+                                    padding: '0.4rem 0.8rem',
+                                    borderRadius: 'var(--radius-md)',
+                                    cursor: 'pointer',
+                                    fontSize: '0.9rem',
+                                }}
+                            >
+                                📊 {t('admin.label', 'Admin')}
+                            </button>}
                             {userRole !== 'user' && <button
                                 onClick={() => setView('settings')}
                                 style={{
