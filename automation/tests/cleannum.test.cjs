@@ -121,5 +121,88 @@ t('CRITICAL: parseFloat returns 1.2 on "1.200,50", cleanNum returns 1200.50', ()
     assert.strictEqual(cleanNum('1.200,50'), 1200.50);
 });
 
+// ─── M9: 15 invoice number formats ───────────────────────────────────────────
+console.log('\n── M9: extended invoice number formats ──');
+
+// 1-8 already covered above. New formats:
+
+// 9. Parens negative (accounting convention)
+t('M9 parens negative "(1234.56)" → -1234.56', () => {
+    assert.strictEqual(cleanNum('(1234.56)'), -1234.56);
+});
+t('M9 parens negative with currency "($1,234.56)" → -1234.56', () => {
+    assert.strictEqual(cleanNum('($1,234.56)'), -1234.56);
+});
+t('M9 parens negative European "(1.234,56)" → -1234.56', () => {
+    assert.strictEqual(cleanNum('(1.234,56)'), -1234.56);
+});
+
+// 10. Trailing minus (German/Polish ledger exports)
+t('M9 trailing minus "1234.56-" → -1234.56', () => {
+    assert.strictEqual(cleanNum('1234.56-'), -1234.56);
+});
+t('M9 trailing minus European "1.234,56-" → -1234.56', () => {
+    assert.strictEqual(cleanNum('1.234,56-'), -1234.56);
+});
+t('M9 trailing minus does NOT misfire on "5-10" range', () => {
+    // "5-10" looks like a range, not a number — cleanNum gets a string with - in middle
+    // This will produce digit garbage; we just want it to not crash
+    const r = cleanNum('5-10');
+    assert.ok(typeof r === 'number' && isFinite(r));
+});
+
+// 11. Polish/CZ/RU non-breaking thousands space
+t('M9 PL space-separated "1 234,56" → 1234.56', () => {
+    assert.strictEqual(cleanNum('1 234,56'), 1234.56);
+});
+t('M9 PL space-separated "1 234 567,89" → 1234567.89', () => {
+    assert.strictEqual(cleanNum('1 234 567,89'), 1234567.89);
+});
+t('M9 NBSP-separated "1\\u00A0234,56" → 1234.56', () => {
+    assert.strictEqual(cleanNum('1\u00A0234,56'), 1234.56);
+});
+
+// 12. Swiss apostrophe
+t("M9 Swiss apostrophe \"1'234.56\" → 1234.56", () => {
+    assert.strictEqual(cleanNum("1'234.56"), 1234.56);
+});
+t("M9 Swiss apostrophe \"1'234'567.89\" → 1234567.89", () => {
+    assert.strictEqual(cleanNum("1'234'567.89"), 1234567.89);
+});
+
+// 13. Indian (lakh/crore grouping)
+t('M9 Indian "1,23,456.78" → 123456.78', () => {
+    assert.strictEqual(cleanNum('1,23,456.78'), 123456.78);
+});
+
+// 14. Multiple thousand groups already covered ("12.345.678,90")
+
+// 15. Just a separator
+t('M9 just decimal ",50" → 0.50', () => {
+    assert.strictEqual(cleanNum(',50'), 0.50);
+});
+t('M9 just decimal ".50" → 0.50', () => {
+    assert.strictEqual(cleanNum('.50'), 0.50);
+});
+
+// Bonus: thousands disambiguation
+t('M9 "1,000" (single comma + 3 digits) → 1000 not 1.0', () => {
+    assert.strictEqual(cleanNum('1,000'), 1000);
+});
+t('M9 "1,50" (single comma + 2 digits) → 1.50', () => {
+    assert.strictEqual(cleanNum('1,50'), 1.50);
+});
+
+// Real-world corner cases
+t('M9 trailing dot "1234." → 1234', () => {
+    assert.strictEqual(cleanNum('1234.'), 1234);
+});
+t('M9 mixed "Total: 1234.56 EUR" → 1234.56', () => {
+    assert.strictEqual(cleanNum('Total: 1234.56 EUR'), 1234.56);
+});
+t('M9 leading + "+1234.56" → 1234.56', () => {
+    assert.strictEqual(cleanNum('+1234.56'), 1234.56);
+});
+
 console.log(`\n─── ${passed} passed, ${failed} failed ───\n`);
 process.exit(failed > 0 ? 1 : 0);
