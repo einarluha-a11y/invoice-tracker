@@ -7,7 +7,15 @@ const { admin, db, bucket, serviceAccount } = require('./core/firebase.cjs');
 
 const app = express();
 app.use(cors());
-app.use(express.json({ limit: '50mb' }));
+// JSON parser retains the raw request buffer on req.rawBody so the Lemon
+// Squeezy webhook handler can verify the HMAC signature against the bytes
+// the sender signed. Without `verify`, express.json() would consume the
+// stream before the handler gets a chance and signatures would never
+// match.
+app.use(express.json({
+    limit: '50mb',
+    verify: (req, _res, buf) => { req.rawBody = buf; },
+}));
 
 // --- AUTH MIDDLEWARE ---
 // Verifies Firebase ID token and resolves role from Firestore:
@@ -69,11 +77,33 @@ function requireRole(roles) {
     };
 }
 
-// Protect every /api/* route with Firebase ID-token verification. No
-// exemptions: the legacy /api/intake Zapier webhook was removed because
-// it was orphaned (Zapier's Zap uploads directly to Dropbox, not here)
-// and holding an un-authenticated fallback is an unnecessary attack
-// surface. Real invoice intake runs through imap_daemon.cjs.
+// ── Lemon Squeezy billing webhook ────────────────────────────────────────
+// Registered BEFORE the /api verifyToken middleware so HMAC-signed webhooks
+// from Lemon Squeezy (which don't carry Firebase ID tokens) can reach the
+// handler. The HMAC check is the only trust boundary here — if
+// LEMON_WEBHOOK_SECRET is missing the handler fails closed.
+const { verifyWebhook, handleLemonWebhook } = require('./billing_service.cjs');
+app.post('/api/lemon-webhook', async (req, res) => {
+    try {
+        const signature = req.headers['x-signature'];
+        if (!verifyWebhook(req.rawBody, signature)) {
+            console.warn('[Billing] ❌ Webhook signature verification failed');
+            return res.status(401).json({ error: 'Invalid signature' });
+        }
+        const result = await handleLemonWebhook(req.body);
+        return res.status(200).json(result);
+    } catch (err) {
+        console.error('[Billing] webhook handler error:', err);
+        await reportError('LEMON_WEBHOOK_ERROR', 'SYSTEM', err).catch(() => {});
+        // Return 500 so Lemon Squeezy retries the event — idempotency
+        // guarantees a replayed event is a no-op if already applied.
+        return res.status(500).json({ error: 'Internal error' });
+    }
+});
+
+// Protect every other /api/* route with Firebase ID-token verification.
+// Exemption: /api/lemon-webhook is registered above and matches first;
+// Express runs the route handler before this middleware for that path.
 app.use('/api', verifyToken);
 
 // --- SIMPLE IN-MEMORY RATE LIMITER ---

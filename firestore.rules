@@ -111,6 +111,29 @@ service cloud.firestore {
       allow write: if request.auth != null && (isMaster() || isAdmin());
     }
 
+    // ── Billing ────────────────────────────────────────────────────────
+    // Each user has a single billing doc at users/{uid}/billing/state
+    // holding plan, credit balance, trial status, and Lemon Squeezy IDs.
+    //
+    // Read: only the user themselves or a master (support/debug).
+    // Write: NEVER from the client — writes go through billing_service.cjs
+    //        (Admin SDK) driven by Lemon Squeezy webhooks. Clients must not
+    //        be able to grant themselves credits, upgrade plans, or reset
+    //        usage counters. If you need to mutate billing from the UI,
+    //        call a backend endpoint that runs through the agent layer.
+    match /users/{uid}/billing/{docId} {
+      allow read: if request.auth != null && (request.auth.uid == uid || isMaster());
+      allow write: if false;
+    }
+
+    // Idempotency ledger for webhook events (keyed by Lemon Squeezy event
+    // id) + append-only audit log of credit spends. Write-only via Admin
+    // SDK — read access for master/admin so support can audit disputes.
+    match /billing_events/{eventId} {
+      allow read: if request.auth != null && (isMaster() || isAdmin());
+      allow write: if false;
+    }
+
     match /{document=**} {
       allow read, write: if isAdmin();
     }
