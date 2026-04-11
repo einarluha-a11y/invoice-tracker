@@ -360,4 +360,6 @@ module.exports = {
     DEFAULT_MAX_UPLOADS,
     MAX_FILE_SIZE,
     ALLOWED_CONTENT_TYPES,
+    // Exposed for tests — pure function, safe to call without Firestore
+    detectFileType,
 };
