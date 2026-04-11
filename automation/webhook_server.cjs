@@ -77,13 +77,77 @@ function requireRole(roles) {
     };
 }
 
+// ─── In-memory rate limiter (hoisted above public webhook routes) ───────
+// Defined BEFORE /api/lemon-webhook and /api/share/* so those public
+// endpoints can be rate-limited too. The function was originally only
+// used further down in the file; moving the const block up here lets the
+// public webhooks share the same limiter without a forward-reference
+// issue (const isn't hoisted, unlike function declarations).
+const rateLimitMap = new Map(); // ip -> { count, resetAt }
+function rateLimit(maxRequests, windowMs) {
+    return (req, res, next) => {
+        const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown';
+        const now = Date.now();
+        const entry = rateLimitMap.get(ip);
+        if (!entry || now > entry.resetAt) {
+            rateLimitMap.set(ip, { count: 1, resetAt: now + windowMs });
+            return next();
+        }
+        if (entry.count >= maxRequests) {
+            return res.status(429).json({ error: 'Too many requests. Please slow down.' });
+        }
+        entry.count++;
+        next();
+    };
+}
+// Purge stale entries every 5 minutes to prevent memory growth
+setInterval(() => {
+    const now = Date.now();
+    for (const [ip, entry] of rateLimitMap) {
+        if (now > entry.resetAt) rateLimitMap.delete(ip);
+    }
+}, 5 * 60 * 1000);
+
+// Per-token rate limiter for share link uploads — keyed by token
+// instead of IP so multi-IP attacks hitting one leaked token are still
+// blocked after N attempts. Separate map from the IP limiter above.
+const tokenUploadMap = new Map(); // token -> { count, resetAt }
+function rateLimitPerToken(maxRequests, windowMs) {
+    return (req, res, next) => {
+        const token = req.params.token || '';
+        if (!token) return next();
+        const now = Date.now();
+        const entry = tokenUploadMap.get(token);
+        if (!entry || now > entry.resetAt) {
+            tokenUploadMap.set(token, { count: 1, resetAt: now + windowMs });
+            return next();
+        }
+        if (entry.count >= maxRequests) {
+            return res.status(429).json({ error: 'Too many requests for this link.' });
+        }
+        entry.count++;
+        next();
+    };
+}
+setInterval(() => {
+    const now = Date.now();
+    for (const [k, entry] of tokenUploadMap) {
+        if (now > entry.resetAt) tokenUploadMap.delete(k);
+    }
+}, 5 * 60 * 1000);
+
 // ── Lemon Squeezy billing webhook ────────────────────────────────────────
 // Registered BEFORE the /api verifyToken middleware so HMAC-signed webhooks
 // from Lemon Squeezy (which don't carry Firebase ID tokens) can reach the
 // handler. The HMAC check is the only trust boundary here — if
 // LEMON_WEBHOOK_SECRET is missing the handler fails closed.
+//
+// Rate-limited to 60 req/min per IP. A legitimate Lemon Squeezy retry
+// storm is usually 3-5 events in quick succession, so 60/min has plenty
+// of headroom. Anyone hitting the limit is likely attacking the HMAC
+// check (which is cheap but worth protecting from an amplified DoS).
 const { verifyWebhook, handleLemonWebhook } = require('./billing_service.cjs');
-app.post('/api/lemon-webhook', async (req, res) => {
+app.post('/api/lemon-webhook', rateLimit(60, 60_000), async (req, res) => {
     try {
         const signature = req.headers['x-signature'];
         if (!verifyWebhook(req.rawBody, signature)) {
@@ -113,9 +177,18 @@ const {
     handleShareUpload,
 } = require('./share_links_service.cjs');
 
-app.get('/api/share/:token/info', async (req, res) => {
+// /info is rate-limited per IP so attackers can't enumerate active
+// tokens by polling. Cache headers prevent the token from being stored
+// in browser history or CDN logs (the full URL including token would
+// otherwise land on disk somewhere).
+app.get('/api/share/:token/info', rateLimit(30, 60_000), async (req, res) => {
     try {
         const { link } = await validateShareToken(req.params.token);
+        // No-store so browsers and proxies never cache this response.
+        // Not-critical for correctness but protects the token from
+        // showing up in back-button caches or CDN logs.
+        res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+        res.set('Pragma', 'no-cache');
         // Return only fields the landing page needs. Never leak ownerUid
         // or any PII — the supplier is a stranger.
         return res.status(200).json({
@@ -131,9 +204,18 @@ app.get('/api/share/:token/info', async (req, res) => {
 // Upload endpoint uses a raw body parser with a 25 MB cap (matches the
 // constant in share_links_service). We can't use express.json for this
 // because the body is a binary file.
+//
+// Rate limits:
+//   - 10 req/min per IP (catches basic script kiddies)
+//   - 5 req/min per TOKEN (catches multi-IP attackers hammering a
+//     single leaked token)
+// Both limits must pass. The per-token limit is the main defence —
+// the IP limit is just belt and suspenders.
 const express_raw = require('express').raw;
 app.post(
     '/api/share/:token/upload',
+    rateLimit(10, 60_000),
+    rateLimitPerToken(5, 60_000),
     express_raw({ type: '*/*', limit: '25mb' }),
     async (req, res) => {
         try {
@@ -160,32 +242,9 @@ app.post(
 // and match first; Express runs the route handler before this middleware.
 app.use('/api', verifyToken);
 
-// --- SIMPLE IN-MEMORY RATE LIMITER ---
-// Protects /api/chat and similar endpoints from abuse without extra deps.
-const rateLimitMap = new Map(); // ip -> { count, resetAt }
-function rateLimit(maxRequests, windowMs) {
-    return (req, res, next) => {
-        const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress || 'unknown';
-        const now = Date.now();
-        const entry = rateLimitMap.get(ip);
-        if (!entry || now > entry.resetAt) {
-            rateLimitMap.set(ip, { count: 1, resetAt: now + windowMs });
-            return next();
-        }
-        if (entry.count >= maxRequests) {
-            return res.status(429).json({ error: 'Too many requests. Please slow down.' });
-        }
-        entry.count++;
-        next();
-    };
-}
-// Purge stale entries every 5 minutes to prevent memory growth
-setInterval(() => {
-    const now = Date.now();
-    for (const [ip, entry] of rateLimitMap) {
-        if (now > entry.resetAt) rateLimitMap.delete(ip);
-    }
-}, 5 * 60 * 1000);
+// NOTE: rateLimit + rateLimitPerToken are defined above (line ~80)
+// so they're usable by both public webhook routes AND the authenticated
+// routes below.
 
 // NOTE: /api/intake (the legacy Zapier webhook) was removed. The Zap that
 // used to hit it uploads attachments directly to Dropbox instead, and the

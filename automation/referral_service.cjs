@@ -46,6 +46,13 @@ const { defaultBillingDoc } = require('./core/billing.cjs');
 
 const REFERRAL_BONUS_CREDITS = 50;
 
+// Abuse-prevention cap: a single referrer can earn at most 20 referrals
+// per rolling 24-hour window. Legitimate power-users rarely bring in
+// more than a few friends per day; this cap blocks incentive-farming
+// scripts that create batches of fake accounts against one victim.
+// Configurable via env var.
+const REFERRAL_DAILY_CAP = Number(process.env.REFERRAL_DAILY_CAP) || 20;
+
 /**
  * Process a referral claim. See module doc for the full flow.
  *
@@ -69,6 +76,34 @@ async function claimReferral({ referrerUid, newUserUid }) {
     }
     if (referrerUid === newUserUid) {
         return { allowed: false, reason: 'self_referral_not_allowed' };
+    }
+
+    // Anti-abuse: check rolling-24h cap on referrals for this referrer.
+    // This runs OUTSIDE the transaction so we don't lock on the audit
+    // collection during the credit grant. The trade-off is a tiny race
+    // window where two concurrent claims could both pass the check
+    // even if the 21st is being processed — but the damage is at most
+    // one extra claim (50 credits), which is acceptable.
+    const dayAgo = Date.now() - 24 * 60 * 60 * 1000;
+    try {
+        const recent = await db
+            .collection('billing_events')
+            .where('type', '==', 'referral_credit')
+            .where('referrerUid', '==', referrerUid)
+            .where('at', '>=', new Date(dayAgo))
+            .limit(REFERRAL_DAILY_CAP + 1)
+            .get();
+        if (recent.size >= REFERRAL_DAILY_CAP) {
+            console.warn(
+                `[Referral] daily cap hit for referrerUid=${referrerUid} ` +
+                `(cap=${REFERRAL_DAILY_CAP}, recent=${recent.size})`
+            );
+            return { allowed: false, reason: 'daily_cap_reached' };
+        }
+    } catch (err) {
+        // Cap check failure is non-fatal — let the claim proceed. The
+        // index this query needs might not exist yet in fresh deploys.
+        console.warn(`[Referral] cap check failed (proceeding): ${err.message}`);
     }
 
     const referrerRef = db.collection('users').doc(referrerUid).collection('billing').doc('state');
@@ -124,27 +159,25 @@ async function claimReferral({ referrerUid, newUserUid }) {
             });
         }
 
+        // Audit row inside the same transaction. If it fails, the whole
+        // claim rolls back — we never grant credits without an audit
+        // trail. Previously the audit was fire-and-forget AFTER the
+        // transaction, which could leak credits if the audit write
+        // failed (Firestore quota, network blip, etc).
+        const auditRef = db.collection('billing_events').doc();
+        t.set(auditRef, {
+            type: 'referral_credit',
+            referrerUid,
+            newUserUid,
+            credits: REFERRAL_BONUS_CREDITS,
+            at: admin.firestore.FieldValue.serverTimestamp(),
+        });
+
         return {
             allowed: true,
             referrerCredits: newPurchased,
         };
     });
-
-    // Append an audit row so admin dashboard can see referral activity.
-    // Non-blocking — failure to log never aborts the claim.
-    if (result.allowed && !result.alreadyClaimed) {
-        try {
-            await db.collection('billing_events').add({
-                type: 'referral_credit',
-                referrerUid,
-                newUserUid,
-                credits: REFERRAL_BONUS_CREDITS,
-                at: admin.firestore.FieldValue.serverTimestamp(),
-            });
-        } catch (err) {
-            console.warn(`[Referral] audit log failed: ${err.message}`);
-        }
-    }
 
     return result;
 }
