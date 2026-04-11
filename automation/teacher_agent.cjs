@@ -78,7 +78,8 @@ async function extractFromRawText(rawText) {
 
     try {
         const client = getAnthropic();
-        const resp = await client.messages.create({
+        const { withClaudeBudget } = require('./core/claude_rate_limit.cjs');
+        const resp = await withClaudeBudget(() => client.messages.create({
             model: 'claude-haiku-4-5-20251001',
             max_tokens: 400,
             messages: [{
@@ -103,7 +104,7 @@ CRITICAL: NEVER invent or construct values. If a field is not explicitly printed
 Invoice text:
 ${snippet}`
             }],
-        });
+        }));
 
         const text = resp.content[0]?.text || '';
         const match = text.match(/\{[\s\S]*\}/);

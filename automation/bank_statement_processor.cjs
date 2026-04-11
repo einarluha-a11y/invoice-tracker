@@ -449,7 +449,8 @@ async function parseBankStatementWithAI(rawText) {
         // Split long text into chunks if needed (Haiku context is small)
         const snippet = rawText.slice(0, 8000);
 
-        const resp = await client.messages.create({
+        const { withClaudeBudget } = require('./core/claude_rate_limit.cjs');
+        const resp = await withClaudeBudget(() => client.messages.create({
             model: 'claude-haiku-4-5-20251001',
             max_tokens: 4000,
             messages: [{
@@ -470,7 +471,7 @@ Rules:
 Bank statement text:
 ${snippet}`
             }],
-        });
+        }));
 
         const text = resp.content[0]?.text || '';
         const match = text.match(/\[[\s\S]*\]/);

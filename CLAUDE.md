@@ -3,6 +3,25 @@
 ## Пользователь
 Einar — не технический специалист. Объяснять как школьнику, без жаргона.
 
+## ⚠️ КРИТИЧЕСКИ ВАЖНО: Десктопное приложение
+**Einar использует Invoice-Tracker как УСТАНОВЛЕННОЕ ДЕСКТОПНОЕ ПРИЛОЖЕНИЕ (PWA) на macOS, НЕ как вкладку в браузере.**
+
+Что это значит:
+- Иконка живёт в Dock и Launchpad
+- Окно открывается standalone, без адресной строки Chrome
+- Файл бандла: `~/Applications/Chrome Apps.localized/Invoice-Tracker.app`
+- PWA ID в Chrome: `ifaakdhlfpkkiolggpnmffcclmgmhmka`
+- Title bar окна — это `CFBundleName` из `Info.plist` бандла + HTML `<title>`, объединённые Chrome'ом
+
+Никогда НЕ путать с обычной вкладкой. Когда Einar показывает скриншот окна — это PWA окно. Когда он жалуется на иконку или title — это всё про desktop bundle, не браузер.
+
+**MCP Claude-in-Chrome НЕ работает с PWA окнами** — у них нет tab group, MCP возвращает "Grouping is not supported". Чтобы что-то увидеть в PWA — открывать тот же URL в обычной Chrome вкладке через MCP, либо инспектировать через файлы на диске (`Info.plist`, `app.icns`, Chrome `Web Applications/Manifest Resources/<id>/`).
+
+**Chrome перезаписывает .app бандл при sync** — любые правки в `Info.plist` / `InfoPlist.strings` / `app.icns` будут стёрты Chrome'ом через несколько секунд. Источник истины — Chrome's `Web Data` SQLite + `Sync Data/LevelDB` + cached `Manifest Resources/<id>/`. Чтобы изменения держались навсегда, нужно либо:
+1. Изменить вышеперечисленные cached storage Chrome'а (требует Chrome быть закрытым для LevelDB)
+2. Полная переустановка PWA через Chrome UI install button (требует user gesture)
+3. Изменить manifest на сервере + дождаться Chrome's manifest update sync (асинхронно, минуты-часы)
+
 ## Главное правило
 Максимально брать работу на себя. Не просить пользователя делать то, что можно сделать самостоятельно (читать логи, проверять файлы, смотреть браузер и т.д.). Пользователь вводит в терминале только то, что невозможно сделать иначе — например, `railway up`.
 
