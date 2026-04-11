@@ -12,3 +12,8 @@ interface ImportMetaEnv {
 interface ImportMeta {
     readonly env: ImportMetaEnv
 }
+
+// Injected at build time via vite.config.js `define`. Holds the git
+// commit SHA the bundle was built from so the running app can detect
+// when it has gone stale against prod and force a reload.
+declare const __BUILD_COMMIT__: string;
