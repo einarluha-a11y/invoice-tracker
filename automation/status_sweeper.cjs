@@ -18,34 +18,74 @@ const { runDashboardAudit } = require('./dashboard_auditor_agent.cjs');
 async function sweepStatuses() {
     const today = new Date().toISOString().slice(0, 10);
     const snap = await db.collection('invoices').get();
-    let toOverdue = 0, toPending = 0;
+    let toOverdue = 0, toPending = 0, txConflicts = 0;
+
+    // ── M6: each status flip is wrapped in runTransaction ──────────────────
+    // Why: between the snapshot read above and the .update() write below,
+    // another process (manual edit through the dashboard, Repairman flag,
+    // bank reconciliation marking Paid, etc.) may have already changed the
+    // status. Without a transaction, our raw .update would silently revert
+    // someone else's recent decision — e.g. flipping a freshly-Paid invoice
+    // back to Overdue if its dueDate is in the past.
+    //
+    // The transaction re-reads the doc inside the tx, re-checks the
+    // condition against the FRESH data, and only writes if the precondition
+    // still holds. Conflicting writes lose to whoever ran first.
     for (const doc of snap.docs) {
         const data = doc.data();
         if (data.status === 'Paid' || data.status === 'Duplicate') continue;
 
-        // Pending → Overdue
+        // Decide intent OUTSIDE the transaction (cheap), then re-validate INSIDE.
+        let intent = null;
         if (data.status !== 'Overdue' && data.dueDate && data.dueDate < today) {
-            await doc.ref.update({
-                status: 'Overdue',
-                previousStatus: data.status,
-                statusFixedAt: admin.firestore.FieldValue.serverTimestamp(),
-            });
-            toOverdue++;
-            continue;
+            intent = 'Overdue';
+        } else if (data.status === 'Overdue' && data.dueDate && data.dueDate >= today) {
+            intent = 'Pending';
         }
+        if (!intent) continue;
 
-        // Overdue → Pending (self-healing after dueDate correction)
-        if (data.status === 'Overdue' && data.dueDate && data.dueDate >= today) {
-            await doc.ref.update({
-                status: 'Pending',
-                previousStatus: 'Overdue',
-                statusFixedAt: admin.firestore.FieldValue.serverTimestamp(),
+        try {
+            await db.runTransaction(async (t) => {
+                const fresh = await t.get(doc.ref);
+                if (!fresh.exists) return;
+                const freshData = fresh.data();
+
+                // Skip if someone else already flipped status (e.g. to Paid)
+                if (freshData.status === 'Paid' || freshData.status === 'Duplicate') return;
+
+                // Re-evaluate the condition against fresh data
+                if (intent === 'Overdue') {
+                    if (freshData.status === 'Overdue') return; // already done
+                    if (!freshData.dueDate || freshData.dueDate >= today) return; // condition no longer holds
+                    t.update(doc.ref, {
+                        status: 'Overdue',
+                        previousStatus: freshData.status,
+                        statusFixedAt: admin.firestore.FieldValue.serverTimestamp(),
+                    });
+                } else if (intent === 'Pending') {
+                    if (freshData.status !== 'Overdue') return;
+                    if (!freshData.dueDate || freshData.dueDate < today) return;
+                    t.update(doc.ref, {
+                        status: 'Pending',
+                        previousStatus: 'Overdue',
+                        statusFixedAt: admin.firestore.FieldValue.serverTimestamp(),
+                    });
+                }
             });
-            toPending++;
+            if (intent === 'Overdue') toOverdue++;
+            else if (intent === 'Pending') toPending++;
+        } catch (err) {
+            // Firestore retries the tx automatically up to 5 times. If it
+            // still fails, we just skip this doc this round — next sweep
+            // will pick it up.
+            txConflicts++;
+            console.warn(`[Status Sweep] tx conflict on ${doc.id}: ${err.message}`);
         }
     }
-    if (toOverdue > 0 || toPending > 0) {
-        console.log(`[Status Sweep] ${toOverdue} → Overdue, ${toPending} → Pending (self-healed after dueDate correction)`);
+
+    if (toOverdue > 0 || toPending > 0 || txConflicts > 0) {
+        const tail = txConflicts > 0 ? ` (${txConflicts} tx conflicts)` : '';
+        console.log(`[Status Sweep] ${toOverdue} → Overdue, ${toPending} → Pending (self-healed after dueDate correction)${tail}`);
     }
 }
 
